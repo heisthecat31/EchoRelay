@@ -2,9 +2,11 @@
 using EchoRelay.Core.Server.Messages;
 using EchoRelay.Core.Server.Messages.Common;
 using EchoRelay.Core.Server.Messages.Matching;
+using EchoRelay.Core.Server.Messages.Summer;
 using EchoRelay.Core.Server.Services.ServerDB;
 using EchoRelay.Core.Server.Storage.Types;
 using EchoRelay.Core.Utils;
+using System.Collections.Concurrent;
 using static EchoRelay.Core.Server.Messages.ServerDB.ERGameServerStartSession;
 
 namespace EchoRelay.Core.Server.Services.Matching
@@ -13,7 +15,13 @@ namespace EchoRelay.Core.Server.Services.Matching
     {
         public MatchingService(Server server) : base(server, "MATCHING")
         {
+            OnPeerDisconnected += (service, peer) => _summerPeers.TryRemove(peer, out _);
         }
+
+        /// <summary>
+        /// Peers which have sent summer build (rad15_summer) matching requests.
+        /// </summary>
+        private readonly ConcurrentDictionary<Peer, bool> _summerPeers = new ConcurrentDictionary<Peer, bool>();
 
         /// <summary>
         /// Handles a packet being received by a peer.
@@ -41,6 +49,22 @@ namespace EchoRelay.Core.Server.Services.Matching
                         await ProcessPendingSessionCancel(sender, pendingSessionCancel);
                         break;
                     case LobbyMatchmakerStatusRequest matchmakerStatusRequest:
+                        // Summer lobby terminals poll this and wait for a status reply. Later builds get it with their session request.
+                        if (_summerPeers.ContainsKey(sender))
+                            await sender.Send(new LobbyMatchmakerStatus(0));
+                        break;
+                    case SummerLobbyFindSessionRequestv8 summerFindSessionRequest:
+                        await ProcessSummerFindSessionRequestv8(sender, summerFindSessionRequest);
+                        break;
+                    case SummerLobbyCreateSessionRequestv7 summerCreateSessionRequest:
+                        await ProcessSummerCreateSessionRequestv7(sender, summerCreateSessionRequest);
+                        break;
+                    case SummerLobbyPlayerSessionsRequestv3 summerPlayerSessionsRequest:
+                        await ProcessSummerPlayerSessionsRequestv3(sender, summerPlayerSessionsRequest);
+                        break;
+                    case SummerLobbyPendingSessionCancel:
+                        _summerPeers[sender] = true;
+                        sender.ClearSessionData();
                         break;
                     case LobbyPingResponse pingResponse:
                         await ProcessPingResponse(sender, pingResponse);
@@ -95,14 +119,83 @@ namespace EchoRelay.Core.Server.Services.Matching
         }
 
         /// <summary>
+        /// Processes a summer build find session request ("Play" from the menu, or a lobby terminal's find match).
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessSummerFindSessionRequestv8(Peer sender, SummerLobbyFindSessionRequestv8 request)
+        {
+            _summerPeers[sender] = true;
+            long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
+            long? level = request.LevelSymbol != -1 ? request.LevelSymbol : null;
+            MatchingSession matchingSession = level != null
+                ? MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, LobbyType.Public, TeamIndex.Any, request.SessionSettings)
+                : MatchingSession.FromFindSessionCriteria(request.UserId, request.Channel, gameType, TeamIndex.Any, request.SessionSettings);
+            matchingSession.IsSummer = true;
+            sender.SetSessionData(matchingSession);
+            await ProcessMatchingSession(sender, null, request.UserId, summer: true);
+        }
+
+        /// <summary>
+        /// Processes a summer build create session request (a lobby terminal's create match).
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessSummerCreateSessionRequestv7(Peer sender, SummerLobbyCreateSessionRequestv7 request)
+        {
+            _summerPeers[sender] = true;
+            long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
+            long? level = request.LevelSymbol != -1 ? request.LevelSymbol : request.SessionSettings.Level;
+            MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, request.LobbyType, TeamIndex.Any, request.SessionSettings);
+            matchingSession.IsSummer = true;
+            sender.SetSessionData(matchingSession);
+            await ProcessMatchingSession(sender, null, request.UserId, summer: true);
+        }
+
+        /// <summary>
+        /// Processes a summer build player sessions request, sent after the client was matched to a session.
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessSummerPlayerSessionsRequestv3(Peer sender, SummerLobbyPlayerSessionsRequestv3 request)
+        {
+            // Obtain the user's matching session
+            MatchingSession? matchingSession = sender.GetSessionData<MatchingSession>();
+            if (matchingSession == null)
+                return;
+
+            // Verify the user is logged in (summer requests carry no session token).
+            XPlatformId userId = request.UserId ?? matchingSession.UserId;
+            if (userId != matchingSession.UserId || !Server.LoginService.CheckUserLoggedIn(userId))
+            {
+                await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.BadRequest, "Unauthorized");
+                return;
+            }
+            if (matchingSession.MatchedGameServer == null)
+            {
+                await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.InternalError, "Player sessions requested, but no matched game server exists");
+                return;
+            }
+
+            // Coordinate the player session request with the game server.
+            await matchingSession.MatchedGameServer.ProcessPlayerSessionRequest(sender, userId, matchingSession.Channel ?? new Guid());
+            sender.ClearSessionData();
+        }
+
+        /// <summary>
         /// Processes the underlying data derived from <see cref="LobbyFindSessionRequestv11"/>, 
         /// <see cref="LobbyFindSessionRequestv11"/>, or <see cref="LobbyJoinSessionRequestv7"/>.
         /// </summary>
         /// <param name="sender">The sender of the request.</param>
-        private async Task ProcessMatchingSession(Peer sender, Guid session, XPlatformId userId)
+        private async Task ProcessMatchingSession(Peer sender, Guid? session, XPlatformId userId, bool summer = false)
         {
             // Verify the session details provided
-            if (!Server.LoginService.CheckUserSessionValid(session, userId))
+            // Summer clients send no session token with matching requests, so verify the user is logged in instead.
+            bool authorized = summer ? Server.LoginService.CheckUserLoggedIn(userId) : (session != null && Server.LoginService.CheckUserSessionValid(session.Value, userId));
+            if (!authorized)
             {
                 await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.BadRequest, "Unauthorized");
                 return;
@@ -151,7 +244,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             if (matchingSession.LobbyId != null)
             {
                 RegisteredGameServer? requestedGameServer = Server.ServerDBService.Registry.GetGameServer(matchingSession.LobbyId.Value);
-                if (requestedGameServer == null)
+                if (requestedGameServer == null || requestedGameServer.IsSummer != summer)
                 {
                     await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.ServerDoesNotExist, "Could not find requested lobby id");
                     return;
@@ -174,8 +267,25 @@ namespace EchoRelay.Core.Server.Services.Matching
                 locked: false,
                 lobbyTypes: matchingSession.SearchLobbyTypes,
                 requestedTeam: matchingSession.TeamIndex,
-                unfilledServerOnly: true
+                unfilledServerOnly: true,
+                summer: summer
             );
+
+            // Summer clients have no ping flow: prefer a server already running a matching session, then the fullest one.
+            if (summer)
+            {
+                RegisteredGameServer? summerGameServer = gameServers
+                    .OrderBy(x => x.SessionStarted ? 0 : 1)
+                    .ThenByDescending(x => (float)x.SessionPlayerCount / Math.Max(1, (int)x.SessionPlayerLimits.TotalPlayerLimit))
+                    .FirstOrDefault();
+                if (summerGameServer == null)
+                {
+                    await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.ServerFindFailed, "No summer game servers are available to serve the request.");
+                    return;
+                }
+                await summerGameServer.ProcessLobbySessionRequest(sender);
+                return;
+            }
 
             // If we only have one game server, immediately connect the peer. Otherwise, perform a ping request to determine the lowest ping server.
             if (gameServers.Count() == 1)
@@ -241,6 +351,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 {
                     // Resolve the most populated available game server with open space and select it.
                     selectedGameServer = Server.ServerDBService.Registry.FilterGameServers(locked: false, requestedTeam: matchingSession.TeamIndex, unfilledServerOnly: true, lobbyTypes: new LobbyType[] {LobbyType.Unassigned, LobbyType.Public})
+                        .Where(x => !x.IsSummer)
                         .MaxBy(x => (float)x.SessionPlayerCount / x.SessionPlayerLimits.TotalPlayerLimit);
                 } 
                 else
@@ -257,6 +368,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 // Resolve game servers matching this address with any other provided lookup criteria.
                 var gameServers = Server.ServerDBService.Registry.FilterGameServers(
                     addresses: pingResultLookup.Keys.ToHashSet(),
+                    summer: false,
                     sessionId: matchingSession.LobbyId,
                     gameTypeSymbol: matchingSession.GameTypeSymbol,
                     levelSymbol: matchingSession.LevelSymbol,
@@ -353,6 +465,13 @@ namespace EchoRelay.Core.Server.Services.Matching
             // Define the arguments for our failure messages.
             long gameTypeSymbol = matchingSession.GameTypeSymbol ?? -1;
             Guid channel = matchingSession.Channel ?? matchingSession.LobbyId ?? new Guid();
+
+            // Summer clients only understand v3.
+            if (matchingSession.IsSummer)
+            {
+                await peer.Send(new LobbySessionFailurev3(gameTypeSymbol, channel, errorCode, 0));
+                return;
+            }
 
             // Send the failure messages.
             await peer.Send(new LobbySessionFailurev1(errorCode));

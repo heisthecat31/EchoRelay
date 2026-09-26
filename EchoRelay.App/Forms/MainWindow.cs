@@ -1,4 +1,4 @@
-using EchoRelay.App.Forms.Controls;
+﻿using EchoRelay.App.Forms.Controls;
 using EchoRelay.App.Forms.Dialogs;
 using EchoRelay.App.Properties;
 using EchoRelay.App.Settings;
@@ -116,7 +116,9 @@ namespace EchoRelay
                     serverDBValidateServerEndpoint: Settings.ServerDBValidateGameServers ?? false,
                     serverDBValidateServerEndpointTimeout: Settings.ServerDBValidateGameServersTimeout ?? 3000,
                     favorPopulationOverPing: Settings.MatchingPopulationOverPing,
-                    forceIntoAnySessionIfCreationFails: Settings.MatchingForceIntoAnySessionOnFailure
+                    forceIntoAnySessionIfCreationFails: Settings.MatchingForceIntoAnySessionOnFailure,
+                    summerNews: Settings.SummerNews,
+                    summerServiceStatus: Settings.SummerServiceStatus
                     )
                 );
             Server.OnServerStarted += Server_OnServerStarted;
@@ -163,7 +165,7 @@ namespace EchoRelay
                 lblStatus.Text = "Running";
                 startServerToolStripMenuItem.Text = "Stop server";
                 progressBarStatus.Style = ProgressBarStyle.Marquee;
-                serverInfoControl.UpdateServerInfo(Server, true);
+                serverInfoControl.UpdateServerInfo(Server, true, SummerBuild.IsSummerExecutable(Settings.GameExecutableFilePath));
             });
         }
         private void Server_OnServerStopped(Server server)

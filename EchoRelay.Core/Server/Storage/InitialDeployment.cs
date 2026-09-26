@@ -29,6 +29,7 @@ namespace EchoRelay.Core.Server.Storage
 
             // Add level symbols
             symbolCache.Add("mpl_lobby_b2", -3415139097788326908);
+            symbolCache.Add("mpl_lobby_b2_summer", Game.Symbol.Hash("mpl_lobby_b2_summer")); // summer lobby build (rad15_summer)
             symbolCache.Add("mpl_tutorial_lobby", 4363271643694206015);
 
             symbolCache.Add("mpl_arena_a", 6300205991959903307);

@@ -110,10 +110,12 @@
   <ItemGroup>
     <ClInclude Include="gameserver.h" />
     <ClInclude Include="messages.h" />
+    <ClInclude Include="summer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="gameserver.cpp" />
+    <ClCompile Include="summer.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

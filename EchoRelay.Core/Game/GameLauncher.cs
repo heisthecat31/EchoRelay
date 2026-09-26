@@ -12,6 +12,23 @@ namespace EchoRelay.Core.Game
             // Create a list of arguments
             List<string> args = additionalArgs ?? new List<string>();
 
+            // The summer lobby build (rad15_summer) has different flags: our dbgcore.dll (EchoRelay.Patch) implements
+            // -server/-noovr for it, the game itself knows -headless and -spectatorstream (windowed), and there is no
+            // offline mode, moderator flag or timestep option.
+            if (SummerBuild.IsSummerExecutable(executableFilePath))
+            {
+                if (role == LaunchRole.Server)
+                    args.Add("-server");
+                if (windowed || spectatorStream)
+                    args.Add("-spectatorstream");
+                if (noOVR)
+                    args.Add("-noovr");
+                if (headless)
+                    args.Add("-headless");
+                Process.Start(executableFilePath, args);
+                return;
+            }
+
             // Add any role related arguments (client role = no CLI argument here)
             switch(role)
             {

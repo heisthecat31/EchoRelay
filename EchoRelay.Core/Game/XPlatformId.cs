@@ -127,18 +127,8 @@ namespace EchoRelay.Core.Game
         /// <returns>The result of the comparison.</returns>
         public static bool operator !=(XPlatformId? a, XPlatformId? b)
         {
-            // If the references match, they match.
-            if (!ReferenceEquals(a, b))
-                return true;
-
-            // If only one is null, they do not match.
-            if (((object?)a == null) || ((object?)b == null))
-            {
-                return true;
-            }
-
-            // If both fields match, they match.
-            return a.PlatformCode != b.PlatformCode || a.AccountId != b.AccountId;
+            // Distinct instances with the same fields are equal, so defer to the equality operator.
+            return !(a == b);
         }
 
         /// <summary>

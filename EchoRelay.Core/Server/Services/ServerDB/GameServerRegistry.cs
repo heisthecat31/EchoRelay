@@ -75,9 +75,10 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 OnGameServerUnregistered?.Invoke(unregisteredGameServer);
         }
 
+        /// <param name="summer">If non-null, only game servers running (or not running) the summer build are returned.</param>
         public IEnumerable<RegisteredGameServer> FilterGameServers(int? findMax = null, ulong? serverId = null, Guid? sessionId = null,
             HashSet<(uint InternalAddr, uint ExternalAddr)>? addresses = null, ushort? port = null,
-            long? gameTypeSymbol = null, long? levelSymbol = null, Guid? channel = null, bool? locked = null, LobbyType[]? lobbyTypes = null, TeamIndex? requestedTeam = null, bool unfilledServerOnly = true)
+            long? gameTypeSymbol = null, long? levelSymbol = null, Guid? channel = null, bool? locked = null, LobbyType[]? lobbyTypes = null, TeamIndex? requestedTeam = null, bool unfilledServerOnly = true, bool? summer = null)
         {
             // Filter through all game servers
             List<RegisteredGameServer> filteredGameServers = new List<RegisteredGameServer>();
@@ -93,6 +94,9 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 else if (addresses != null && !addresses.Contains((gameServer.InternalAddress.ToUInt32(), gameServer.ExternalAddress.ToUInt32())))
                     continue;
                 else if (port != null && gameServer.Peer.Port != port)
+                    continue;
+                // Summer build (rad15_summer) servers can only host summer clients and vice versa.
+                else if (summer != null && gameServer.IsSummer != summer)
                     continue;
 
                 // If the session is started, filter on that criteria.

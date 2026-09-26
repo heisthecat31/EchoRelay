@@ -1,6 +1,7 @@
-#include "echovrunexported.h"
+﻿#include "echovrunexported.h"
 #include "patches.h"
 #include "processmem.h"
+#include "summerpatches.h"
 #include <detours.h>
 
 /// <summary>
@@ -570,6 +571,13 @@ VOID Initialize()
     if (initialized)
         return;
     initialized = true;
+
+    // The summer lobby build (rad15_summer) has entirely different code; it gets its own patch set.
+    if (SummerPatches::IsSummerBuild())
+    {
+        SummerPatches::Initialize();
+        return;
+    }
 
     // Verify the game version before patching
     if (!VerifyGameVersion())

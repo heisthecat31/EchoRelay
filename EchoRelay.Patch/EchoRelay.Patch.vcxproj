@@ -103,10 +103,12 @@
   <ItemGroup>
     <ClInclude Include="patches.h" />
     <ClInclude Include="processmem.h" />
+    <ClInclude Include="summerpatches.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="patches.cpp" />
+    <ClCompile Include="summerpatches.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

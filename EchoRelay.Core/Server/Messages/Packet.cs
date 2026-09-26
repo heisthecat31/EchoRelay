@@ -94,8 +94,20 @@ namespace EchoRelay.Core.Server.Messages
                     byte[] messageData = io.ReadBytes((int)messageDataLength);
 
                     // Create an instance of this message type and parse it.
+                    // A message whose layout does not match its class (e.g. an older build's message of the same name)
+                    // is kept as raw data rather than dropping the whole connection.
                     Message message = MessageTypes.CreateMessage(messageId, false);
-                    message.Decode(messageData);
+                    try
+                    {
+                        message.Decode(messageData);
+                    }
+                    catch (Exception e)
+                    {
+                        TrafficCapture.Log($"DECODE FAILED {message.GetType().Name} (0x{messageId:x16}, {messageData.Length} bytes): {e.Message} data={Convert.ToHexString(messageData)}");
+                        UnimplementedMessage raw = new UnimplementedMessage(messageId);
+                        raw.Decode(messageData);
+                        message = raw;
+                    }
 
                     // Add the successfully parsed message to our packet
                     packet.Add(message);

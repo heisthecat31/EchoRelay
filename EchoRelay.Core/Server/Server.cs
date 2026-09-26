@@ -1,4 +1,6 @@
 ﻿using EchoRelay.Core.Game;
+using System.Text;
+using Newtonsoft.Json.Linq;
 using EchoRelay.Core.Server.Messages;
 using EchoRelay.Core.Server.Services;
 using EchoRelay.Core.Server.Services.Config;
@@ -221,8 +223,12 @@ namespace EchoRelay.Core.Server
                     HttpListenerContext listenerContext = await listener.GetContextAsync().WaitAsync(_cancellationTokenSource.Token);
 
                     // Verify the request is a web socket request
+                    if (!listenerContext.Request.IsWebSocketRequest && TryHandleApiRequest(listenerContext))
+                        continue;
                     if (!listenerContext.Request.IsWebSocketRequest)
                     {
+                        TrafficCapture.Log($"HTTP {listenerContext.Request.HttpMethod} {listenerContext.Request.Url} from {listenerContext.Request.RemoteEndPoint} (not a websocket request, returning 400)");
+
                         // Return a bad request HTTP status code.
                         listenerContext.Response.StatusCode = (int)HttpStatusCode.BadRequest;
                         listenerContext.Response.Close();
@@ -291,6 +297,41 @@ namespace EchoRelay.Core.Server
 
             // Fire our stopped event
             OnServerStopped?.Invoke(this);
+        }
+
+        /// <summary>
+        /// Answers the plain HTTP API requests the summer build makes (dbgcore.dll points them at the API service path):
+        /// {api}/status/services (menu service status) and {api}/status/news (lobby news board).
+        /// </summary>
+        /// <param name="context">The HTTP request context.</param>
+        /// <returns>True if the request was answered.</returns>
+        private bool TryHandleApiRequest(HttpListenerContext context)
+        {
+            string path = context.Request.Url?.AbsolutePath.TrimEnd('/').ToLowerInvariant() ?? "";
+            string api = Settings.ApiServicePath.TrimEnd('/').ToLowerInvariant();
+            JObject? response = null;
+            if (path == api + "/status/services")
+                response = new JObject { ["available"] = true, ["message"] = Settings.SummerServiceStatus };
+            else if (path == api + "/status/news")
+                response = new JObject { ["message"] = Settings.SummerNews };
+            if (response == null)
+                return false;
+
+            try
+            {
+                byte[] body = Encoding.UTF8.GetBytes(response.ToString(Newtonsoft.Json.Formatting.None));
+                context.Response.StatusCode = (int)HttpStatusCode.OK;
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = body.Length;
+                context.Response.OutputStream.Write(body, 0, body.Length);
+                context.Response.Close();
+                TrafficCapture.Log($"HTTP {context.Request.HttpMethod} {context.Request.Url} from {context.Request.RemoteEndPoint} -> {response.ToString(Newtonsoft.Json.Formatting.None)}");
+            }
+            catch (Exception e)
+            {
+                TrafficCapture.Log($"HTTP {context.Request.Url} failed: {e.Message}");
+            }
+            return true;
         }
 
         /// <summary>

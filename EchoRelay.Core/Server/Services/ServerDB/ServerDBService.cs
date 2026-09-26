@@ -149,7 +149,10 @@ namespace EchoRelay.Core.Server.Services.ServerDB
         /// <param name="request">The request contents.</param>
         private async Task ProcessSessionStarted(Peer sender, ERGameServerSessionStarted request)
         {
-            // This is here if we need it, but we assume the session started when a session start message is sent.
+            // Final build servers never send this; we assume their session started when a session start message is sent.
+            // Summer build servers send it once the session's level finished loading, releasing clients waiting to join.
+            RegisteredGameServer? registeredGameServer = sender.GetSessionData<RegisteredGameServer>();
+            registeredGameServer?.SetSessionLoaded();
         }
 
         /// <summary>

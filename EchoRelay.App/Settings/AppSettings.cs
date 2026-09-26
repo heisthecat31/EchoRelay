@@ -88,6 +88,18 @@ namespace EchoRelay.App.Settings
         public bool MatchingForceIntoAnySessionOnFailure { get; set; }
 
         /// <summary>
+        /// The text on the summer build's lobby news board. Null uses the default.
+        /// </summary>
+        [JsonProperty("summer_news")]
+        public string? SummerNews { get; set; }
+
+        /// <summary>
+        /// The service status message summer build clients receive. Null uses the default.
+        /// </summary>
+        [JsonProperty("summer_service_status")]
+        public string? SummerServiceStatus { get; set; }
+
+        /// <summary>
         /// Additional fields which are not caught explicitly are retained here.
         /// </summary>
         [JsonExtensionData]

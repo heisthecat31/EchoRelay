@@ -79,13 +79,36 @@ namespace EchoRelay.Core.Server
         /// before player count.
         /// </summary>
         public bool FavorPopulationOverPing { get; }
+
+        /// <summary>
+        /// Indicates whether summer build (rad15_summer) clients should be given every cosmetic unlock and a max level
+        /// in their login profile.
+        /// </summary>
+        public bool SummerUnlockAll { get; }
+
+        /// <summary>
+        /// The maximum time to wait for a summer build game server to finish loading a newly started session before
+        /// sending clients to it. Summer clients that join a server mid-load get stuck in "server loading".
+        /// </summary>
+        public TimeSpan SummerSessionLoadTimeout { get; }
+
+        /// <summary>
+        /// The text shown on the summer build's lobby news board (served at {ApiServicePath}/status/news).
+        /// </summary>
+        public string SummerNews { get; }
+
+        /// <summary>
+        /// The service status message summer build clients receive (served at {ApiServicePath}/status/services).
+        /// </summary>
+        public string SummerServiceStatus { get; }
         #endregion
 
         #region Constructor
         public ServerSettings(ushort port = 777, string apiServicePath = "/api", string configServicePath = "/config",
             string loginServicePath = "/login", string matchingServicePath = "/matching",
             string serverdbServicePath = "/serverdb", string transactionServicePath = "/transaction", TimeSpan? disconnectedSessionTimeout = null,
-            string? serverDbApiKey = null, bool serverDBValidateServerEndpoint = false, int serverDBValidateServerEndpointTimeout = 3000, bool forceIntoAnySessionIfCreationFails = false, bool favorPopulationOverPing = true)
+            string? serverDbApiKey = null, bool serverDBValidateServerEndpoint = false, int serverDBValidateServerEndpointTimeout = 3000, bool forceIntoAnySessionIfCreationFails = false, bool favorPopulationOverPing = true,
+            bool summerUnlockAll = true, TimeSpan? summerSessionLoadTimeout = null, string? summerNews = null, string? summerServiceStatus = null)
         {
             Port = port;
             ApiServicePath = apiServicePath;
@@ -101,10 +124,26 @@ namespace EchoRelay.Core.Server
             ServerDBValidateServerEndpointTimeout = serverDBValidateServerEndpointTimeout;
             ForceIntoAnySessionIfCreationFails = forceIntoAnySessionIfCreationFails;
             FavorPopulationOverPing = favorPopulationOverPing;
+            SummerUnlockAll = summerUnlockAll;
+            SummerSessionLoadTimeout = summerSessionLoadTimeout ?? TimeSpan.FromSeconds(30);
+            SummerNews = summerNews ?? "Welcome back to the Echo VR summer lobby, running on EchoRelay.";
+            SummerServiceStatus = summerServiceStatus ?? "Online";
         }
         #endregion
 
         #region Functions
+        /// <summary>
+        /// Generates a new <see cref="ServiceConfig"/> for the summer lobby build (rad15_summer).
+        /// </summary>
+        /// <param name="address">The address or domain to use for the base URL for all host endpoints.</param>
+        /// <param name="serverConfig">Indicates whether sensitive gameserver-only fields should be included in the config.</param>
+        /// <returns>Returns the generated <see cref="ServiceConfig"/>.</returns>
+        public ServiceConfig GenerateSummerServiceConfig(string address, bool serverConfig = true)
+        {
+            // The summer build uses the same service hosts (it has no config/transaction/api services, but extra keys are ignored).
+            return GenerateServiceConfig(address, serverConfig, SummerBuild.PublisherLock);
+        }
+
         /// <summary>
         /// Generates a new <see cref="ServiceConfig"/> with the provided address string (e.g. "localhost", "123.123.123.123", etc)
         /// </summary>

@@ -1,7 +1,8 @@
-// dllmain.cpp : Defines the entry point for the DLL application.
+﻿// dllmain.cpp : Defines the entry point for the DLL application.
 #include "pch.h"
 #include "echovr.h"
 #include "gameserver.h"
+#include "summer.h"
 
 // The initialized ServerLib which Echo VR will call upon to communicate with central services.
 EchoVR::IServerLib* g_ServerLib;
@@ -66,6 +67,8 @@ HRESULT RadPluginSetSymbolDebugMethodsMethod(VOID* a, VOID* b, VOID* c, VOID* d)
 HRESULT RadPluginShutdown() {
 	// Free the server library in preparation of the library being unloaded.
 	delete g_ServerLib;
+	g_ServerLib = NULL;
+	Summer::Shutdown();
 
 	return ERROR_SUCCESS;
 }
@@ -76,6 +79,10 @@ EchoVR::IServerLib* ServerLib() {
 	// Set a debug breakpoint on startup if we're debugging.
 	//DebugBreak();
 #endif
+
+	// The summer lobby build (rad15_summer) has an older IServerLib interface and different engine addresses.
+	if (Summer::IsSummerBuild())
+		return (EchoVR::IServerLib*)Summer::GetServerLib();
 
 	// If the server library hasn't been initialized, set it now.
 	if (g_ServerLib == NULL) {

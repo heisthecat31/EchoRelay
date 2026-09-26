@@ -96,6 +96,21 @@ namespace EchoRelay.Core.Server.Services.ServerDB
         }
 
         /// <summary>
+        /// Indicates whether this game server runs the summer build (rad15_summer), determined by its registration version lock.
+        /// Summer game servers only host summer clients, and use older message versions.
+        /// </summary>
+        public bool IsSummer
+        {
+            get { return VersionLock == SummerBuild.VersionLock; }
+        }
+
+        /// <summary>
+        /// Signalled when a summer game server reports the current session finished loading (ERGameServerSessionStarted).
+        /// Summer clients which join while the server is still loading get stuck in "server loading", so they are held until then.
+        /// </summary>
+        private TaskCompletionSource<bool> _sessionLoaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>
         /// The current session identifier (null if a session has not been started).
         /// </summary>
         public Guid? SessionId { get; private set; }
@@ -244,6 +259,16 @@ namespace EchoRelay.Core.Server.Services.ServerDB
 
             _playerSessions.Clear();
             SessionLocked = false;
+            _sessionLoaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // Summer game servers need an explicit level: -1/unset would leave them to pick a default, which is not the summer lobby.
+            if (IsSummer && (levelSymbol == null || levelSymbol == -1) && (settings?.Level == null || settings.Level == -1))
+            {
+                levelSymbol = SummerBuild.DefaultLevelForGameType(gameTypeSymbol ?? settings?.GameType);
+                SessionLevelSymbol = levelSymbol;
+                if (settings != null)
+                    settings.Level = null;
+            }
 
             // Merge session settings information and send a "start session" message to the game server.
             var mergedSessionSettings = new ERGameServerStartSession.SessionSettings(
@@ -358,7 +383,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     matchingSession: matchingSession.MatchedSessionId!.Value,
                     channelUUID: SessionChannel ?? new Guid(),
                     endpoint: new LobbyPingRequestv3.EndpointData(InternalAddress, ExternalAddress, Port),
-                    teamIndex: (short)matchingSession.TeamIndex,
+                    teamIndex: IsSummer ? (short)Math.Max((short)0, (short)matchingSession.TeamIndex) : (short)matchingSession.TeamIndex,
                     unk1: 0,
                     serverEncoderFlags: (ulong)serverEncoderSettings,
                     clientEncoderFlags: (ulong)clientEncoderSettings,
@@ -388,6 +413,15 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     sessionSuccessv5.ClientEncKey,
                     sessionSuccessv5.ClientRandomKey
                 );
+
+                // Summer game servers/clients only understand v4. Hold the client until the server finished loading the session.
+                if (IsSummer)
+                {
+                    await WaitForSessionLoaded();
+                    await Peer.Send(sessionSuccessv4);
+                    await matchingPeer.Send(sessionSuccessv4);
+                    return;
+                }
 
                 // Send the success messages to the server (so it knows to expect a new connection with these packet encoder settings).
                 await Peer.Send(sessionSuccessv4);
@@ -429,10 +463,17 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     }
                     else
                     {
-                        // Send the player sessions to the player.
-                        await matchingPeer.Send(new LobbyPlayerSessionsSuccessUnk1(matchingSession.MatchedSessionId.Value, playerSessions));
-                        await matchingPeer.Send(new LobbyPlayerSessionsSuccessv2(0xFF, matchingSession.UserId, playerSessions[0]));
-                        await matchingPeer.Send(new LobbyPlayerSessionsSuccessv3(0xFF, matchingSession.UserId, playerSessions[0], (short)matchingSession.TeamIndex, 0, 0));
+                        // Send the player sessions to the player (summer clients only understand v3).
+                        if (IsSummer)
+                        {
+                            await matchingPeer.Send(new LobbyPlayerSessionsSuccessv3(0xFF, matchingSession.UserId, playerSessions[0], Math.Max((short)0, (short)matchingSession.TeamIndex), 0, 0));
+                        }
+                        else
+                        {
+                            await matchingPeer.Send(new LobbyPlayerSessionsSuccessUnk1(matchingSession.MatchedSessionId.Value, playerSessions));
+                            await matchingPeer.Send(new LobbyPlayerSessionsSuccessv2(0xFF, matchingSession.UserId, playerSessions[0]));
+                            await matchingPeer.Send(new LobbyPlayerSessionsSuccessv3(0xFF, matchingSession.UserId, playerSessions[0], (short)matchingSession.TeamIndex, 0, 0));
+                        }
 
                         // Add the pending player session associated to this peer.
                         _playerSessions[playerSessions[0]] = (matchingPeer, matchingSession.TeamIndex);
@@ -441,6 +482,24 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 }
                 catch { }
             });
+        }
+
+        /// <summary>
+        /// Marks the current session as finished loading (reported by summer game servers), releasing clients waiting to join it.
+        /// </summary>
+        public void SetSessionLoaded()
+        {
+            _sessionLoaded.TrySetResult(true);
+        }
+
+        /// <summary>
+        /// Waits until the game server reports the current session finished loading, or the configured timeout elapses.
+        /// </summary>
+        /// <returns>True if the server reported the session loaded, false if the wait timed out.</returns>
+        private async Task<bool> WaitForSessionLoaded()
+        {
+            Task loaded = _sessionLoaded.Task;
+            return await Task.WhenAny(loaded, Task.Delay(Server.Settings.SummerSessionLoadTimeout)) == loaded;
         }
 
         /// <summary>

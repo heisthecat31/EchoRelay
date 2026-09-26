@@ -69,6 +69,24 @@ namespace EchoRelay.Cli
             [Option("servervalidationtimeout", Required = false, Default = 3000, HelpText = "Sets the timeout for game server validation using raw ping requests. In milliseconds.")]
             public int ServerDBValidateGameServersTimeout { get; set; }
 
+            [Option("summer", Required = false, Default = false, HelpText = "Generates the service config for the summer lobby build (rad15_summer). Implied when --game points at the summer build's echovr.exe.")]
+            public bool Summer { get; set; }
+
+            [Option("nosummerunlockall", Required = false, Default = false, HelpText = "Stops giving summer lobby build clients every cosmetic unlock and a max level.")]
+            public bool NoSummerUnlockAll { get; set; }
+
+            [Option("summerloadtimeout", Required = false, Default = 30, HelpText = "The maximum time (in seconds) summer clients are held while a summer game server loads a new session.")]
+            public int SummerLoadTimeout { get; set; }
+
+            [Option("summernews", Required = false, Default = null, HelpText = "The text shown on the summer build's lobby news board.")]
+            public string? SummerNews { get; set; }
+
+            [Option("summerstatus", Required = false, Default = null, HelpText = "The service status message summer build clients receive.")]
+            public string? SummerServiceStatus { get; set; }
+
+            [Option("confighost", Required = false, Default = null, HelpText = "The host name/address to use in the generated service config (defaults to the public IP address, or localhost).")]
+            public string? ConfigHost { get; set; }
+
             [Option('v', "verbose", Required = false, Default = false, HelpText = "Verbose output for every message sent between clients and servers.")]
             public bool Verbose { get; set; } = true;
         }
@@ -131,7 +149,11 @@ namespace EchoRelay.Cli
                         serverDBValidateServerEndpoint: options.ServerDBValidateGameServers,
                         serverDBValidateServerEndpointTimeout: options.ServerDBValidateGameServersTimeout,
                         favorPopulationOverPing: !options.LowPingMatching,
-                        forceIntoAnySessionIfCreationFails: options.ForceMatching
+                        forceIntoAnySessionIfCreationFails: options.ForceMatching,
+                        summerUnlockAll: !options.NoSummerUnlockAll,
+                        summerSessionLoadTimeout: TimeSpan.FromSeconds(options.SummerLoadTimeout),
+                        summerNews: options.SummerNews,
+                        summerServiceStatus: options.SummerServiceStatus
                         )
                     );
 
@@ -164,7 +186,9 @@ namespace EchoRelay.Cli
             Info("[SERVER] Server started");
 
             // Print our service config.
-            Core.Game.ServiceConfig serviceConfig = server.Settings.GenerateServiceConfig(server.PublicIPAddress?.ToString() ?? "localhost", serverConfig: true);
+            string configHost = Options?.ConfigHost ?? server.PublicIPAddress?.ToString() ?? "localhost";
+            bool summer = (Options?.Summer ?? false) || (Options?.GameExecutablePath != null && Core.Game.SummerBuild.IsSummerExecutable(Options.GameExecutablePath));
+            Core.Game.ServiceConfig serviceConfig = summer ? server.Settings.GenerateSummerServiceConfig(configHost, serverConfig: true) : server.Settings.GenerateServiceConfig(configHost, serverConfig: true);
             string serviceConfigSerialized = JsonConvert.SerializeObject(serviceConfig, Formatting.Indented, StreamIO.JsonSerializerSettings);
             Info($"[SERVER] Generated service config:\n{serviceConfigSerialized}");
 

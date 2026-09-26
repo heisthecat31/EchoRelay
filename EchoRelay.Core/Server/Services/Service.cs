@@ -166,6 +166,21 @@ namespace EchoRelay.Core.Server.Services
                             // Parse a packet out of this message.
                             Packet packet = Packet.Decode(packetBuffer);
 
+                            // Capture messages we have no implementation for, so they can be reverse engineered.
+                            foreach (Message message in packet)
+                            {
+                                if (message is UnimplementedMessage unimplemented)
+                                {
+                                    string name = Server.SymbolCache?.GetName(unimplemented.MessageTypeSymbol) ?? "?";
+                                    TrafficCapture.Log($"UNIMPLEMENTED {GetType().Name} {name} (0x{unimplemented.MessageTypeSymbol:x16}, {unimplemented.Data.Length} bytes) from {peer.UserId?.ToString() ?? "?"} data={Convert.ToHexString(unimplemented.Data)}");
+                                }
+                                else
+                                {
+                                    string text = message.ToString() ?? "";
+                                    TrafficCapture.Log($"RECV {GetType().Name} {(text.Length > 2000 ? text.Substring(0, 2000) + "..." : text)}");
+                                }
+                            }
+
                             // Fire the packet received event for this service.
                             peer.InvokeReceiveEventHandler(packet);;
 

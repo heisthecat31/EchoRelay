@@ -12,7 +12,7 @@ namespace EchoRelay.App.Forms.Controls
             UpdateServerInfo(null, false);
         }
 
-        public void UpdateServerInfo(Server? server, bool updateServiceConfig)
+        public void UpdateServerInfo(Server? server, bool updateServiceConfig, bool summer = false)
         {
             // Set all of our connection related label text.
             lblServerStatus.Text = server != null ? "Running" : "Not started";
@@ -29,7 +29,9 @@ namespace EchoRelay.App.Forms.Controls
                 if (server != null)
                 {
                     string hostName = server.PublicIPAddress?.ToString() ?? "localhost";
-                    rtbGeneratedServiceConfig.Text = JsonConvert.SerializeObject(server.Settings.GenerateServiceConfig(hostName, serverConfig: true), Formatting.Indented, StreamIO.JsonSerializerSettings);
+                    // The summer lobby build (rad15_summer) needs its own publisher lock.
+                    var serviceConfig = summer ? server.Settings.GenerateSummerServiceConfig(hostName, serverConfig: true) : server.Settings.GenerateServiceConfig(hostName, serverConfig: true);
+                    rtbGeneratedServiceConfig.Text = JsonConvert.SerializeObject(serviceConfig, Formatting.Indented, StreamIO.JsonSerializerSettings);
                 }
                 else
                 {

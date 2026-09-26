@@ -25,6 +25,12 @@ namespace EchoRelay.Core.Server.Services.Matching
 
         public RegisteredGameServer? MatchedGameServer { get; set; }
         public Guid? MatchedSessionId { get; set; }
+
+        /// <summary>
+        /// Indicates whether this matching session belongs to a summer build (rad15_summer) client, which can only be
+        /// matched to summer game servers and only understands older message versions.
+        /// </summary>
+        public bool IsSummer { get; set; }
         private MatchingSession(XPlatformId userId, Guid? lobbyId, Guid? channel, long? gameTypeSymbol, long? levelSymbol, LobbyType newSessionLobbyType, TeamIndex teamIndex, ERGameServerStartSession.SessionSettings sessionSettings)
         {
             UserId = userId;
