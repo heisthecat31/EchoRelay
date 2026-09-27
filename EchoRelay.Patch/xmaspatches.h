@@ -23,4 +23,15 @@ namespace XmasPatches
 	/// Applies the christmas 2017 build patches (called from DllMain).
 	/// </summary>
 	VOID Initialize();
+
+	/// <summary>
+	/// Gives a game running without Revive this install's own Oculus user id (_local\echorelay_id.txt, or
+	/// echorelay_server_id.txt for a game server): pnsovr.dll's ovr_GetLoggedInUserID calls return it, and it is stored as the
+	/// org-scoped id the provider logs in with. Used by the christmas 2017 build and, from the lobby build patches, by builds
+	/// that are played without Revive.
+	/// </summary>
+	/// <param name="pnsOvr">pnsovr.dll's base address.</param>
+	/// <param name="orgScopedIdRva">The RVA of pnsovr.dll's logged in user org-scoped id (UINT64).</param>
+	/// <param name="server">Whether this is a game server.</param>
+	VOID GiveInstallIdentity(BYTE* pnsOvr, DWORD orgScopedIdRva, BOOL server);
 }

@@ -743,6 +743,24 @@ namespace XmasPatches
 		return 0;
 	}
 
+	VOID GiveInstallIdentity(BYTE* pnsOvr, DWORD orgScopedIdRva, BOOL server)
+	{
+		UINT64 userId = GetInstallUserId(server);
+		BYTE* stub = AllocateNear(pnsOvr, 16);
+		if (stub == NULL)
+		{
+			Log("FAILED to allocate the user id stub near pnsovr.dll");
+			return;
+		}
+		stub[0] = 0x48; stub[1] = 0xB8; // mov rax, imm64
+		memcpy(stub + 2, &userId, 8);
+		stub[10] = 0xC3;                // ret
+		INT redirected = RedirectImportCalls(pnsOvr, "LibOVRPlatform64_1.dll", "ovr_GetLoggedInUserID", stub);
+		Log("Patched: %d ovr_GetLoggedInUserID calls return this install's id %llu", redirected, (unsigned long long)userId);
+		*(UINT64*)(pnsOvr + orgScopedIdRva) = userId;
+		Log("Set the logged in user org-scoped id to %llu", (unsigned long long)userId);
+	}
+
 	VOID Initialize()
 	{
 		Log("EchoRelay.Patch: christmas 2017 build (EchoArena.exe) detected");

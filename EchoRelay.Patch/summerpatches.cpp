@@ -1,5 +1,6 @@
 ﻿#include "summerpatches.h"
 #include "summersocial.h"
+#include "xmaspatches.h"
 #include <winternl.h>
 #include <cstdio>
 #include <cstdarg>
@@ -45,12 +46,13 @@ namespace SummerPatches
 		BytePatch noAudio;
 		BytePatch headless;        // emulates -headless on builds without it (applied instead of noAudio; it clears audio too)
 		BytePatch multiInstance;
-		BytePatch pnsOvr[5];
+		BytePatch pnsOvr[8];
 		UINT64 statusHostString;   // 0 when the status/news redirect has not been located on this build
 		UINT64 statusHostLeas[2];
 		BOOL socialSupported;      // parties/friends through EchoRelay (summersocial)
 		BOOL supportsHeadless;     // the game itself knows -headless (unknown flags make these builds exit; see headless)
 		BOOL serverSkipsOvr;       // -server implies -noovr. Not on builds whose renderer needs an OVR swap chain.
+		DWORD pnsOvrOrgScopedId;   // builds played without Revive: pnsovr.dll's org-scoped id, set to this install's own id (0: not used)
 	};
 
 	static const BuildProfile BUILDS[] = {
@@ -168,12 +170,23 @@ namespace SummerPatches
 				{ "send SNSLoginRequest without an Oculus user proof (retry path)", 0x11F55, { 0x0F, 0x84, 0x22, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
 				{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x11F62, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
 				{ "skip the Oculus entitlement check", 0x12874, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+				// Played without Revive (like the christmas 2017 build), the Oculus user proof fails and the provider posts a
+				// login failure ("Unknown login error") without connecting; take the success path, with an empty nonce.
+				{ "log in even though ovr_User_GetUserProof failed", 0xB8E3,
+					{ 0x0F, 0x84, 0xB3, 0x00, 0x00, 0x00 }, { 0xE9, 0xB4, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				{ "log in with an empty nonce (lea rax, [\"\"] in place of ovr_UserProof_GetNonce(ovr_Message_GetUserProof(msg)))", 0xBAA4,
+					{ 0x48, 0x8B, 0xCB, 0xFF, 0x15, 0x0B, 0x0B, 0x05, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0x6A, 0x0B, 0x05, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0xAD, 0x47, 0x05, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 18 },
+				{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails", 0xA51C,
+					{ 0x48, 0xC7, 0x05, 0x91, 0x11, 0x10, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
+					{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
 			},
 			0x141156AD0,                  // "https://api.readyatdawn.com"
 			{ 0x1408FFA6A, 0x1408FFB4B }, // lea rdx, [host] for status/services and status/news
 			FALSE,
 			FALSE,
 			FALSE,
+			0x10B6B8,                     // played without Revive: each install gets its own Oculus user id
 		},
 	};
 
@@ -277,6 +290,8 @@ namespace SummerPatches
 		return ApplyPatch(base + (patch.address - 0x140000000), patch);
 	}
 
+	static BOOL HasFlag(const WCHAR* commandLine, const WCHAR* flag);
+
 	static VOID PatchPnsOvr(BYTE* base)
 	{
 		if (GetTimestamp(base) != g_build->pnsOvrTimestamp)
@@ -289,6 +304,8 @@ namespace SummerPatches
 			if (patch.size != 0)
 				ApplyPatch(base + patch.address, patch);
 		}
+		if (g_build->pnsOvrOrgScopedId != 0)
+			XmasPatches::GiveInstallIdentity(base, g_build->pnsOvrOrgScopedId, HasFlag(GetCommandLineW(), L"-server"));
 	}
 
 	// --------------------------------------------------------------------------------------------------------
