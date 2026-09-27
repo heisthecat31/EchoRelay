@@ -272,6 +272,39 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal(691594351282457603, request.SessionSettings.GameType);
         }
 
+        [Fact]
+        public void ChristmasProfileResponseHasRequestIdHeader()
+        {
+            // The christmas client's ProfileResponseCB reads u64 request id | user id (16) and the JSON from 0x18.
+            ChristmasProfileResponse response = new ChristmasProfileResponse(0x11, new XPlatformId(PlatformCode.OVR_ORG, 1621290493), new JObject { ["loadout"] = new JObject() });
+            byte[] data = response.Encode();
+            Assert.Equal(0x11UL, BitConverter.ToUInt64(data, 0));
+            Assert.Equal(1621290493UL, BitConverter.ToUInt64(data, 0x10));
+            Assert.Equal("{\"loadout\":{}}\0", System.Text.Encoding.UTF8.GetString(data, 0x18, data.Length - 0x18));
+            Assert.Equal(new ChristmasProfileResponse().MessageTypeSymbol, Symbol.Hash("SNSProfileResponse"));
+        }
+
+        [Fact]
+        public void UpdateProfileFromServerReadsWithOrWithoutUnk()
+        {
+            XPlatformId user = new XPlatformId(PlatformCode.OVR_ORG, 1621290493);
+            Guid session = Guid.NewGuid();
+            byte[] json = System.Text.Encoding.UTF8.GetBytes("{\"loadout\":{\"number\":2}}\0");
+            // Halloween layout: session | user id | i64 -1 | JSON.
+            byte[] withUnk = new HalloweenUpdateProfileFromServer { Session = session, UserId = user, Update = new JObject { ["loadout"] = new JObject { ["number"] = 2 } } }.Encode();
+            // Without the i64: session | user id | JSON.
+            byte[] withoutUnk = withUnk.Take(32).Concat(json).ToArray();
+            foreach (byte[] data in new[] { withUnk, withoutUnk })
+            {
+                HalloweenUpdateProfileFromServer decoded = new HalloweenUpdateProfileFromServer();
+                decoded.Decode(data);
+                Assert.Equal(session, decoded.Session);
+                Assert.Equal(1621290493UL, decoded.UserId.AccountId);
+                Assert.Equal(2, decoded.Update["loadout"]!["number"]!.Value<int>());
+            }
+            Assert.Equal(new HalloweenUpdateProfileFromServer().MessageTypeSymbol, Symbol.Hash("SNSUpdateProfileFromServer"));
+        }
+
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }
     }
 }

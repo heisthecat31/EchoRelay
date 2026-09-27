@@ -676,7 +676,7 @@ namespace EchoRelay.Core.Server.Services.Login
                         await otherPeer.Send(new HalloweenProfileResponse(request.UserId,
                             BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.HalloweenPublisherLock).server));
                     else if (_christmasClientPeers.ContainsKey(otherPeer))
-                        await otherPeer.Send(new SummerProfileResponsev2(request.UserId,
+                        await otherPeer.Send(new ChristmasProfileResponse(0, request.UserId,
                             BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.ChristmasPublisherLock).server));
                     else
                         await otherPeer.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
@@ -700,6 +700,13 @@ namespace EchoRelay.Core.Server.Services.Login
             AccountResource? account = Storage.Accounts.Get(ResolveSummerAccount(request.UserId, null, null));
             if (account == null)
                 return;
+            // Christmas build clients ask with SNSProfileRequest too, but their response echoes the request id.
+            if (_christmasClientPeers.ContainsKey(sender))
+            {
+                var (_, christmasProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.ChristmasPublisherLock);
+                await sender.Send(new ChristmasProfileResponse(request.Unk0, request.UserId, christmasProfile));
+                return;
+            }
             // Halloween build clients ask with the original SNSProfileRequest, and only understand the matching response.
             if (request is HalloweenProfileRequest || _halloweenClientPeers.ContainsKey(sender))
             {
