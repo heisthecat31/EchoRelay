@@ -354,6 +354,7 @@ namespace EchoRelay.Core.Server.Services.Social
                 else if (data.Value<ulong?>("room") == user.GameRoomId)
                     data["room"] = user.RealRoomId;
             }
+            RestoreLostParty(user, op, data);
             JObject result;
             switch (op)
             {
@@ -553,6 +554,28 @@ namespace EchoRelay.Core.Server.Services.Social
         /// creating or joining), so it's shown the new party under the id of the one it was removed from; told it had no party,
         /// the christmas client couldn't be in a party again until it restarted.
         /// </summary>
+        /// <summary>
+        /// Parties only live in memory, so after EchoRelay restarts a game still in a party asks about one that no longer
+        /// exists. The game never gives up on its party: it retried lock/data several times a second, answered "Party not
+        /// found" every time. So a party action on a missing party, from a player in no other party, recreates it under the
+        /// same id with them as its leader and only member, and the game carries on.
+        /// </summary>
+        private void RestoreLostParty(SocialUser user, string op, JObject data)
+        {
+            if (op is not ("lock" or "data" or "get" or "invite" or "kick" or "owner"))
+                return;
+            if (data.Value<ulong?>("room") is not ulong roomId || roomId == 0 || _rooms.ContainsKey(roomId))
+                return;
+            if (user.RoomId != null && _rooms.ContainsKey(user.RoomId.Value))
+                return;
+            Room room = new Room { Id = roomId, OwnerId = user.Id, MaxUsers = 15 };
+            room.Members.Add(user.Id);
+            _rooms[roomId] = room;
+            user.RoomId = roomId;
+            user.GameRoomId = null;
+            user.RealRoomId = null;
+        }
+
         private void GiveOwnParty(SocialUser user, Room from, List<(Peer, JObject)> outgoing)
         {
             ulong gameRoomId = user.RealRoomId == from.Id && user.GameRoomId != null ? user.GameRoomId.Value : from.Id;
