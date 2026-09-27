@@ -17,6 +17,62 @@ section for more information about the project, its aim, goals, and sensitivitie
 
 **Note**: All research was solely done by me ([@Xenomega](https://github.com/Xenomega)). I am not a participant of any Echo VR community.
 
+## Summer lobby build support (this fork)
+
+This fork adds support for the 2019 summer lobby build of Echo VR (`goldmaster 340872 from //rad/rad15_summer`, `echovr.exe` PE timestamp `0x5D388D3C`) alongside the final build the original project targets. Every part detects the build itself, and the final build's behaviour is unchanged.
+
+### `EchoRelay.Patch` (`dbgcore.dll`): `summerpatches.cpp`
+
+- Patches the summer exe at load time. The deadlock watchdog is always disabled.
+- `-server`: dedicated server mode. It implies `-noovr` (skip Oculus init) and `-multi` (skip the single-instance mutex).
+- `-server` / `-headless`: no audio.
+- Patches `pnsovr.dll` as it loads, so the game logs in without an Oculus token and skips the entitlement check.
+- Redirects the hard-coded `api.readyatdawn.com` service-status and news requests to `apiservice_host`.
+- The summer exe exits on unknown flags, so the patch's own flags are removed from the command line before the game reads it.
+
+### `EchoRelay.GameServer` (`pnsradgameserver.dll`): `summer.cpp`
+
+- Implements the summer `IServerLib` interface.
+- Connects to ServerDB with a WinHTTP websocket (from `serverdb_host`, reconnecting automatically) and translates `ERGameServer*` messages to and from the summer lobby messages.
+- Hooks `NetGame::SetState` to report when a session's level has loaded, so clients aren't sent in too early.
+
+### `EchoRelay.Core`: `Game/SummerBuild.cs`, `Server/Messages/Summer/*`
+
+- Login: `SNSLoginRequest` → `SNSLoginProfileResult`. Includes the summer profile format, optional unlock-all, and result codes (7 = authentication failed, 8 = restricted).
+- Matching:
+	- `SNSLobbyFindSessionRequestv8`, `CreateSessionRequestv7` and `PlayerSessionsRequestv3`.
+	- Clients are held until the server has loaded the level.
+	- Version-lock filtering keeps summer clients on summer servers.
+	- Defaults: social → `mpl_lobby_b2_summer`, arena → `mpl_arena_a`.
+- Lobby boards: `SNSLeaderboardRequest` → `SNSLeaderboardResponse`.
+- Profiles: `SNSRefreshProfile` → `SNSRefreshProfileResult`. `SNSUpdateProfileFromServerv2` saves loadouts.
+- HTTP: `GET {api}/status/services` and `{api}/status/news` (settings `summer_service_status` / `summer_news`).
+- `traffic_capture.log`: full payloads of every unimplemented or undecodable message. A message that fails to decode no longer drops the connection.
+- Fix: `XPlatformId`'s `!=` operator returned true for any two different instances.
+
+### `EchoRelay.App` / `EchoRelay.Cli`
+
+- Generate the summer service config (`publisher_lock: rad15_summer`) when the game exe is the summer build.
+- CLI options: `--summer`, `--nosummerunlockall`, `--summerloadtimeout`, `--summernews`, `--summerstatus`.
+
+### Running it
+
+Start `EchoRelay.App` (as administrator, for `http://*:777/`) or the CLI. Run a server with `bin\win7\echovr.exe -server -headless` and play with `bin\win7\echovr.exe`. Both use a `_local\config.json` pointing at EchoRelay:
+
+```json
+{
+  "apiservice_host": "http://127.0.0.1:777/api",
+  "loginservice_host": "ws://127.0.0.1:777/login?auth=PASSWORD&displayname=NAME",
+  "matchingservice_host": "ws://127.0.0.1:777/matching",
+  "serverdb_host": "ws://127.0.0.1:777/serverdb",
+  "publisher_lock": "rad15_summer"
+}
+```
+
+The summer build also needs its balance files (`sourcedbad15\json14\configalance\*.json`) for movement and boost.
+
+The C++ projects use the `v143` toolset (Visual Studio 2022). With a newer Visual Studio, retarget or pass `/p:PlatformToolset=v145`. Tests: `dotnet test EchoRelay.Core.Test` (includes decoding of captured summer packets).
+
 ## Features
 
 The following features are supported by `EchoRelay`:
@@ -103,7 +159,7 @@ You must acquire built libraries and executables for `EchoRelay` to install them
 	- Clone this repository and open the solution (`.sln`) file in Visual Studio.
 	- Build the solution, it should succeed without any errors. 
   		- If you encounter an error related to a missing MSDetours dependency, manually install the MSDetours 4.0.1 nuget package to the `EchoRelay.Patch` project.
-	- Rename `EchoRelay.Patch.dll` -> `dbgcore.dll`, and rename  `EchoRelay.GameServer.dll` -> `pnsradgameserver.dll`.
+	- Rename `EchoRelay.Patch.dll` → `dbgcore.dll`, and rename  `EchoRelay.GameServer.dll` → `pnsradgameserver.dll`.
 	- **Note**: `EchoRelay.Cli` and `EchoRelay.Core` can be built for other platforms by simply running the `dotnet build` command, after installing the .NET 7.0 SDK.
 
 ### Setting up central services
