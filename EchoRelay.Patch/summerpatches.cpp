@@ -16,49 +16,121 @@ namespace SummerPatches
 	{
 		const CHAR* description;
 		UINT64 address;
-		BYTE original[8];
-		BYTE patched[8];
+		BYTE original[24];
+		BYTE patched[24];
 		SIZE_T size;
 	};
 
-	// Always applied.
-	static const BytePatch WATCHDOG_PATCH = {
-		"disable the deadlock watchdog (long level loads trip it and it deliberately crashes the game)",
-		0x140C35D97, { 0x76, 0x2E }, { 0xEB, 0x2E }, 2 };
+	/// <summary>
+	/// A site we have not located on a given build. Patches marked this way are skipped, with a log line.
+	/// </summary>
+	#define NO_PATCH { NULL, 0, { 0 }, { 0 }, 0 }
 
-	// -server
-	static const BytePatch SERVER_FLAGS_PATCH = {
-		"set the dedicated server startup flags (or dword [rbx+6C40h], 1 -> 6)",
-		0x14005578C, { 0x83, 0x8B, 0x40, 0x6C, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x40, 0x6C, 0x00, 0x00, 0x06 }, 7 };
-	static const BytePatch SERVER_PACKAGE_PATCH = {
-		"load the client data package (r14netclient) in server mode, since r14netserver is not shipped",
-		0x140044F53, { 0x48, 0x8D, 0x15, 0x96, 0x91, 0x14, 0x01 }, { 0x48, 0x8D, 0x15, 0x86, 0x91, 0x14, 0x01 }, 7 };
-
-	// -noovr (implied by -server)
-	static const BytePatch NO_OVR_PATCH = {
-		"skip Oculus/VR initialization",
-		0x1407CF501, { 0x74, 0x22 }, { 0xEB, 0x22 }, 2 };
-	static const BytePatch NO_OVR_STATUS_PATCH = {
-		"silence 'Failed to get Oculus session status' (logged every frame without VR)",
-		0x14049424D, { 0x74, 0x24 }, { 0xEB, 0x24 }, 2 };
-
-	// -server or -headless (-headless clears the render/input flag bits but leaves audio enabled)
-	static const BytePatch NO_AUDIO_PATCH = {
-		"disable audio, as -noaudio would (always clear the audio flag bit while parsing the command line)",
-		0x1404811B6, { 0x74, 0x07 }, { 0x90, 0x90 }, 2 };
-
-	// -multi (implied by -server)
-	static const BytePatch MULTI_INSTANCE_PATCH = {
-		"skip the single-instance mutex check",
-		0x1407CF406, { 0x74, 0x58 }, { 0xEB, 0x58 }, 2 };
-
-	// pnsovr.dll (RVAs), unless -oculusauth
-	static const DWORD PNSOVR_TIMESTAMP = 0x5D388D2C;
-	static const BytePatch PNSOVR_PATCHES[] = {
-		{ "send SNSLoginRequest without an Oculus access token", 0x1050D, { 0x74, 0x5B }, { 0x90, 0x90 }, 2 },
-		{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x131E2, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
-		{ "skip the Oculus entitlement check", 0x13AD4, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+	/// <summary>
+	/// Everything that differs between the lobby builds we support. Game addresses are virtual addresses
+	/// (image base 0x140000000 for echovr.exe); pnsovr.dll addresses are RVAs.
+	/// </summary>
+	struct BuildProfile
+	{
+		const CHAR* name;
+		DWORD executableTimestamp;
+		DWORD pnsOvrTimestamp;
+		BytePatch watchdog;
+		BytePatch serverFlagsGate;  // makes the block serverFlags patches run, on builds where it is behind a flag
+		BytePatch serverFlags;
+		BytePatch serverPackage;
+		BytePatch serverProviders; // keeps a dedicated server's net providers, on builds that would load pnsdemo.dll
+		BytePatch noOvr;
+		BytePatch noOvrStatus;
+		BytePatch noAudio;
+		BytePatch headless;        // emulates -headless on builds without it (applied instead of noAudio; it clears audio too)
+		BytePatch multiInstance;
+		BytePatch pnsOvr[3];
+		UINT64 statusHostString;   // 0 when the status/news redirect has not been located on this build
+		UINT64 statusHostLeas[2];
+		BOOL socialSupported;      // parties/friends through EchoRelay (summersocial)
+		BOOL supportsHeadless;     // the game itself knows -headless (unknown flags make these builds exit; see headless)
+		BOOL serverSkipsOvr;       // -server implies -noovr. Not on builds whose renderer needs an OVR swap chain.
 	};
+
+	static const BuildProfile BUILDS[] = {
+		{
+			"summer (rad15_summer, goldmaster 340872)", 0x5D388D3C, 0x5D388D2C,
+			{ "disable the deadlock watchdog (long level loads trip it and it deliberately crashes the game)",
+				0x140C35D97, { 0x76, 0x2E }, { 0xEB, 0x2E }, 2 },
+			NO_PATCH, // the startup flags block runs by default on this build
+			{ "set the dedicated server startup flags (or dword [rbx+6C40h], 1 -> 6)",
+				0x14005578C, { 0x83, 0x8B, 0x40, 0x6C, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x40, 0x6C, 0x00, 0x00, 0x06 }, 7 },
+			{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped",
+				0x140044F53, { 0x48, 0x8D, 0x15, 0x96, 0x91, 0x14, 0x01 }, { 0x48, 0x8D, 0x15, 0x86, 0x91, 0x14, 0x01 }, 7 },
+			NO_PATCH, // dedicated servers run without net providers on this build
+			{ "skip Oculus/VR initialization", 0x1407CF501, { 0x74, 0x22 }, { 0xEB, 0x22 }, 2 },
+			{ "silence 'Failed to get Oculus session status' (logged every frame without VR)",
+				0x14049424D, { 0x74, 0x24 }, { 0xEB, 0x24 }, 2 },
+			{ "disable audio, as -noaudio would (always clear the audio flag bit while parsing the command line)",
+				0x1404811B6, { 0x74, 0x07 }, { 0x90, 0x90 }, 2 },
+			NO_PATCH, // the game handles -headless itself
+			{ "skip the single-instance mutex check", 0x1407CF406, { 0x74, 0x58 }, { 0xEB, 0x58 }, 2 },
+			{
+				{ "send SNSLoginRequest without an Oculus access token", 0x1050D, { 0x74, 0x5B }, { 0x90, 0x90 }, 2 },
+				{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x131E2, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
+				{ "skip the Oculus entitlement check", 0x13AD4, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+			},
+			0x141248C28,                  // "https://api.readyatdawn.com"
+			{ 0x1405F0E4A, 0x1405F0F2B }, // lea rdx, [host] for status/services and status/news
+			TRUE,
+			TRUE,
+			TRUE,
+		},
+		{
+			// The 2018 halloween lobby build. Sites were located against the summer build by their anchors (strings,
+			// imports, instruction shapes); most share the summer build's original bytes. Social is not ported yet.
+			"halloween (rad15_halloween, goldmaster 253636)", 0x5BC7B897, 0x5BC7B836,
+			{ "disable the deadlock watchdog (long level loads trip it and it deliberately crashes the game)",
+				0x140D0BC37, { 0x76, 0x2E }, { 0xEB, 0x2E }, 2 },
+			NO_PATCH, // the lobby flags setter below runs by default on this build
+			// Unlike summer, this build sets its startup flags in a small setter (also reached by -mpmnu) rather than
+			// in the command line block. Flag 1 would take the local/offline path instead of starting the dedicated server.
+			{ "set the dedicated server startup flags (or dword [rcx+58B8h], 1 -> 6)",
+				0x1400B915B, { 0x83, 0x89, 0xB8, 0x58, 0x00, 0x00, 0x01 }, { 0x83, 0x89, 0xB8, 0x58, 0x00, 0x00, 0x06 }, 7 },
+			{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped",
+				0x1400B1826, { 0x48, 0x8D, 0x15, 0x13, 0x48, 0xEF, 0x00 }, { 0x48, 0x8D, 0x15, 0x03, 0x48, 0xEF, 0x00 }, 7 },
+			// Dedicated mode (flag 4) picks the pnsdemo.dll provider here, which is not shipped, and this build's NetGame
+			// needs a provider (summer's runs without one). Keep the OVR and RAD providers a client uses instead.
+			{ "keep the OVR/RAD net providers in dedicated mode (instead of pnsdemo.dll, which is not shipped)",
+				0x1400B4628, { 0x0F, 0x84, 0xF3, 0x00, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
+			{ "skip Oculus/VR initialization", 0x140D32111, { 0x74, 0x20 }, { 0xEB, 0x20 }, 2 },
+			{ "silence 'Failed to get Oculus session status' (logged every frame without VR)",
+				0x1402EDD0D, { 0x74, 0x1E }, { 0xEB, 0x1E }, 2 },
+			{ "disable audio, as -noaudio would (always clear the audio flag bit while parsing the command line)",
+				0x1402F60B6, { 0x74, 0x07 }, { 0x90, 0x90 }, 2 },
+			// This build has no -headless, but still skips the renderer when the graphics bits summer's -headless clears
+			// (0x10101 of the same settings dword) are off. Replace the -noaudio test and its 'and dword [rbx+1D4h], ~2'
+			// with an unconditional 'and dword [rbx+1D4h], ~10103h' (audio and graphics off); ecx is reloaded after.
+			{ "run with no graphics or audio, as -headless does on later builds (and dword [rbx+1D4h], 0FFFEFEFCh)",
+				0x1402F60AA,
+				{ 0x41, 0x8B, 0xCF, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x95, 0xC1, 0x85, 0xC9, 0x74, 0x07, 0x83, 0xA3, 0xD4, 0x01, 0x00, 0x00, 0xFD },
+				{ 0x81, 0xA3, 0xD4, 0x01, 0x00, 0x00, 0xFC, 0xFE, 0xFE, 0xFF, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 21 },
+			{ "skip the single-instance mutex check", 0x140D32015, { 0x74, 0x58 }, { 0xEB, 0x58 }, 2 },
+			{
+				{ "send SNSLoginRequest without an Oculus access token", 0xDC22, { 0x74, 0x5E }, { 0x90, 0x90 }, 2 },
+				{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x1031F, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
+				{ "skip the Oculus entitlement check", 0x10AC4, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+			},
+			0x1411027F8,                  // "https://api.readyatdawn.com"
+			{ 0x1408E553A, 0x1408E561A }, // lea rdx, [host] for status/services and status/news
+			FALSE,
+			// No -headless in this build, and its renderer (even under -spectatorstream) creates an OVR swap chain, which
+			// fails fatally ("Failed to create OVR D3D swap chain (-1004)") if Oculus initialization was skipped.
+			FALSE,
+			FALSE,
+		},
+	};
+
+	/// <summary>
+	/// The build we are running in, or NULL if this is not a supported lobby build.
+	/// </summary>
+	static const BuildProfile* g_build = NULL;
 
 	static FILE* g_log = NULL;
 	static BOOL g_patchPnsOvr = TRUE;
@@ -97,9 +169,23 @@ namespace SummerPatches
 		return nt->FileHeader.TimeDateStamp;
 	}
 
-	BOOL IsSummerBuild()
+	/// <summary>
+	/// Finds the profile for the build hosting us, or NULL if it is not a lobby build we support.
+	/// </summary>
+	static const BuildProfile* DetectBuild()
 	{
-		return GetTimestamp((BYTE*)GetModuleHandleA(NULL)) == EXECUTABLE_TIMESTAMP;
+		DWORD timestamp = GetTimestamp((BYTE*)GetModuleHandleA(NULL));
+		for (const BuildProfile& build : BUILDS)
+		{
+			if (build.executableTimestamp == timestamp)
+				return &build;
+		}
+		return NULL;
+	}
+
+	BOOL IsLobbyBuild()
+	{
+		return DetectBuild() != NULL;
 	}
 
 	/// <summary>
@@ -130,21 +216,29 @@ namespace SummerPatches
 		return TRUE;
 	}
 
-	static BOOL ApplyGamePatch(const BytePatch& patch)
+	static BOOL ApplyGamePatch(const BytePatch& patch, const CHAR* what)
 	{
+		if (patch.size == 0)
+		{
+			Log("NOT SUPPORTED on the %s build, skipped: %s", g_build->name, what);
+			return FALSE;
+		}
 		BYTE* base = (BYTE*)GetModuleHandleA(NULL);
 		return ApplyPatch(base + (patch.address - 0x140000000), patch);
 	}
 
 	static VOID PatchPnsOvr(BYTE* base)
 	{
-		if (GetTimestamp(base) != PNSOVR_TIMESTAMP)
+		if (GetTimestamp(base) != g_build->pnsOvrTimestamp)
 		{
-			Log("pnsovr.dll is not the summer build's, not patching it");
+			Log("pnsovr.dll is not the %s build's, not patching it", g_build->name);
 			return;
 		}
-		for (const BytePatch& patch : PNSOVR_PATCHES)
-			ApplyPatch(base + patch.address, patch);
+		for (const BytePatch& patch : g_build->pnsOvr)
+		{
+			if (patch.size != 0)
+				ApplyPatch(base + patch.address, patch);
+		}
 	}
 
 	// --------------------------------------------------------------------------------------------------------
@@ -277,6 +371,11 @@ namespace SummerPatches
 			Log("No apiservice_host/loginservice_host in _local\\config.json, service status and news stay on api.readyatdawn.com");
 			return;
 		}
+		if (g_build->statusHostString == 0)
+		{
+			Log("NOT SUPPORTED on the %s build, skipped: service status and news host redirect", g_build->name);
+			return;
+		}
 		BYTE* image = (BYTE*)GetModuleHandleA(NULL);
 		BYTE* hostCopy = AllocateNearImage(host.size() + 1);
 		if (hostCopy == NULL)
@@ -286,12 +385,12 @@ namespace SummerPatches
 		}
 		memcpy(hostCopy, host.c_str(), host.size() + 1);
 
-		for (UINT64 leaAddress : STATUS_HOST_LEAS)
+		for (UINT64 leaAddress : g_build->statusHostLeas)
 		{
 			BYTE* lea = image + (leaAddress - 0x140000000);
 			INT32 displacement;
 			memcpy(&displacement, lea + 3, 4);
-			if (lea[0] != 0x48 || lea[1] != 0x8D || lea[2] != 0x15 || (UINT64)(lea + 7 + displacement) != (UINT64)image + (STATUS_HOST_STRING - 0x140000000))
+			if (lea[0] != 0x48 || lea[1] != 0x8D || lea[2] != 0x15 || (UINT64)(lea + 7 + displacement) != (UINT64)image + (g_build->statusHostString - 0x140000000))
 			{
 				Log("SKIPPED (unexpected instruction at %p): redirect service status/news host", lea);
 				continue;
@@ -364,34 +463,61 @@ namespace SummerPatches
 
 	VOID Initialize()
 	{
+		g_build = DetectBuild();
+		if (g_build == NULL)
+			return;
+
+		// Remember -headless, then hide it from builds that would exit on it (they get it emulated, where located).
+		BOOL headless = HasFlag(GetCommandLineW(), L"-headless");
+		BOOL emulatedHeadless = headless && !g_build->supportsHeadless && g_build->headless.size != 0;
+		if (headless && !g_build->supportsHeadless)
+		{
+			BlankFlag(GetCommandLineA(), "-headless", strlen("-headless"));
+			BlankFlag(GetCommandLineW(), L"-headless", wcslen(L"-headless"));
+		}
+
 		const WCHAR* commandLine = GetCommandLineW();
 		BOOL isServer = HasFlag(commandLine, L"-server");
-		BOOL noOvr = isServer || HasFlag(commandLine, L"-noovr");
+		// With no renderer there is no swap chain to need an Oculus session, so an emulated -headless skips Oculus too.
+		BOOL noOvr = (isServer && g_build->serverSkipsOvr) || emulatedHeadless || HasFlag(commandLine, L"-noovr");
 		BOOL multi = isServer || HasFlag(commandLine, L"-multi");
 		g_patchPnsOvr = !HasFlag(commandLine, L"-oculusauth");
 		StripOwnFlags();
-		Log("EchoRelay.Patch: summer build detected (server=%d, noovr=%d, multi=%d, pnsovr patches=%d, headless=%d)",
-			isServer, noOvr, multi, g_patchPnsOvr, HasFlag(commandLine, L"-headless"));
+		Log("EchoRelay.Patch: %s build detected (server=%d, noovr=%d, multi=%d, pnsovr patches=%d, headless=%d)",
+			g_build->name, isServer, noOvr, multi, g_patchPnsOvr, headless);
 
-		ApplyGamePatch(WATCHDOG_PATCH);
+		if (headless && !g_build->supportsHeadless && !emulatedHeadless)
+			Log("NOT SUPPORTED on the %s build: -headless (removed from the command line so the game doesn't exit; running windowed)", g_build->name);
+		if (isServer && !noOvr)
+			Log("The %s build's renderer needs an Oculus session, so this server initializes Oculus (the runtime must be installed)", g_build->name);
+
+		ApplyGamePatch(g_build->watchdog, "disable the deadlock watchdog");
 		if (isServer)
 		{
-			ApplyGamePatch(SERVER_FLAGS_PATCH);
-			ApplyGamePatch(SERVER_PACKAGE_PATCH);
+			if (g_build->serverFlagsGate.size != 0)
+				ApplyGamePatch(g_build->serverFlagsGate, "run the startup flags block");
+			ApplyGamePatch(g_build->serverFlags, "dedicated server startup flags");
+			ApplyGamePatch(g_build->serverPackage, "load the client data package in server mode");
+			if (g_build->serverProviders.size != 0)
+				ApplyGamePatch(g_build->serverProviders, "keep the net providers in dedicated mode");
 		}
 		if (noOvr)
 		{
-			ApplyGamePatch(NO_OVR_PATCH);
-			ApplyGamePatch(NO_OVR_STATUS_PATCH);
+			ApplyGamePatch(g_build->noOvr, "skip Oculus/VR initialization");
+			ApplyGamePatch(g_build->noOvrStatus, "silence 'Failed to get Oculus session status'");
 		}
 		if (multi)
-			ApplyGamePatch(MULTI_INSTANCE_PATCH);
-		if (isServer || HasFlag(commandLine, L"-headless"))
-			ApplyGamePatch(NO_AUDIO_PATCH);
+			ApplyGamePatch(g_build->multiInstance, "skip the single-instance mutex check");
+		if (emulatedHeadless)
+			ApplyGamePatch(g_build->headless, "run with no graphics or audio");
+		else if (isServer || headless)
+			ApplyGamePatch(g_build->noAudio, "disable audio");
 		RedirectStatusHost();
 
 		// Parties and friends through EchoRelay instead of Oculus (unless -oculussocial). Not needed on dedicated servers.
-		g_echoRelaySocial = !isServer && !HasFlag(commandLine, L"-oculussocial");
+		g_echoRelaySocial = g_build->socialSupported && !isServer && !HasFlag(commandLine, L"-oculussocial");
+		if (!g_build->socialSupported)
+			Log("NOT SUPPORTED on the %s build, skipped: parties and friends through EchoRelay", g_build->name);
 		SummerSocial::SetLogger(Log);
 		if (HasFlag(commandLine, L"-socialtrace"))
 			SummerSocial::EnableTracing();

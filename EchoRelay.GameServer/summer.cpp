@@ -18,25 +18,33 @@
 namespace Summer
 {
 	// ------------------------------------------------------------------------------------------------------------
-	// Summer echovr.exe addresses (relative to the image base, 0x140000000).
+	// Engine addresses for each lobby build (relative to the image base, 0x140000000).
 	// ------------------------------------------------------------------------------------------------------------
 
 	/// <summary>
-	/// Broadcaster::ReceiveLocalEvent(broadcaster, eventId, name, msg, msgSize): delivers a message to the game's local listeners.
+	/// The lobby build specific parts of this library: three engine functions and the prologue the SetState hook relocates.
+	/// Both builds share the IServerLib interface and CNSLobby glue (the halloween build's is an older revision of the same code).
 	/// </summary>
-	const UINT64 RVA_RECEIVE_LOCAL_EVENT = 0xE700A0;
-	/// <summary>
-	/// The hash used for local event ids (differs from the CSymbol64 used for service message ids).
-	/// </summary>
-	const UINT64 RVA_EVENT_SYMBOL = 0x17620;
-	/// <summary>
-	/// NetGame::SetState(netgame, state). State 7 is "in game": the session's level finished loading.
-	/// </summary>
-	const UINT64 RVA_NETGAME_SET_STATE = 0x604610;
-	/// <summary>
-	/// The first 15 bytes of NetGame::SetState, which the hook relocates (all position-independent).
-	/// </summary>
-	const BYTE SET_STATE_PROLOGUE[15] = { 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 };
+	struct BuildProfile
+	{
+		const CHAR* name;
+		DWORD executableTimestamp;
+		/// Broadcaster::ReceiveLocalEvent(broadcaster, eventId, name, msg, msgSize): delivers a message to the game's local listeners.
+		UINT64 receiveLocalEvent;
+		/// The hash used for local event ids (differs from the CSymbol64 used for service message ids).
+		UINT64 eventSymbol;
+		/// NetGame::SetState(netgame, state). State 7 is "in game": the session's level finished loading.
+		UINT64 netGameSetState;
+		/// The first 15 bytes of NetGame::SetState, which the hook relocates (all position-independent).
+		BYTE setStatePrologue[15];
+	};
+
+	static const BuildProfile BUILDS[] = {
+		{ "summer (rad15_summer, goldmaster 340872)", 0x5D388D3C, 0xE700A0, 0x17620, 0x604610,
+			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 } },
+		{ "halloween (rad15_halloween, goldmaster 253636)", 0x5BC7B897, 0x46E9E0, 0x95270, 0x8EEC90,
+			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 } },
+	};
 	const INT32 NETGAME_STATE_IN_GAME = 7;
 
 	typedef UINT64 ReceiveLocalEventFunc(VOID* broadcaster, UINT64 eventId, const CHAR* name, const VOID* msg, UINT64 msgSize);
@@ -82,8 +90,9 @@ namespace Summer
 	};
 
 	static CHAR* g_base = (CHAR*)GetModuleHandleA(NULL);
-	static ReceiveLocalEventFunc* ReceiveLocalEvent = (ReceiveLocalEventFunc*)(g_base + RVA_RECEIVE_LOCAL_EVENT);
-	static EventSymbolFunc* EventSymbol = (EventSymbolFunc*)(g_base + RVA_EVENT_SYMBOL);
+	static const BuildProfile* g_build = NULL;
+	static ReceiveLocalEventFunc* ReceiveLocalEvent = NULL;
+	static EventSymbolFunc* EventSymbol = NULL;
 	static SetStateFunc* SetStateTrampoline = NULL;
 
 	static SummerServerLib* g_lib = NULL;
@@ -141,11 +150,24 @@ namespace Summer
 		fflush(g_log);
 	}
 
-	BOOL IsSummerBuild()
+	/// <summary>
+	/// Finds the profile for the build hosting us, or NULL if it is not a lobby build we support.
+	/// </summary>
+	static const BuildProfile* DetectBuild()
 	{
 		IMAGE_DOS_HEADER* dos = (IMAGE_DOS_HEADER*)g_base;
 		IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(g_base + dos->e_lfanew);
-		return nt->FileHeader.TimeDateStamp == EXECUTABLE_TIMESTAMP;
+		for (const BuildProfile& build : BUILDS)
+		{
+			if (nt->FileHeader.TimeDateStamp == build.executableTimestamp)
+				return &build;
+		}
+		return NULL;
+	}
+
+	BOOL IsLobbyBuild()
+	{
+		return DetectBuild() != NULL;
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -560,8 +582,10 @@ namespace Summer
 	/// </summary>
 	static VOID InstallSetStateHook()
 	{
-		BYTE* target = (BYTE*)(g_base + RVA_NETGAME_SET_STATE);
-		if (memcmp(target, SET_STATE_PROLOGUE, sizeof(SET_STATE_PROLOGUE)) != 0)
+		const BYTE* prologue = g_build->setStatePrologue;
+		const SIZE_T prologueSize = sizeof(g_build->setStatePrologue);
+		BYTE* target = (BYTE*)(g_base + g_build->netGameSetState);
+		if (memcmp(target, prologue, prologueSize) != 0)
 		{
 			Log("NetGame::SetState prologue mismatch, session load reporting disabled (clients wait for the ServerDB timeout)");
 			return;
@@ -571,11 +595,11 @@ namespace Summer
 		BYTE* trampoline = (BYTE*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 		if (trampoline == NULL)
 			return;
-		memcpy(trampoline, SET_STATE_PROLOGUE, sizeof(SET_STATE_PROLOGUE));
+		memcpy(trampoline, prologue, prologueSize);
 		BYTE jumpBack[14] = { 0xFF, 0x25, 0, 0, 0, 0 };
-		UINT64 back = (UINT64)(target + sizeof(SET_STATE_PROLOGUE));
+		UINT64 back = (UINT64)(target + prologueSize);
 		memcpy(jumpBack + 6, &back, 8);
-		memcpy(trampoline + sizeof(SET_STATE_PROLOGUE), jumpBack, sizeof(jumpBack));
+		memcpy(trampoline + prologueSize, jumpBack, sizeof(jumpBack));
 		SetStateTrampoline = (SetStateFunc*)trampoline;
 
 		// Patch the target: jmp [rip] to our hook, then a nop over the 15th byte.
@@ -762,9 +786,14 @@ namespace Summer
 	{
 		if (g_lib == NULL)
 		{
+			g_build = DetectBuild();
+			if (g_build == NULL)
+				return NULL;
+			ReceiveLocalEvent = (ReceiveLocalEventFunc*)(g_base + g_build->receiveLocalEvent);
+			EventSymbol = (EventSymbolFunc*)(g_base + g_build->eventSymbol);
 			g_lib = new SummerServerLib();
 			g_lib->vtbl = g_vtable;
-			Log("Summer build detected, providing summer ServerLib");
+			Log("%s build detected, providing the lobby ServerLib", g_build->name);
 		}
 		return g_lib;
 	}

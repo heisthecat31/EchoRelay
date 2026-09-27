@@ -75,10 +75,11 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 OnGameServerUnregistered?.Invoke(unregisteredGameServer);
         }
 
-        /// <param name="summer">If non-null, only game servers running (or not running) the summer build are returned.</param>
+        /// <param name="lobbyBuild">If non-null, only game servers running (or not running) a lobby build (summer or halloween) are returned.</param>
+        /// <param name="versionLock">If non-null, only game servers registered with this exact version lock are returned.</param>
         public IEnumerable<RegisteredGameServer> FilterGameServers(int? findMax = null, ulong? serverId = null, Guid? sessionId = null,
             HashSet<(uint InternalAddr, uint ExternalAddr)>? addresses = null, ushort? port = null,
-            long? gameTypeSymbol = null, long? levelSymbol = null, Guid? channel = null, bool? locked = null, LobbyType[]? lobbyTypes = null, TeamIndex? requestedTeam = null, bool unfilledServerOnly = true, bool? summer = null)
+            long? gameTypeSymbol = null, long? levelSymbol = null, Guid? channel = null, bool? locked = null, LobbyType[]? lobbyTypes = null, TeamIndex? requestedTeam = null, bool unfilledServerOnly = true, bool? lobbyBuild = null, long? versionLock = null)
         {
             // Filter through all game servers
             List<RegisteredGameServer> filteredGameServers = new List<RegisteredGameServer>();
@@ -95,8 +96,10 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     continue;
                 else if (port != null && gameServer.Peer.Port != port)
                     continue;
-                // Summer build (rad15_summer) servers can only host summer clients and vice versa.
-                else if (summer != null && gameServer.IsSummer != summer)
+                // Lobby build (summer/halloween) servers only host lobby build clients and vice versa, and only of the same build.
+                else if (lobbyBuild != null && gameServer.IsLobbyBuild != lobbyBuild)
+                    continue;
+                else if (versionLock != null && gameServer.VersionLock != versionLock)
                     continue;
 
                 // If the session is started, filter on that criteria.

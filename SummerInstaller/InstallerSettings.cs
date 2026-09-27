@@ -8,12 +8,41 @@ using System.Text.RegularExpressions;
 namespace SummerInstaller
 {
     /// <summary>
+    /// A lobby build the installer can install: where to download it and how to set it up.
+    /// </summary>
+    public class GameBuild
+    {
+        /// <summary>"summer" or "halloween".</summary>
+        public string Id { get; set; } = "";
+        /// <summary>Shown on the build switch and as the window subtitle, e.g. "Summer Lobby".</summary>
+        public string Name { get; set; } = "";
+        /// <summary>A short label for the build switch, e.g. "Summer 2019".</summary>
+        public string ShortName { get; set; } = "";
+        public string Tagline { get; set; } = "";
+        public string DownloadUrl { get; set; } = "";
+        public string Sha256 { get; set; } = "";
+        public long DownloadSizeBytes { get; set; }
+        public string DefaultInstallFolder { get; set; } = "";
+        public string ShortcutName { get; set; } = "";
+        /// <summary>The config's publisher_lock, which tells EchoRelay which build is logging in.</summary>
+        public string PublisherLock { get; set; } = "";
+        /// <summary>echovr.exe's PE header timestamp, which identifies the build in an existing install.</summary>
+        public uint ExecutableTimestamp { get; set; }
+        /// <summary>The lobby, as named in the "press Play" hint.</summary>
+        public string LobbyName { get; set; } = "";
+
+        public string ExpandedDefaultInstallFolder => Environment.ExpandEnvironmentVariables(DefaultInstallFolder);
+    }
+
+    /// <summary>
     /// The installer's embedded settings (Resources\installer.json) and game config (Resources\config.json).
     /// </summary>
     public class InstallerSettings
     {
         public string Title { get; set; } = "Echo VR";
         public string Subtitle { get; set; } = "Summer Lobby";
+        /// <summary>The installer's own name, under the title (it installs either build).</summary>
+        public string AppName { get; set; } = "Classic Lobbies";
         public string Tagline { get; set; } = "";
         public string DownloadUrl { get; set; } = "";
         public string Sha256 { get; set; } = "";
@@ -22,16 +51,21 @@ namespace SummerInstaller
         public string ShortcutName { get; set; } = "Echo VR Summer";
 
         /// <summary>
-        /// The GitHub repository (owner/name) whose latest release provides the EchoRelay game files (SummerGameFiles zip).
-        /// </summary>
-        public string GameFilesRepository { get; set; } = "heisthecat31/EchoRelay";
-
-        /// <summary>
         /// The game config written to &lt;install&gt;\_local\config.json, exactly as embedded.
         /// </summary>
         public string GameConfig { get; private set; } = "{}";
 
         public string ExpandedDefaultInstallFolder => Environment.ExpandEnvironmentVariables(DefaultInstallFolder);
+
+        /// <summary>
+        /// The builds offered, summer first. The summer build uses the original (unprefixed) installer.json keys, the
+        /// halloween build the same keys prefixed with "halloween".
+        /// </summary>
+        public List<GameBuild> Builds { get; } = new List<GameBuild>();
+
+        public GameBuild Summer => Builds[0];
+
+        public GameBuild? FindBuild(string id) => Builds.Find(b => b.Id == id);
 
         public static InstallerSettings Load()
         {
@@ -48,17 +82,51 @@ namespace SummerInstaller
                 {
                     Title = Get(values, "title", "Echo VR"),
                     Subtitle = Get(values, "subtitle", "Summer Lobby"),
+                    AppName = Get(values, "appName", "Classic Lobbies"),
                     Tagline = Get(values, "tagline", ""),
                     DownloadUrl = Get(values, "downloadUrl", ""),
                     Sha256 = Get(values, "sha256", ""),
                     DefaultInstallFolder = Get(values, "defaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Summer"),
                     ShortcutName = Get(values, "shortcutName", "Echo VR Summer"),
-                    GameFilesRepository = Get(values, "gameFilesRepository", "heisthecat31/EchoRelay"),
                 };
                 if (values.TryGetValue("downloadSizeBytes", out object? size) && size != null)
                     settings.DownloadSizeBytes = Convert.ToInt64(size);
             }
             settings.GameConfig = ReadResource("config.json") ?? "{}";
+
+            Dictionary<string, object> all = json == null ? new Dictionary<string, object>() : ParseFlatJson(json);
+            settings.Builds.Add(new GameBuild
+            {
+                Id = "summer",
+                Name = settings.Subtitle,
+                ShortName = "Summer 2019",
+                Tagline = settings.Tagline,
+                DownloadUrl = settings.DownloadUrl,
+                Sha256 = settings.Sha256,
+                DownloadSizeBytes = settings.DownloadSizeBytes,
+                DefaultInstallFolder = settings.DefaultInstallFolder,
+                ShortcutName = settings.ShortcutName,
+                PublisherLock = "rad15_summer",
+                ExecutableTimestamp = 0x5D388D3C,
+                LobbyName = "summer lobby",
+            });
+            GameBuild halloween = new GameBuild
+            {
+                Id = "halloween",
+                Name = Get(all, "halloweenSubtitle", "Halloween Lobby"),
+                ShortName = "Halloween 2018",
+                Tagline = Get(all, "halloweenTagline", "The 2018 halloween build, running on community servers."),
+                DownloadUrl = Get(all, "halloweenDownloadUrl", ""),
+                Sha256 = Get(all, "halloweenSha256", ""),
+                DefaultInstallFolder = Get(all, "halloweenDefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Halloween"),
+                ShortcutName = Get(all, "halloweenShortcutName", "Echo VR Halloween"),
+                PublisherLock = "rad15_halloween",
+                ExecutableTimestamp = 0x5BC7B897,
+                LobbyName = "halloween lobby",
+            };
+            if (all.TryGetValue("halloweenDownloadSizeBytes", out object? halloweenSize) && halloweenSize != null)
+                halloween.DownloadSizeBytes = Convert.ToInt64(halloweenSize);
+            settings.Builds.Add(halloween);
             return settings;
         }
 

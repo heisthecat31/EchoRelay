@@ -8,12 +8,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <AssemblyName>EchoSummerInstaller</AssemblyName>
+    <AssemblyName>EchoClassicLobbies</AssemblyName>
     <RootNamespace>SummerInstaller</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
     <Version>1.0.0</Version>
-    <Product>Echo VR Summer Lobby Installer</Product>
+    <Product>Echo VR Classic Lobbies Installer</Product>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 

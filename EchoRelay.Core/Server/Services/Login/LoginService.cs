@@ -61,6 +61,12 @@ namespace EchoRelay.Core.Server.Services.Login
         /// Login connections of summer build clients, which are told about other players' profile changes.
         /// </summary>
         private readonly ConcurrentDictionary<Peer, bool> _summerClientPeers = new ConcurrentDictionary<Peer, bool>();
+
+        /// <summary>
+        /// The subset of <see cref="_summerClientPeers"/> running the halloween build, which only understands the original
+        /// (v1) profile messages.
+        /// </summary>
+        private readonly ConcurrentDictionary<Peer, bool> _halloweenClientPeers = new ConcurrentDictionary<Peer, bool>();
         #endregion
 
         #region Constructor
@@ -170,6 +176,7 @@ namespace EchoRelay.Core.Server.Services.Login
         private void LoginService_OnPeerDisconnected(Service service, Peer peer)
         {
             _summerClientPeers.TryRemove(peer, out _);
+            _halloweenClientPeers.TryRemove(peer, out _);
 
             // If the peer had a session token, update its expiry time.
             Guid? session = peer.GetSessionData<Guid?>();
@@ -441,6 +448,10 @@ namespace EchoRelay.Core.Server.Services.Login
         private async Task ProcessSummerLoginRequest(Peer sender, SummerLoginRequest request)
         {
             _summerClientPeers[sender] = true;
+            if (request.AccountInfo.PublisherLock == SummerBuild.HalloweenPublisherLock)
+                _halloweenClientPeers[sender] = true;
+            else
+                _halloweenClientPeers.TryRemove(sender, out _);
 
             // If we have existing session data for this peer's connection, invalidate it.
             InvalidatePeerUserSession(sender);
@@ -458,8 +469,14 @@ namespace EchoRelay.Core.Server.Services.Login
             await sender.Send(new LoginSuccess(request.UserId, session));
             LoginSettingsResource? loginSettings = Storage.LoginSettings.Get();
             if (loginSettings != null)
-                await sender.Send(new LoginSettings(loginSettings));
-            var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion, request.UserId);
+            {
+                // The halloween build only knows the original name of this message.
+                if (_halloweenClientPeers.ContainsKey(sender))
+                    await sender.Send(new HalloweenLoginClientSettings(loginSettings));
+                else
+                    await sender.Send(new LoginSettings(loginSettings));
+            }
+            var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion, request.UserId, request.AccountInfo.PublisherLock);
             await sender.Send(new SummerLoginProfileResult(session, request.UserId, SummerLoginProfileResult.RESULT_SUCCESS, clientProfile, serverProfile));
         }
 
@@ -471,7 +488,7 @@ namespace EchoRelay.Core.Server.Services.Login
         /// <param name="lobbyVersion">The lobby version the client reported.</param>
         /// <returns>The client and server profile JSON objects.</returns>
         /// <param name="reportedUserId">The user id the client itself reports, if it differs from the account's (shared Revive ids).</param>
-        public (JObject client, JObject server) BuildSummerProfiles(AccountResource account, ulong? lobbyVersion, XPlatformId? reportedUserId = null)
+        public (JObject client, JObject server) BuildSummerProfiles(AccountResource account, ulong? lobbyVersion, XPlatformId? reportedUserId = null, string? publisherLock = null)
         {
             JsonSerializer serializer = JsonSerializer.Create(StreamIO.JsonSerializerSettings);
             // The client checks profiles against its own user id, so they carry the id it reported.
@@ -498,10 +515,11 @@ namespace EchoRelay.Core.Server.Services.Login
 
             // Server profile: the summer build's own default server profile (its loadout/unlock formats differ from the final
             // build's), plus identity fields, then what the summer build saved for this account (e.g. its loadout).
-            JObject server = SummerBuild.DefaultServerProfile;
+            bool halloween = publisherLock == SummerBuild.HalloweenPublisherLock;
+            JObject server = halloween ? SummerBuild.HalloweenDefaultServerProfile : SummerBuild.DefaultServerProfile;
             server["displayname"] = displayName;
             server["xplatformid"] = xplatformId;
-            server["publisher_lock"] = SummerBuild.PublisherLock;
+            server["publisher_lock"] = publisherLock ?? SummerBuild.PublisherLock;
             server["purchasedcombat"] = 1;
             server["npecompleted"] = true;
             server["lobbyversion"] = lobbyVersion ?? 0;
@@ -522,6 +540,11 @@ namespace EchoRelay.Core.Server.Services.Login
                 server["profile_stats"] = level.DeepClone();
                 server["profile_stats_combat"] = level.DeepClone();
             }
+
+            // The halloween build has no combat unlock list, and a second copy of the unlocks would push the profile past
+            // the halloween client's message size limit (it disconnects on a larger message).
+            if (halloween)
+                server.Remove("unlocks_combat");
             return (client, server);
         }
 
@@ -558,8 +581,20 @@ namespace EchoRelay.Core.Server.Services.Login
                 await sender.Send(new SummerRefreshProfileResult(request.UserId, 8, new JObject()));
                 return;
             }
-            var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId);
+            // The game server asking runs the same build as the player's client.
+            string? publisherLock = IsHalloweenSession(request.Session) ? SummerBuild.HalloweenPublisherLock : null;
+            var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, publisherLock);
             await sender.Send(new SummerRefreshProfileResult(request.UserId, SummerRefreshProfileResult.RESULT_SUCCESS, serverProfile));
+        }
+
+        /// <summary>
+        /// Determines whether a login session belongs to a halloween build client.
+        /// </summary>
+        /// <param name="session">The login session.</param>
+        /// <returns>True if a halloween client holds the session.</returns>
+        private bool IsHalloweenSession(Guid session)
+        {
+            return _halloweenClientPeers.Keys.Any(peer => peer.GetSessionData<Guid?>() == session);
         }
 
         /// <summary>
@@ -587,7 +622,12 @@ namespace EchoRelay.Core.Server.Services.Login
             lock (PeersLock)
                 clientPeers = Peers.Where(peer => peer.GetSessionData<Guid?>() == request.Session).ToArray();
             foreach (Peer clientPeer in clientPeers)
-                await clientPeer.Send(new SummerRefreshProfileFromServer(request.UserId, serverProfile));
+            {
+                JObject ownProfile = _halloweenClientPeers.ContainsKey(clientPeer)
+                    ? BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.HalloweenPublisherLock).server
+                    : serverProfile;
+                await clientPeer.Send(new SummerRefreshProfileFromServer(request.UserId, ownProfile));
+            }
 
             // Push it to everyone else's client too, so players already in a lobby with them re-dress their avatar.
             // Clients store and apply an SNSProfileResponsev2 whether or not they requested it.
@@ -595,7 +635,11 @@ namespace EchoRelay.Core.Server.Services.Login
             {
                 try
                 {
-                    await otherPeer.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
+                    if (_halloweenClientPeers.ContainsKey(otherPeer))
+                        await otherPeer.Send(new HalloweenProfileResponse(request.UserId,
+                            BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.HalloweenPublisherLock).server));
+                    else
+                        await otherPeer.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
                 }
                 catch
                 {
@@ -616,6 +660,13 @@ namespace EchoRelay.Core.Server.Services.Login
             AccountResource? account = Storage.Accounts.Get(ResolveSummerAccount(request.UserId, null, null));
             if (account == null)
                 return;
+            // Halloween build clients ask with the original SNSProfileRequest, and only understand the matching response.
+            if (request is HalloweenProfileRequest || _halloweenClientPeers.ContainsKey(sender))
+            {
+                var (_, halloweenProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.HalloweenPublisherLock);
+                await sender.Send(new HalloweenProfileResponse(request.UserId, halloweenProfile));
+                return;
+            }
             var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId);
             await sender.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
         }

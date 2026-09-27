@@ -96,12 +96,12 @@ namespace EchoRelay.Core.Server.Services.ServerDB
         }
 
         /// <summary>
-        /// Indicates whether this game server runs the summer build (rad15_summer), determined by its registration version lock.
-        /// Summer game servers only host summer clients, and use older message versions.
+        /// Indicates whether this game server runs one of the lobby builds (summer or halloween). Lobby build servers only
+        /// host clients of the same build, matched by exact version lock.
         /// </summary>
-        public bool IsSummer
+        public bool IsLobbyBuild
         {
-            get { return VersionLock == SummerBuild.VersionLock; }
+            get { return SummerBuild.IsLobbyVersionLock(VersionLock); }
         }
 
         /// <summary>
@@ -307,10 +307,10 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             SessionLocked = false;
             _sessionLoaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // Summer game servers need an explicit level: -1/unset would leave them to pick a default, which is not the summer lobby.
-            if (IsSummer && (levelSymbol == null || levelSymbol == -1) && (settings?.Level == null || settings.Level == -1))
+            // Lobby build servers need an explicit level: -1/unset would leave them to pick a default, which is not their lobby.
+            if (IsLobbyBuild && (levelSymbol == null || levelSymbol == -1) && (settings?.Level == null || settings.Level == -1))
             {
-                levelSymbol = SummerBuild.DefaultLevelForGameType(gameTypeSymbol ?? settings?.GameType);
+                levelSymbol = SummerBuild.DefaultLevelForGameType(gameTypeSymbol ?? settings?.GameType, VersionLock);
                 SessionLevelSymbol = levelSymbol;
                 if (settings != null)
                     settings.Level = null;
@@ -429,7 +429,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     matchingSession: matchingSession.MatchedSessionId!.Value,
                     channelUUID: SessionChannel ?? new Guid(),
                     endpoint: new LobbyPingRequestv3.EndpointData(InternalAddress, ExternalAddress, Port),
-                    teamIndex: IsSummer ? (short)(matchingSession.AssignedTeam = _pendingTeams[matchingPeer] = AssignSummerTeam(matchingPeer, matchingSession.TeamIndex)).Value : (short)matchingSession.TeamIndex,
+                    teamIndex: IsLobbyBuild ? (short)(matchingSession.AssignedTeam = _pendingTeams[matchingPeer] = AssignSummerTeam(matchingPeer, matchingSession.TeamIndex)).Value : (short)matchingSession.TeamIndex,
                     unk1: 0,
                     serverEncoderFlags: (ulong)serverEncoderSettings,
                     clientEncoderFlags: (ulong)clientEncoderSettings,
@@ -461,7 +461,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 );
 
                 // Summer game servers/clients only understand v4. Hold the client until the server finished loading the session.
-                if (IsSummer)
+                if (IsLobbyBuild)
                 {
                     await WaitForSessionLoaded();
                     await Peer.Send(sessionSuccessv4);
@@ -510,7 +510,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     else
                     {
                         // Send the player sessions to the player (summer clients only understand v3).
-                        if (IsSummer)
+                        if (IsLobbyBuild)
                         {
                             TeamIndex team = matchingSession.AssignedTeam ?? AssignSummerTeam(matchingPeer, matchingSession.TeamIndex);
                             await matchingPeer.Send(new LobbyPlayerSessionsSuccessv3(0xFF, matchingSession.UserId, playerSessions[0], (short)team, 0, 0));
@@ -523,7 +523,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                         }
 
                         // Add the pending player session associated to this peer.
-                        _playerSessions[playerSessions[0]] = (matchingPeer, IsSummer ? (matchingSession.AssignedTeam ?? TeamIndex.Blue) : matchingSession.TeamIndex);
+                        _playerSessions[playerSessions[0]] = (matchingPeer, IsLobbyBuild ? (matchingSession.AssignedTeam ?? TeamIndex.Blue) : matchingSession.TeamIndex);
                         _pendingTeams.Remove(matchingPeer);
                     }
 

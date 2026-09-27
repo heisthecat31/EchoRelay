@@ -625,8 +625,8 @@ VOID Initialize()
         return;
     initialized = true;
 
-    // The summer lobby build (rad15_summer) has entirely different code; it gets its own patch set.
-    if (SummerPatches::IsSummerBuild())
+    // The lobby builds (rad15_summer, rad15_halloween) have entirely different code; they get their own patch set.
+    if (SummerPatches::IsLobbyBuild())
     {
         SummerPatches::Initialize();
         return;

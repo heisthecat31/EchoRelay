@@ -3,7 +3,8 @@
 #include "pch.h"
 
 /// <summary>
-/// Support for the Echo VR "summer lobby" build (rad15_summer, echovr.exe PE timestamp 0x5D388D3C).
+/// Support for the Echo VR lobby builds: summer (rad15_summer, PE timestamp 0x5D388D3C) and halloween
+/// (rad15_halloween, PE timestamp 0x5BC7B897), which share this IServerLib interface.
 ///
 /// The summer build's IServerLib interface is older than the final build's (no UnkFunc0/UnkFunc1, and Update/RequestRegistration
 /// take different arguments), and none of the final build's engine addresses (TCP broadcaster, JSON, logging) apply to it.
@@ -14,14 +15,9 @@
 namespace Summer
 {
 	/// <summary>
-	/// The PE header timestamp of the summer build's echovr.exe.
+	/// Checks whether the host process is one of the lobby builds we support (summer or halloween).
 	/// </summary>
-	const DWORD EXECUTABLE_TIMESTAMP = 0x5D388D3C;
-
-	/// <summary>
-	/// Checks whether the host process is the summer build.
-	/// </summary>
-	BOOL IsSummerBuild();
+	BOOL IsLobbyBuild();
 
 	/// <summary>
 	/// Obtains the summer build IServerLib implementation (created on first call).

@@ -1,7 +1,7 @@
 <Window x:Class="SummerInstaller.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Echo VR Summer Lobby" Width="600" Height="760" MinWidth="560" MinHeight="720"
+        Title="Echo VR Classic Lobbies" Width="600" Height="840" MinWidth="560" MinHeight="800"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanMinimize"
         AllowsTransparency="True" Background="Transparent" Icon="Resources/icon.ico"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
@@ -80,7 +80,7 @@
                     <StackPanel Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center">
                         <TextBlock x:Name="TitleText" Text="ECHO VR" FontSize="12.5" FontWeight="SemiBold"
                                    Foreground="{StaticResource Blue}" TextOptions.TextFormattingMode="Ideal"/>
-                        <TextBlock x:Name="SubtitleText" Text="Summer Lobby" FontSize="32" FontWeight="Bold"
+                        <TextBlock x:Name="SubtitleText" Text="Classic Lobbies" FontSize="32" FontWeight="Bold"
                                    FontFamily="Segoe UI Variable Display, Segoe UI" TextOptions.TextFormattingMode="Ideal"/>
                         <TextBlock x:Name="TaglineText" Text="The 2019 summer build, running on community servers."
                                    FontSize="13.5" Foreground="{StaticResource TextDim}" Margin="0,2,0,0" TextWrapping="Wrap"/>
@@ -99,6 +99,15 @@
                         </Grid.RowDefinitions>
                         <Border Grid.Row="0" CornerRadius="16" Background="{StaticResource Card}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Padding="22,20">
                             <StackPanel>
+                                <!-- Build -->
+                                <TextBlock Text="Game version" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
+                                <UniformGrid Columns="2" Margin="0,8,0,18">
+                                    <RadioButton x:Name="SummerBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="0,0,6,0"
+                                                 Content="Summer 2019" Tag="summer" Checked="BuildOption_Checked" AutomationProperties.Name="Summer 2019 build"/>
+                                    <RadioButton x:Name="HalloweenBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,0,0,0"
+                                                 Content="Halloween 2018" Tag="halloween" Checked="BuildOption_Checked" AutomationProperties.Name="Halloween 2018 build"/>
+                                </UniformGrid>
+
                                 <TextBlock Text="Install location" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
                                 <Grid Margin="0,8,0,0">
                                     <Grid.ColumnDefinitions>
@@ -274,7 +283,7 @@
                                 <StackPanel Margin="18,0,0,0" MaxWidth="380">
                                     <TextBlock Text="Ready to play" FontSize="22" FontWeight="SemiBold"/>
                                     <TextBlock x:Name="DonePath" Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextDim}" TextWrapping="Wrap"/>
-                                    <TextBlock Margin="0,14,0,0" FontSize="13" Foreground="{StaticResource TextDim}" TextWrapping="Wrap"
+                                    <TextBlock x:Name="DoneHint" Margin="0,14,0,0" FontSize="13" Foreground="{StaticResource TextDim}" TextWrapping="Wrap"
                                                Text="Start the Oculus app and connect your headset before pressing Play. In the game, press Play on the menu to join the summer lobby."/>
                                 </StackPanel>
                             </StackPanel>

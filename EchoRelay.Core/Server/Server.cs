@@ -327,19 +327,23 @@ namespace EchoRelay.Core.Server
             if (response == null)
                 return false;
 
+            // Read the request details up front: closing the response disposes the context, so reading them afterwards
+            // throws (which used to make every successful response log as "failed: Cannot access a disposed object").
+            string request = $"HTTP {context.Request.HttpMethod} {context.Request.Url} from {context.Request.RemoteEndPoint}";
             try
             {
-                byte[] body = Encoding.UTF8.GetBytes(response.ToString(Newtonsoft.Json.Formatting.None));
+                string json = response.ToString(Newtonsoft.Json.Formatting.None);
+                byte[] body = Encoding.UTF8.GetBytes(json);
                 context.Response.StatusCode = (int)HttpStatusCode.OK;
                 context.Response.ContentType = "application/json";
                 context.Response.ContentLength64 = body.Length;
                 context.Response.OutputStream.Write(body, 0, body.Length);
                 context.Response.Close();
-                TrafficCapture.Log($"HTTP {context.Request.HttpMethod} {context.Request.Url} from {context.Request.RemoteEndPoint} -> {response.ToString(Newtonsoft.Json.Formatting.None)}");
+                TrafficCapture.Log($"{request} -> {json}");
             }
             catch (Exception e)
             {
-                TrafficCapture.Log($"HTTP {context.Request.Url} failed: {e.Message}");
+                TrafficCapture.Log($"{request} failed: {e.Message}");
             }
             return true;
         }

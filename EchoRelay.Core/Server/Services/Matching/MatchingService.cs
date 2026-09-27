@@ -136,6 +136,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 ? MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, LobbyType.Public, TeamIndex.Any, request.SessionSettings)
                 : MatchingSession.FromFindSessionCriteria(request.UserId, request.Channel, gameType, TeamIndex.Any, request.SessionSettings);
             matchingSession.IsSummer = true;
+            matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
         }
@@ -158,6 +159,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             long? level = request.LevelSymbol != -1 ? request.LevelSymbol : request.SessionSettings.Level;
             MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, request.LobbyType, TeamIndex.Any, request.SessionSettings);
             matchingSession.IsSummer = true;
+            matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
         }
@@ -174,6 +176,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             TeamIndex team = Enum.IsDefined(typeof(TeamIndex), request.TeamIndex) ? (TeamIndex)request.TeamIndex : TeamIndex.Any;
             MatchingSession matchingSession = MatchingSession.FromJoinSpecificSessionCriteria(request.UserId, request.LobbyId, team, request.SessionSettings);
             matchingSession.IsSummer = true;
+            matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
         }
@@ -270,7 +273,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             if (matchingSession.LobbyId != null)
             {
                 RegisteredGameServer? requestedGameServer = Server.ServerDBService.Registry.GetGameServer(matchingSession.LobbyId.Value);
-                if (requestedGameServer == null || requestedGameServer.IsSummer != summer)
+                if (requestedGameServer == null || requestedGameServer.IsLobbyBuild != summer || (summer && requestedGameServer.VersionLock != matchingSession.VersionLock))
                 {
                     await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.ServerDoesNotExist, "Could not find requested lobby id");
                     return;
@@ -294,7 +297,8 @@ namespace EchoRelay.Core.Server.Services.Matching
                 lobbyTypes: matchingSession.SearchLobbyTypes,
                 requestedTeam: matchingSession.TeamIndex,
                 unfilledServerOnly: true,
-                summer: summer
+                lobbyBuild: summer,
+                versionLock: summer ? matchingSession.VersionLock : null
             );
 
             // Summer clients have no ping flow: prefer a server already running a matching session, then the fullest one.
@@ -306,7 +310,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                     .FirstOrDefault();
                 if (summerGameServer == null)
                 {
-                    await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.ServerFindFailed, "No summer game servers are available to serve the request.");
+                    await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.ServerFindFailed, $"No game servers for this build (version lock 0x{matchingSession.VersionLock ?? 0:X16}) are available to serve the request.");
                     return;
                 }
                 await summerGameServer.ProcessLobbySessionRequest(sender);
@@ -377,7 +381,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 {
                     // Resolve the most populated available game server with open space and select it.
                     selectedGameServer = Server.ServerDBService.Registry.FilterGameServers(locked: false, requestedTeam: matchingSession.TeamIndex, unfilledServerOnly: true, lobbyTypes: new LobbyType[] {LobbyType.Unassigned, LobbyType.Public})
-                        .Where(x => !x.IsSummer)
+                        .Where(x => !x.IsLobbyBuild)
                         .MaxBy(x => (float)x.SessionPlayerCount / x.SessionPlayerLimits.TotalPlayerLimit);
                 } 
                 else
@@ -394,7 +398,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 // Resolve game servers matching this address with any other provided lookup criteria.
                 var gameServers = Server.ServerDBService.Registry.FilterGameServers(
                     addresses: pingResultLookup.Keys.ToHashSet(),
-                    summer: false,
+                    lobbyBuild: false,
                     sessionId: matchingSession.LobbyId,
                     gameTypeSymbol: matchingSession.GameTypeSymbol,
                     levelSymbol: matchingSession.LevelSymbol,
@@ -491,6 +495,13 @@ namespace EchoRelay.Core.Server.Services.Matching
             // Define the arguments for our failure messages.
             long gameTypeSymbol = matchingSession.GameTypeSymbol ?? -1;
             Guid channel = matchingSession.Channel ?? matchingSession.LobbyId ?? new Guid();
+
+            // Halloween clients have no v3 (their newest is v2).
+            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock)
+            {
+                await peer.Send(new LobbySessionFailurev2(channel, errorCode));
+                return;
+            }
 
             // Summer clients only understand v3.
             if (matchingSession.IsSummer)

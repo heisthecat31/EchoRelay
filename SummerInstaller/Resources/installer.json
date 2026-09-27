@@ -1,11 +1,18 @@
 {
   "title": "Echo VR",
+  "appName": "Classic Lobbies",
   "subtitle": "Summer Lobby",
   "tagline": "The 2019 summer build, running on community servers.",
   "downloadUrl": "https://drive.google.com/file/d/1HXxFzJBvoYLIBNBaW8LAt8q0QpH9gUD5/view?usp=sharing",
-  "sha256": "1BDF51C4C710153F867A6F448018066D2E45843A4AD939811971D8FAA398EBB8",
-  "downloadSizeBytes": 3386701653,
+  "sha256": "3E64CD1CE7E4F945245EB359A26D40B455A54C2182D36F99556394168F556A9A",
+  "downloadSizeBytes": 3386688534,
   "defaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Summer",
   "shortcutName": "Echo VR Summer",
-  "gameFilesRepository": "heisthecat31/EchoRelay"
+  "halloweenSubtitle": "Halloween Lobby",
+  "halloweenTagline": "The 2018 halloween build, running on community servers.",
+  "halloweenDownloadUrl": "",
+  "halloweenSha256": "8F6B45355471C567E0905EED57BFB3139F80ED62AC319AEE16A515A91286C488",
+  "halloweenDownloadSizeBytes": 3213368330,
+  "halloweenDefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Halloween",
+  "halloweenShortcutName": "Echo VR Halloween"
 }

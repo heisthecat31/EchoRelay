@@ -19,17 +19,12 @@
 namespace SummerPatches
 {
 	/// <summary>
-	/// The PE header timestamp of the summer build's echovr.exe.
+	/// Checks whether the host process is one of the lobby builds we support (summer or halloween).
 	/// </summary>
-	const DWORD EXECUTABLE_TIMESTAMP = 0x5D388D3C;
+	BOOL IsLobbyBuild();
 
 	/// <summary>
-	/// Checks whether the host process is the summer build.
-	/// </summary>
-	BOOL IsSummerBuild();
-
-	/// <summary>
-	/// Applies the summer build patches for the current command line.
+	/// Applies the lobby build patches for the current command line. Does nothing on an unsupported build.
 	/// </summary>
 	VOID Initialize();
 }

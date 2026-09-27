@@ -25,9 +25,28 @@ namespace EchoRelay.Core.Game
         public const long VersionLock = 0x5AAD93959C4F7822;
 
         /// <summary>
+        /// The version lock the 2018 halloween lobby build (rad15_halloween, goldmaster 253636) sends. It speaks the same
+        /// lobby messages as the summer build, but its clients and servers can't play with the summer build's.
+        /// </summary>
+        public const long HalloweenVersionLock = unchecked((long)0xECC998A3B5CA42F2);
+
+        /// <summary>
+        /// Checks whether a version lock belongs to one of the lobby builds (summer or halloween) rather than the final build.
+        /// </summary>
+        public static bool IsLobbyVersionLock(long versionLock)
+        {
+            return versionLock == VersionLock || versionLock == HalloweenVersionLock;
+        }
+
+        /// <summary>
         /// The publisher/environment lock the summer build uses.
         /// </summary>
         public const string PublisherLock = "rad15_summer";
+
+        /// <summary>
+        /// The publisher lock halloween lobby build (rad15_halloween) clients log in with.
+        /// </summary>
+        public const string HalloweenPublisherLock = "rad15_halloween";
 
         /// <summary>
         /// The Oculus application id of Echo VR.
@@ -44,6 +63,11 @@ namespace EchoRelay.Core.Game
         public static readonly long GameTypeCombat = Symbol.Hash("echo_combat");
 
         public static readonly long LevelSummerLobby = Symbol.Hash("mpl_lobby_b2_summer");
+
+        /// <summary>
+        /// The halloween build's social lobby. It has no mpl_lobby_b2_summer; its data ships mpl_lobby_b2_spooky instead.
+        /// </summary>
+        public static readonly long LevelHalloweenLobby = Symbol.Hash("mpl_lobby_b2_spooky");
         public static readonly long LevelLobby = Symbol.Hash("mpl_lobby_b2");
         public static readonly long LevelArena = Symbol.Hash("mpl_arena_a");
         public static readonly long LevelCombatDyson = Symbol.Hash("mpl_combat_dyson");
@@ -52,12 +76,13 @@ namespace EchoRelay.Core.Game
         /// The level a summer game server should load when a matching request does not name one (level -1).
         /// Social lobbies go to the summer lobby, which is what this build is about.
         /// </summary>
-        public static long? DefaultLevelForGameType(long? gameType)
+        public static long? DefaultLevelForGameType(long? gameType, long versionLock = VersionLock)
         {
+            long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : LevelSummerLobby;
             if (gameType == null)
-                return LevelSummerLobby;
+                return lobby;
             if (gameType == GameTypeSocial || gameType == Symbol.Hash("social_2.0_private") || gameType == Symbol.Hash("social_2.0_npe"))
-                return LevelSummerLobby;
+                return lobby;
             if (gameType == GameTypeArena || gameType == Symbol.Hash("echo_arena_private"))
                 return LevelArena;
             if (gameType == GameTypeCombat || gameType == Symbol.Hash("echo_combat_private"))
@@ -93,6 +118,27 @@ namespace EchoRelay.Core.Game
             using StreamReader reader = new StreamReader(stream);
             return Newtonsoft.Json.Linq.JObject.Parse(reader.ReadToEnd());
         });
+
+        /// <summary>
+        /// A copy of the halloween build's own default server profile (its sourcedb/rad15/json/r14/defaultprofile_ro.json).
+        /// Same formats as summer's, but smaller, and with no "unlocks_combat". The halloween client rejects login connection
+        /// messages over 16 KiB, so its profiles are built from this rather than the summer default.
+        /// </summary>
+        public static Newtonsoft.Json.Linq.JObject HalloweenDefaultServerProfile => (Newtonsoft.Json.Linq.JObject)_halloweenDefaultServerProfile.Value.DeepClone();
+        private static readonly Lazy<Newtonsoft.Json.Linq.JObject> _halloweenDefaultServerProfile = new Lazy<Newtonsoft.Json.Linq.JObject>(() =>
+        {
+            using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("EchoRelay.Core.Resources.halloween_defaultprofile_ro.json");
+            if (stream == null)
+                return new Newtonsoft.Json.Linq.JObject();
+            using StreamReader reader = new StreamReader(stream);
+            return Newtonsoft.Json.Linq.JObject.Parse(reader.ReadToEnd());
+        });
+
+        /// <summary>
+        /// The largest message the halloween client accepts on its login connection (its TCP broadcaster rejects the peer,
+        /// disconnecting from the relay, beyond this).
+        /// </summary>
+        public const int HalloweenMaxMessageSize = 16384;
 
         /// <summary>
         /// Determines which build a given echovr.exe is, from its PE header timestamp.

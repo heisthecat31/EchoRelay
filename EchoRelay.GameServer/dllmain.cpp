@@ -80,8 +80,8 @@ EchoVR::IServerLib* ServerLib() {
 	//DebugBreak();
 #endif
 
-	// The summer lobby build (rad15_summer) has an older IServerLib interface and different engine addresses.
-	if (Summer::IsSummerBuild())
+	// The lobby builds (rad15_summer, rad15_halloween) have an older IServerLib interface and different engine addresses.
+	if (Summer::IsLobbyBuild())
 		return (EchoVR::IServerLib*)Summer::GetServerLib();
 
 	// If the server library hasn't been initialized, set it now.

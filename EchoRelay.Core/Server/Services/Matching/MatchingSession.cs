@@ -36,6 +36,12 @@ namespace EchoRelay.Core.Server.Services.Matching
         /// matched to summer game servers and only understands older message versions.
         /// </summary>
         public bool IsSummer { get; set; }
+
+        /// <summary>
+        /// The version lock a lobby build client (summer or halloween) sent with its request. Lobby build clients are only
+        /// matched to game servers registered with the same version lock.
+        /// </summary>
+        public long? VersionLock { get; set; }
         private MatchingSession(XPlatformId userId, Guid? lobbyId, Guid? channel, long? gameTypeSymbol, long? levelSymbol, LobbyType newSessionLobbyType, TeamIndex teamIndex, ERGameServerStartSession.SessionSettings sessionSettings)
         {
             UserId = userId;

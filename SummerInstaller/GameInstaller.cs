@@ -24,7 +24,7 @@ namespace SummerInstaller
     }
 
     /// <summary>
-    /// Downloads, verifies, extracts and configures the summer build.
+    /// Downloads, verifies, extracts and configures a lobby build (summer or halloween).
     /// </summary>
     public class GameInstaller
     {
@@ -44,7 +44,7 @@ namespace SummerInstaller
             {
                 Timeout = Timeout.InfiniteTimeSpan,
             };
-            Http.DefaultRequestHeaders.UserAgent.ParseAdd("EchoSummerInstaller/1.0");
+            Http.DefaultRequestHeaders.UserAgent.ParseAdd("EchoClassicLobbies/1.0");
         }
 
         public GameInstaller(InstallerSettings settings)
@@ -53,6 +53,27 @@ namespace SummerInstaller
         }
 
         public static bool IsInstalled(string folder) => File.Exists(Path.Combine(folder, GameExecutable));
+
+        /// <summary>
+        /// Identifies the build installed in a folder from echovr.exe's PE header timestamp.
+        /// </summary>
+        /// <returns>The installed build, or null if there is none (or it's a build this installer doesn't know).</returns>
+        public static GameBuild? DetectInstalledBuild(string folder, System.Collections.Generic.IEnumerable<GameBuild> builds)
+        {
+            try
+            {
+                using FileStream stream = File.OpenRead(Path.Combine(folder, GameExecutable));
+                using BinaryReader reader = new BinaryReader(stream);
+                stream.Position = 0x3C;
+                stream.Position = reader.ReadInt32() + 8; // PE signature (4) + machine (2) + section count (2)
+                uint timestamp = reader.ReadUInt32();
+                return builds.FirstOrDefault(b => b.ExecutableTimestamp == timestamp);
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         private static string DownloadFolder(string installFolder) => Path.Combine(installFolder, ".download");
         private static string PartialArchive(string installFolder) => Path.Combine(DownloadFolder(installFolder), "game.zip.part");
@@ -65,22 +86,20 @@ namespace SummerInstaller
         /// <summary>
         /// Runs the full install: download (resuming a partial one), verify, extract, write the config.
         /// </summary>
-        public async Task InstallAsync(string installFolder, string config, string displayName, string password, IProgress<InstallProgress> progress, CancellationToken cancel)
+        public async Task InstallAsync(GameBuild build, string installFolder, string config, string displayName, string password, IProgress<InstallProgress> progress, CancellationToken cancel)
         {
             Directory.CreateDirectory(installFolder);
             Directory.CreateDirectory(DownloadFolder(installFolder));
             string partial = PartialArchive(installFolder);
 
-            await DownloadAsync(partial, progress, cancel);
-            await Task.Run(() => Verify(partial, progress, cancel), cancel);
+            await DownloadAsync(build, partial, progress, cancel);
+            await Task.Run(() => Verify(build, partial, progress, cancel), cancel);
             await Task.Run(() => Extract(partial, installFolder, progress, cancel), cancel);
 
             progress.Report(new InstallProgress { Stage = InstallStage.Configuring, Detail = "Writing the game config" });
-            WriteConfig(installFolder, config, displayName, password);
-
-            // The game download can be older than the latest EchoRelay game files; bring them up to date.
-            progress.Report(new InstallProgress { Stage = InstallStage.Configuring, Detail = "Updating EchoRelay game files" });
-            await UpdateGameFilesAsync(installFolder, cancel);
+            // The game download carries the EchoRelay game files (dbgcore.dll, pnsradgameserver.dll) and sourcedb the build
+            // needs, so nothing else is downloaded.
+            WriteConfig(installFolder, config, displayName, password, build.PublisherLock);
 
             // The archive is no longer needed.
             try { Directory.Delete(DownloadFolder(installFolder), true); } catch { }
@@ -103,12 +122,12 @@ namespace SummerInstaller
             return url;
         }
 
-        private async Task DownloadAsync(string partial, IProgress<InstallProgress> progress, CancellationToken cancel)
+        private async Task DownloadAsync(GameBuild build, string partial, IProgress<InstallProgress> progress, CancellationToken cancel)
         {
-            if (string.IsNullOrWhiteSpace(_settings.DownloadUrl))
-                throw new InvalidOperationException("This installer has no download link set (Resources\\installer.json → downloadUrl).");
+            if (string.IsNullOrWhiteSpace(build.DownloadUrl))
+                throw new InvalidOperationException($"This installer has no download link for the {build.Name} yet (Resources\\installer.json → {(build.Id == "summer" ? "downloadUrl" : build.Id + "DownloadUrl")}).");
 
-            string url = ToDirectUrl(_settings.DownloadUrl.Trim());
+            string url = ToDirectUrl(build.DownloadUrl.Trim());
             progress.Report(new InstallProgress { Stage = InstallStage.Connecting, Detail = "Connecting…" });
 
             for (int attempt = 0; ; attempt++)
@@ -138,7 +157,7 @@ namespace SummerInstaller
                 }
 
                 bool resuming = response.StatusCode == HttpStatusCode.PartialContent && existing > 0;
-                long total = response.Content.Headers.ContentLength is long length ? length + (resuming ? existing : 0) : _settings.DownloadSizeBytes;
+                long total = response.Content.Headers.ContentLength is long length ? length + (resuming ? existing : 0) : build.DownloadSizeBytes;
                 long done = resuming ? existing : 0;
 
                 using Stream source = await response.Content.ReadAsStreamAsync();
@@ -204,9 +223,9 @@ namespace SummerInstaller
         #endregion
 
         #region Verify / extract / configure
-        private void Verify(string archive, IProgress<InstallProgress> progress, CancellationToken cancel)
+        private void Verify(GameBuild build, string archive, IProgress<InstallProgress> progress, CancellationToken cancel)
         {
-            if (string.IsNullOrWhiteSpace(_settings.Sha256))
+            if (string.IsNullOrWhiteSpace(build.Sha256))
                 return;
             using SHA256 sha = SHA256.Create();
             using FileStream stream = new FileStream(archive, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
@@ -222,7 +241,7 @@ namespace SummerInstaller
             }
             sha.TransformFinalBlock(buffer, 0, 0);
             string actual = BitConverter.ToString(sha.Hash).Replace("-", "");
-            if (!actual.Equals(_settings.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            if (!actual.Equals(build.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(archive);
                 throw new InvalidDataException("The download is corrupted (checksum mismatch). Press Install to download it again.");
@@ -289,6 +308,8 @@ namespace SummerInstaller
         /// The placeholder values EchoRelay puts in generated configs; never shown to the player as their name/password.
         /// </summary>
         private static readonly string[] PlaceholderValues = { "AccountName", "AccountPassword" };
+
+        private static readonly Regex PublisherLockPattern = new Regex(@"(""publisher_lock""\s*:\s*"")((?:[^""\\]|\\.)*)("")");
 
         private static readonly Regex LoginHostPattern = new Regex(@"(""loginservice_host""\s*:\s*"")((?:[^""\\]|\\.)*)("")");
 
@@ -407,12 +428,27 @@ namespace SummerInstaller
         }
 
         /// <summary>
-        /// Writes a config to &lt;install&gt;\_local\config.json with the player's display name and password in the login
-        /// URL, keeping a backup of a different existing one.
+        /// Sets a config's publisher_lock (added if missing), which tells EchoRelay which build is logging in.
         /// </summary>
-        public static void WriteConfig(string installFolder, string config, string displayName, string password)
+        public static string ApplyPublisherLock(string config, string publisherLock)
         {
-            config = ApplyCredentials(config, displayName, password);
+            if (PublisherLockPattern.IsMatch(config))
+                return PublisherLockPattern.Replace(config, m => m.Groups[1].Value + publisherLock + m.Groups[3].Value, 1);
+            int close = config.LastIndexOf('}');
+            if (close < 0)
+                return config;
+            string before = config.Substring(0, close).TrimEnd();
+            string separator = before.EndsWith("{") ? "" : ",";
+            return before + separator + "\n  \"publisher_lock\": \"" + publisherLock + "\"\n" + config.Substring(close);
+        }
+
+        /// <summary>
+        /// Writes a config to &lt;install&gt;\_local\config.json with the player's display name and password in the login
+        /// URL and the build's publisher_lock, keeping a backup of a different existing one.
+        /// </summary>
+        public static void WriteConfig(string installFolder, string config, string displayName, string password, string publisherLock)
+        {
+            config = ApplyPublisherLock(ApplyCredentials(config, displayName, password), publisherLock);
             string path = ConfigPath(installFolder);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             if (File.Exists(path) && File.ReadAllText(path) != config)
@@ -421,120 +457,13 @@ namespace SummerInstaller
         }
         #endregion
 
-        #region Game file updates
-        /// <summary>
-        /// Extracts a sourcedb zip's files (everything under sourcedb/) into the install folder, replacing existing ones.
-        /// </summary>
-        private static void ExtractSourceDb(byte[] zip, string installFolder)
-        {
-            string root = Path.GetFullPath(installFolder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            using ZipArchive archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read);
-            foreach (ZipArchiveEntry entry in archive.Entries)
-            {
-                string name = entry.FullName.Replace('\\', '/');
-                if (!name.StartsWith("sourcedb/", StringComparison.OrdinalIgnoreCase) || name.EndsWith("/"))
-                    continue;
-                string target = Path.GetFullPath(Path.Combine(installFolder, name.Replace('/', Path.DirectorySeparatorChar)));
-                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                    continue; // never write outside the install folder
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                using Stream source = entry.Open();
-                using FileStream destination = File.Create(target);
-                source.CopyTo(destination);
-            }
-        }
-
-        /// <summary>
-        /// The EchoRelay DLLs a release's SummerGameFiles zip carries, and where they go.
-        /// </summary>
-        private static readonly string[] GameFiles = { "bin/win7/dbgcore.dll", "bin/win7/pnsradgameserver.dll" };
-
-        private static string GameFilesVersionPath(string installFolder) => Path.Combine(installFolder, "bin", "win7", "echorelay_gamefiles.txt");
-
-        /// <summary>
-        /// Installs the latest release's EchoRelay game files (dbgcore.dll, pnsradgameserver.dll) from GitHub if they're newer
-        /// than the installed ones. The game download itself is only rebuilt occasionally, so fixes to these (e.g. parties and
-        /// friends) arrive this way. Failures (offline, rate limited, ...) are ignored: the installed files keep working.
-        /// </summary>
-        /// <returns>The release tag installed, or null if nothing changed.</returns>
-        public async Task<string?> UpdateGameFilesAsync(string installFolder, CancellationToken cancel)
-        {
-            if (string.IsNullOrWhiteSpace(_settings.GameFilesRepository) || !IsInstalled(installFolder))
-                return null;
-            try
-            {
-                using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-                timeout.CancelAfter(TimeSpan.FromSeconds(30));
-
-                // Find the latest release and its SummerGameFiles asset.
-                string api = $"https://api.github.com/repos/{_settings.GameFilesRepository.Trim()}/releases/latest";
-                using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, api);
-                request.Headers.Accept.ParseAdd("application/vnd.github+json");
-                using HttpResponseMessage response = await Http.SendAsync(request, timeout.Token);
-                if (!response.IsSuccessStatusCode)
-                    return null;
-                string json = await response.Content.ReadAsStringAsync();
-                string tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"").Groups[1].Value;
-                string asset = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+-SummerGameFiles\\.zip)\"").Groups[1].Value;
-                string sourceDbAsset = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/sourcedb\\.zip)\"").Groups[1].Value;
-                if (tag.Length == 0 || asset.Length == 0)
-                    return null;
-                string versionPath = GameFilesVersionPath(installFolder);
-                bool sourceDbMissing = sourceDbAsset.Length > 0 && !Directory.Exists(Path.Combine(installFolder, "sourcedb"));
-                if (File.Exists(versionPath) && File.ReadAllText(versionPath).Trim() == tag && !sourceDbMissing)
-                    return null;
-
-                // Game data the release carries separately (sourcedb: e.g. the balance files that make boosting work).
-                if (sourceDbAsset.Length > 0)
-                {
-                    using HttpResponseMessage sourceDbDownload = await Http.GetAsync(sourceDbAsset, timeout.Token);
-                    sourceDbDownload.EnsureSuccessStatusCode();
-                    byte[] sourceDbZip = await sourceDbDownload.Content.ReadAsByteArrayAsync();
-                    ExtractSourceDb(sourceDbZip, installFolder);
-                }
-
-                // Download and install the DLLs. A loaded DLL can't be overwritten but can be renamed, so move the old one aside.
-                using HttpResponseMessage download = await Http.GetAsync(asset, timeout.Token);
-                download.EnsureSuccessStatusCode();
-                byte[] zip = await download.Content.ReadAsByteArrayAsync();
-                using (ZipArchive archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read))
-                {
-                    foreach (string file in GameFiles)
-                    {
-                        ZipArchiveEntry? entry = archive.GetEntry(file);
-                        if (entry == null)
-                            continue;
-                        string target = Path.Combine(installFolder, file.Replace('/', Path.DirectorySeparatorChar));
-                        string temp = target + ".new";
-                        using (Stream source = entry.Open())
-                        using (FileStream destination = File.Create(temp))
-                            source.CopyTo(destination);
-                        if (File.Exists(target))
-                        {
-                            string old = target + ".old";
-                            try { File.Delete(old); } catch { }
-                            File.Move(target, old);
-                        }
-                        File.Move(temp, target);
-                    }
-                }
-                File.WriteAllText(versionPath, tag);
-                return tag;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-        #endregion
-
         /// <summary>
         /// Creates a desktop shortcut that starts the game from the install folder.
         /// </summary>
-        public void CreateDesktopShortcut(string installFolder)
+        public void CreateDesktopShortcut(string installFolder, GameBuild build)
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            string link = Path.Combine(desktop, _settings.ShortcutName + ".lnk");
+            string link = Path.Combine(desktop, build.ShortcutName + ".lnk");
             Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
             if (shellType == null)
                 return;
@@ -543,7 +472,7 @@ namespace SummerInstaller
             shortcut.TargetPath = Path.Combine(installFolder, GameExecutable);
             shortcut.WorkingDirectory = installFolder;
             shortcut.IconLocation = Path.Combine(installFolder, GameExecutable) + ",0";
-            shortcut.Description = _settings.Title + " " + _settings.Subtitle;
+            shortcut.Description = _settings.Title + " " + build.Name;
             shortcut.Save();
         }
 

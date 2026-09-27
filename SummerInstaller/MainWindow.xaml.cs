@@ -16,6 +16,11 @@ namespace SummerInstaller
         private readonly InstallerSettings _settings;
         private readonly GameInstaller _installer;
         private CancellationTokenSource? _cancel;
+
+        /// <summary>
+        /// The build being installed or played (summer or halloween). Follows the build found in an existing install.
+        /// </summary>
+        private GameBuild _build;
         private double _fraction;
         private bool _installing;
 
@@ -32,29 +37,32 @@ namespace SummerInstaller
         {
             InitializeComponent();
             _settings = InstallerSettings.Load();
-            // Optional overrides: --url <download link> (e.g. a mirror) and --folder <install folder>.
+            _build = _settings.Summer;
+            // Optional overrides: --build summer|halloween, --url <download link> (e.g. a mirror, for the chosen build)
+            // and --folder <install folder>.
             string[] args = Environment.GetCommandLineArgs();
-            string? folderOverride = null;
+            string? folderOverride = null, urlOverride = null;
             for (int i = 1; i < args.Length - 1; i++)
             {
                 if (args[i] == "--url")
-                    _settings.DownloadUrl = args[i + 1];
+                    urlOverride = args[i + 1];
                 else if (args[i] == "--folder")
                     folderOverride = args[i + 1];
+                else if (args[i] == "--build")
+                    _build = _settings.FindBuild(args[i + 1].ToLowerInvariant()) ?? _build;
             }
+            if (urlOverride != null)
+                _build.DownloadUrl = urlOverride;
             _installer = new GameInstaller(_settings);
 
             TitleText.Text = _settings.Title.ToUpperInvariant();
-            SubtitleText.Text = _settings.Subtitle;
-            TaglineText.Text = _settings.Tagline;
-            TaglineText.Visibility = string.IsNullOrEmpty(_settings.Tagline) ? Visibility.Collapsed : Visibility.Visible;
-            Title = $"{_settings.Title} {_settings.Subtitle}";
+            ShowBuild();
 
             SetConfig(_settings.GameConfig, adoptCredentials: true);
             if (string.IsNullOrEmpty(NameBox.Text))
                 NameBox.Text = Environment.UserName.Length > 20 ? Environment.UserName.Substring(0, 20) : Environment.UserName;
 
-            FolderBox.Text = folderOverride ?? _settings.ExpandedDefaultInstallFolder;
+            FolderBox.Text = folderOverride ?? _build.ExpandedDefaultInstallFolder;
             BuildSteps();
             StartLogoSpin();
             RefreshSetupState();
@@ -62,6 +70,41 @@ namespace SummerInstaller
 
         #region Setup view
         private string InstallFolder => FolderBox.Text.Trim();
+
+        #region Build
+        /// <summary>
+        /// Shows the current build: the switch, the header and the done view's hint.
+        /// </summary>
+        private void ShowBuild()
+        {
+            SubtitleText.Text = _settings.AppName;
+            TaglineText.Text = _build.Tagline;
+            TaglineText.Visibility = string.IsNullOrEmpty(_build.Tagline) ? Visibility.Collapsed : Visibility.Visible;
+            Title = $"{_settings.Title} {_settings.AppName}";
+            DoneHint.Text = $"Start the Oculus app and connect your headset before pressing Play. In the game, press Play on the menu to join the {_build.LobbyName}.";
+            RadioButton option = _build.Id == "halloween" ? HalloweenBuildOption : SummerBuildOption;
+            if (option.IsChecked != true)
+                option.IsChecked = true;
+        }
+
+        private void BuildOption_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded || sender is not RadioButton { Tag: string id } || _settings.FindBuild(id) is not GameBuild build || build == _build)
+                return;
+            // Moving between the builds' default folders follows the switch; a folder the player chose stays.
+            string folder = InstallFolder;
+            bool defaultFolder = folder.Length == 0 || _settings.Builds.Exists(b => string.Equals(folder, b.ExpandedDefaultInstallFolder, StringComparison.OrdinalIgnoreCase));
+            _build = build;
+            ShowBuild();
+            if (defaultFolder)
+                FolderBox.Text = build.ExpandedDefaultInstallFolder; // refreshes the setup state
+            else
+                RefreshSetupState();
+            // A folder holding the other build switches back to it, so explain why.
+            if (_build != build)
+                ShowBanner($"This folder has the {_build.Name} installed. Choose another folder to install the {build.Name}.", info: true);
+        }
+        #endregion
 
         private void RefreshSetupState()
         {
@@ -82,10 +125,17 @@ namespace SummerInstaller
 
             if (installed)
             {
+                // Play whichever build is installed here.
+                GameBuild? installedBuild = GameInstaller.DetectInstalledBuild(folder, _settings.Builds);
+                if (installedBuild != null && installedBuild != _build)
+                {
+                    _build = installedBuild;
+                    ShowBuild();
+                }
                 PrimaryAction.Content = "Play";
                 SecondaryAction.Content = "Reinstall";
                 SecondaryAction.Visibility = Visibility.Visible;
-                ShowBanner("Echo VR is already installed here. Play it, or reinstall to download it again.", info: true);
+                ShowBanner($"The {(installedBuild ?? _build).Name} is already installed here. Play it, or reinstall to download it again.", info: true);
             }
             else
             {
@@ -114,10 +164,10 @@ namespace SummerInstaller
             {
                 DriveInfo drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!);
                 string free = GameInstaller.FormatBytes(drive.AvailableFreeSpace) + $" free on {drive.Name.TrimEnd('\\')}";
-                if (_settings.DownloadSizeBytes > 0)
+                if (_build.DownloadSizeBytes > 0)
                 {
                     // The archive and the extracted game exist side by side until the install finishes.
-                    long needed = _settings.DownloadSizeBytes * 2;
+                    long needed = _build.DownloadSizeBytes * 2;
                     SpaceText.Text = $"Needs about {GameInstaller.FormatBytes(needed)} while installing  ·  {free}";
                     SpaceText.Foreground = drive.AvailableFreeSpace < needed ? (Brush)FindResource("Danger") : (Brush)FindResource("TextFaint");
                 }
@@ -157,7 +207,7 @@ namespace SummerInstaller
             string chosen = dialog.SelectedPath;
             bool empty = !Directory.Exists(chosen) || Directory.GetFileSystemEntries(chosen).Length == 0;
             if (!GameInstaller.IsInstalled(chosen) && !GameInstaller.HasPartialDownload(chosen) && !empty)
-                chosen = System.IO.Path.Combine(chosen, "Echo VR Summer");
+                chosen = System.IO.Path.Combine(chosen, Path.GetFileName(_build.ExpandedDefaultInstallFolder.TrimEnd('\\')));
             FolderBox.Text = chosen;
         }
 
@@ -170,7 +220,7 @@ namespace SummerInstaller
                 // Keep the config current (a changed name, password or server) before playing.
                 try
                 {
-                    GameInstaller.WriteConfig(InstallFolder, _config, DisplayName, Password);
+                    GameInstaller.WriteConfig(InstallFolder, _config, DisplayName, Password, _build.PublisherLock);
                 }
                 catch (Exception ex)
                 {
@@ -252,8 +302,9 @@ namespace SummerInstaller
                 if (password != null)
                     SetPassword(password);
             }
-            // Credentials don't make a config custom; only the rest of it does.
-            bool isDefault = Normalize(GameInstaller.ApplyCredentials(config, "", "")) == Normalize(GameInstaller.ApplyCredentials(_settings.GameConfig, "", ""));
+            // Credentials and the build's publisher_lock don't make a config custom; only the rest of it does.
+            bool isDefault = Normalize(GameInstaller.ApplyPublisherLock(GameInstaller.ApplyCredentials(config, "", ""), "")) ==
+                Normalize(GameInstaller.ApplyPublisherLock(GameInstaller.ApplyCredentials(_settings.GameConfig, "", ""), ""));
             ConfigBadgeText.Text = isDefault ? "Default" : "Custom";
             ConfigBadge.Background = new SolidColorBrush(isDefault ? Color.FromArgb(0x22, 0x3F, 0xD0, 0xFF) : Color.FromArgb(0x26, 0xFF, 0x8A, 0x3D));
             ConfigBadgeText.Foreground = (Brush)FindResource(isDefault ? "Blue" : "Orange");
@@ -338,6 +389,7 @@ namespace SummerInstaller
         private async Task RunInstallAsync()
         {
             string folder = InstallFolder;
+            GameBuild build = _build;
             string config = _config, name = DisplayName, password = Password;
             _cancel = new CancellationTokenSource();
             _installing = true;
@@ -354,10 +406,10 @@ namespace SummerInstaller
 
             try
             {
-                await _installer.InstallAsync(folder, config, name, password, progress, _cancel.Token);
+                await _installer.InstallAsync(build, folder, config, name, password, progress, _cancel.Token);
                 if (ShortcutCheck.IsChecked == true)
                 {
-                    try { _installer.CreateDesktopShortcut(folder); } catch { }
+                    try { _installer.CreateDesktopShortcut(folder, build); } catch { }
                 }
                 DonePath.Text = folder;
                 ShowView(DoneView);
@@ -521,22 +573,15 @@ namespace SummerInstaller
         #endregion
 
         #region Done view / window
-        private async void LaunchGame()
+        private void LaunchGame()
         {
             try
             {
-                // Pick up newer EchoRelay game files (dbgcore.dll etc.) before starting; quietly skipped if offline.
-                IsEnabled = false;
-                ShowBanner("Checking for game file updates…", info: true);
-                string? updated = await _installer.UpdateGameFilesAsync(InstallFolder, CancellationToken.None);
-                if (updated != null)
-                    ShowBanner($"Updated EchoRelay game files to {updated}.", info: true);
                 GameInstaller.Launch(InstallFolder);
                 Close();
             }
             catch (Exception ex)
             {
-                IsEnabled = true;
                 ShowBanner("Couldn't start the game: " + ex.Message);
             }
         }
