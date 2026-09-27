@@ -101,7 +101,10 @@ namespace EchoRelay.App.Forms.Dialogs
                 if (_updatingGameVersion || cmbGameVersion.SelectedItem is not string version)
                     return;
                 if (_gameExecutables.TryGetValue(version, out string? path))
+                {
                     txtExecutablePath.Text = path;
+                    SaveGameVersions();
+                }
             };
             btnForgetGameVersion.Click += (_, _) =>
             {
@@ -111,7 +114,28 @@ namespace EchoRelay.App.Forms.Dialogs
                 RefreshGameVersions();
                 if (cmbGameVersion.Items.Count > 0)
                     cmbGameVersion.SelectedIndex = 0;
+                else
+                    SaveGameVersions();
             };
+        }
+
+        /// <summary>
+        /// Saves the game executable and the version list straight away, so a version switch applies (and survives)
+        /// without pressing Save Settings. The game executable is only used when launching, so no restart is needed.
+        /// </summary>
+        private void SaveGameVersions()
+        {
+            if (File.Exists(txtExecutablePath.Text))
+                Settings.GameExecutableFilePath = txtExecutablePath.Text;
+            Settings.GameExecutables = new Dictionary<string, string>(_gameExecutables);
+            try
+            {
+                Settings.Save(SettingsFilePath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Couldn't save the game version: " + ex.Message, "Echo Relay: Settings");
+            }
         }
 
         /// <summary>
@@ -158,6 +182,7 @@ namespace EchoRelay.App.Forms.Dialogs
                 txtExecutablePath.Text = openFileDialog.FileName;
                 RememberGameExecutable(openFileDialog.FileName);
                 RefreshGameVersions();
+                SaveGameVersions();
             }
         }
 

@@ -60,7 +60,19 @@ namespace EchoRelay
             SettingsFilePath = Path.Join(Environment.CurrentDirectory, "settings.json");
 
             // Try to load our application settings.
-            AppSettings? settings = AppSettings.Load(SettingsFilePath);
+            AppSettings? settings;
+            try
+            {
+                settings = AppSettings.Load(SettingsFilePath);
+            }
+            catch (Exception ex)
+            {
+                // Don't silently fail to open (or overwrite a file the user can still fix): say what's wrong.
+                MessageBox.Show($"The settings file couldn't be read:\n{SettingsFilePath}\n\n{ex.Message}\n\n" +
+                    "Fix the file (paths need double backslashes, e.g. \"C:\\\\Games\\\\echovr.exe\"), or delete it to set up again.", "Echo Relay: Settings");
+                Environment.Exit(1);
+                return;
+            }
 
             // Validate the settings.
             if (settings == null || !settings.Validate())

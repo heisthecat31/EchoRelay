@@ -171,8 +171,27 @@ namespace EchoRelay.App.Settings
             string jsonContents = File.ReadAllText(filePath);
 
             // Deserialize our settings from the file contents and return it.
-            AppSettings? settings = JsonConvert.DeserializeObject<AppSettings>(jsonContents);
-            return settings;
+            try
+            {
+                return JsonConvert.DeserializeObject<AppSettings>(jsonContents);
+            }
+            catch (JsonException)
+            {
+                // A hand-edited path often has single backslashes ("C:\Users\..."), which JSON reads as escapes. Double
+                // any backslash that doesn't start a valid escape and try again; if that fails too, report the original error.
+                // Escapes are read in pairs, so an already doubled backslash stays as it is. \b and \f are taken as path
+                // characters ("\bin\win7"), since settings never need those control characters.
+                string repaired = System.Text.RegularExpressions.Regex.Replace(jsonContents, @"\\(u[0-9A-Fa-f]{4}|.)",
+                    m => m.Groups[1].Value.Length == 5 || "\"\\/nrt".Contains(m.Groups[1].Value) ? m.Value : @"\\" + m.Groups[1].Value);
+                try
+                {
+                    return JsonConvert.DeserializeObject<AppSettings>(repaired);
+                }
+                catch (JsonException)
+                {
+                }
+                throw;
+            }
         }
 
         /// <summary>
