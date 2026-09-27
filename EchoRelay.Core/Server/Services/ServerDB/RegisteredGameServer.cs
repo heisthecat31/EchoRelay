@@ -465,7 +465,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     await WaitForSessionLoaded();
                     await Peer.Send(sessionSuccessv4);
                     // Christmas clients take v3 (the game server plugin converts v4 itself).
-                    if (VersionLock == SummerBuild.ChristmasVersionLock)
+                    if (SummerBuild.IsChristmasVersionLock(VersionLock))
                         await matchingPeer.Send(new LobbySessionSuccessv3(sessionSuccessv4));
                     else
                         await matchingPeer.Send(sessionSuccessv4);

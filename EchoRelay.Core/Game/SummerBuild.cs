@@ -38,11 +38,26 @@ namespace EchoRelay.Core.Game
         public const long ChristmasVersionLock = unchecked((long)0xDA2FCE47C3B8B9CC);
 
         /// <summary>
+        /// The christmas build derives its version lock from the publisher_lock in _local\config.json. The lock above is what
+        /// it sends with "rad15_xmas"; this is what it sends with "rad15_live" (the distributed install's config).
+        /// Clients only match to game servers with the exact same lock.
+        /// </summary>
+        public const long ChristmasLiveVersionLock = unchecked((long)0xF178DD22E259B1C3);
+
+        /// <summary>
+        /// Checks whether a version lock belongs to the christmas build (under any publisher lock).
+        /// </summary>
+        public static bool IsChristmasVersionLock(long? versionLock)
+        {
+            return versionLock == ChristmasVersionLock || versionLock == ChristmasLiveVersionLock;
+        }
+
+        /// <summary>
         /// Checks whether a version lock belongs to one of the lobby builds (summer, halloween or christmas) rather than the final build.
         /// </summary>
         public static bool IsLobbyVersionLock(long versionLock)
         {
-            return versionLock == VersionLock || versionLock == HalloweenVersionLock || versionLock == ChristmasVersionLock;
+            return versionLock == VersionLock || versionLock == HalloweenVersionLock || IsChristmasVersionLock(versionLock);
         }
 
         /// <summary>
@@ -115,7 +130,7 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static long? DefaultLevelForGameType(long? gameType, long versionLock = VersionLock)
         {
-            if (versionLock == ChristmasVersionLock)
+            if (IsChristmasVersionLock(versionLock))
             {
                 if (gameType == GameTypeArenaChristmas || gameType == GameTypeArena)
                     return LevelArena;

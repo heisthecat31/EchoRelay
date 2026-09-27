@@ -1,7 +1,8 @@
-#define _CRT_RAND_S
+﻿#define _CRT_RAND_S
 #include <stdlib.h>
 #include "xmaspatches.h"
 #include <winternl.h>
+#include <dxgi.h>
 #include <cstdio>
 #include <cstdarg>
 #include <cwchar>
@@ -39,11 +40,28 @@ namespace XmasPatches
 
 	/// <summary>
 	/// -server: start-up flag 4 makes NetGame create the server lobby instead of the client lobby, but it also makes the game
-	/// use the pnsdemo platform provider instead of pnsovr (which crashes). Keep pnsovr, which logs in through EchoRelay.
+	/// load the pnsdemo platform provider (not shipped) instead of pnsovr. Servers use only the RAD provider (EchoRelay), like
+	/// the halloween build's: pnsovr needs the Oculus platform runtime, which a plain server machine doesn't have. The
+	/// dedicated branch's pnsdemo load becomes 'xor esi, esi; xor r15d, r15d; jmp' to the pnsrad load.
 	/// </summary>
-	static const BytePatch SERVER_KEEP_PNSOVR = {
-		"keep the Oculus platform provider on the server (je -> nop)", 0x97E54,
-		{ 0x0F, 0x84, 0x61, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 };
+	static const BytePatch SERVER_RAD_ONLY = {
+		"create only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped, and no Oculus)", 0x97FBB,
+		{ 0x45, 0x33, 0xC0, 0x48, 0x8D, 0x15, 0x43, 0x44, 0xAC, 0x00 }, { 0x31, 0xF6, 0x45, 0x31, 0xFF, 0xE9, 0x31, 0x00, 0x00, 0x00 }, 10 };
+
+	/// <summary>
+	/// -server: NetGame takes the platform (r15) and social (rsi) providers besides the RAD one (r13); give it the RAD provider
+	/// for all three (mov r9, rsi; mov r8, r15 -> mov r9, r13; mov r8, r13). rsi is cleared right after, r15 isn't used again.
+	/// </summary>
+	static const BytePatch SERVER_NETGAME_RAD = {
+		"give the dedicated server's NetGame the RAD provider in place of the Oculus/demo ones (r8, r9 <- r13)", 0x98097,
+		{ 0x4C, 0x8B, 0xCE, 0x4D, 0x8B, 0xC7 }, { 0x4D, 0x8B, 0xCD, 0x4D, 0x8B, 0xC5 }, 6 };
+
+	/// <summary>
+	/// -server: never start an Oculus VR session (as -novr does): a server machine has no headset or Oculus runtime, and the
+	/// session failure (-3001) is fatal. Always take the branch that sets the -novr option flag.
+	/// </summary>
+	static const BytePatch SERVER_NO_VR = {
+		"skip Oculus/VR initialization, as -novr does (je -> nop)", 0x9A356, { 0x74, 0x11 }, { 0x90, 0x90 }, 2 };
 
 	/// <summary>
 	/// -server: the start-up code also sets start-up flag 1 when it picks multiplayer (Echo Arena rather than Lone Echo);
@@ -66,6 +84,20 @@ namespace XmasPatches
 	static const BytePatch SERVER_PACKAGE = {
 		"load the client data package (r14netclient) in server mode, since r14netserver is not shipped", 0x9501C,
 		{ 0x48, 0x8D, 0x15, 0xCD, 0x71, 0xAC, 0x00 }, { 0x48, 0x8D, 0x15, 0xBD, 0x71, 0xAC, 0x00 }, 7 };
+
+	/// <summary>
+	/// -server: the renderer's adapter list skips the Microsoft Basic Render Driver (vendor 0x1414, device 0x8C), so on a
+	/// machine without a GPU it finds none ("No valid DXGI adapters found!"). Keep it: a device on it is WARP, Windows'
+	/// software renderer, which is plenty for a server that draws nothing. A machine with a GPU still lists that first.
+	/// </summary>
+	static const BytePatch SERVER_BASIC_RENDER_ADAPTER = {
+		"keep the Microsoft Basic Render Driver adapter, so a server without a GPU renders with WARP (je -> nop)", 0x10D107,
+		{ 0x74, 0x40 }, { 0x90, 0x90 }, 2 };
+
+	/// <summary>
+	/// The renderer's D3D11CreateDevice import thunk (jmp qword ptr [rip+x]); its only caller creates the game's device.
+	/// </summary>
+	static const DWORD D3D11_CREATE_DEVICE_THUNK = 0x8C6224;
 
 	// ----------------------------------------------------------------------------------------------------------------
 	// pnsovr.dll (the Oculus platform provider)
@@ -510,6 +542,175 @@ namespace XmasPatches
 	// -headless
 	// ----------------------------------------------------------------------------------------------------------------
 
+	// ----------------------------------------------------------------------------------------------------------------
+	// Software rendering (WARP) for servers without a GPU
+	// ----------------------------------------------------------------------------------------------------------------
+
+	typedef HRESULT(WINAPI* D3D11CreateDeviceFunc)(VOID* adapter, INT driverType, HMODULE software, UINT flags,
+		const INT* featureLevels, UINT featureLevelCount, UINT sdkVersion, VOID** device, INT* featureLevel, VOID** context);
+	static const INT D3D_DRIVER_TYPE_WARP_ = 5;
+	static const UINT D3D11_CREATE_DEVICE_DEBUG_ = 0x2;
+	static BOOL g_forceWarp = FALSE;
+
+	static VOID STDMETHODCALLTYPE SkipRenderCommand() {}
+
+	/// <summary>
+	/// ID3D11DeviceContext::GetData: every query is done at once. The first dword is 1 and the rest 0 (event: TRUE,
+	/// timestamp: 1, disjoint: frequency 1 and not disjoint, occlusion: 1 sample), so nothing waits on the device.
+	/// </summary>
+	static HRESULT STDMETHODCALLTYPE SkipGetData(VOID*, VOID*, VOID* data, UINT dataSize, UINT)
+	{
+		if (data != NULL && dataSize > 0)
+		{
+			memset(data, 0, dataSize);
+			if (dataSize >= 4)
+				*(UINT32*)data = 1;
+			else
+				*(BYTE*)data = 1;
+		}
+		return S_OK;
+	}
+
+	/// <summary>
+	/// A server draws nothing anyone sees, but the build renders every frame anyway, and in software (WARP) that takes most
+	/// of each tick. Turn the immediate context's drawing, clearing and copying into no-ops (ID3D11DeviceContext vtable
+	/// indices; all return void). State setting, Map and queries still work, so the game runs as before.
+	/// </summary>
+	static VOID SkipRendering(VOID* context)
+	{
+		static const INT SKIPPED[] = {
+			12, 13, 20, 21, 38, 39, 40, // DrawIndexed, Draw, DrawIndexedInstanced, DrawInstanced, DrawAuto, Draw*Indirect
+			41, 42,                     // Dispatch, DispatchIndirect
+			46, 47, 48, 57,             // CopySubresourceRegion, CopyResource, UpdateSubresource, ResolveSubresource
+			50, 51, 52, 53, 54,         // Clear RTV/UAV uint/UAV float/DSV, GenerateMips
+			58,                         // ExecuteCommandList (deferred contexts' recorded work)
+			27, 28, 111,                // Begin, End (queries), Flush
+		};
+		VOID** vtable = *(VOID***)context;
+		auto replace = [vtable](INT index, VOID* function)
+		{
+			DWORD oldProtect;
+			if (VirtualProtect(&vtable[index], sizeof(VOID*), PAGE_READWRITE, &oldProtect))
+			{
+				vtable[index] = function;
+				VirtualProtect(&vtable[index], sizeof(VOID*), oldProtect, &oldProtect);
+			}
+		};
+		for (INT index : SKIPPED)
+			replace(index, (VOID*)&SkipRenderCommand);
+		replace(29, (VOID*)&SkipGetData); // GetData
+		Log("Server: skipping all drawing (the game still runs; nothing is rendered)");
+	}
+
+	static HRESULT STDMETHODCALLTYPE SkipPresent(VOID*, UINT, UINT) { return S_OK; }
+	static HRESULT STDMETHODCALLTYPE SkipPresent1(VOID*, UINT, UINT, const VOID*) { return S_OK; }
+
+	/// <summary>
+	/// Presenting copies the whole back buffer to the (hidden) window every frame, which WARP does on the CPU with a pool of
+	/// worker threads. Make IDXGISwapChain::Present / IDXGISwapChain1::Present1 no-ops. All of dxgi's swap chains share one
+	/// vtable, so it is taken from a throwaway swap chain on a hidden window, made from the game's own device.
+	/// </summary>
+	static VOID SkipPresenting(IUnknown* device)
+	{
+		IDXGIDevice* dxgiDevice = NULL;
+		IDXGIAdapter* adapter = NULL;
+		IDXGIFactory* factory = NULL;
+		IDXGISwapChain* swapChain = NULL;
+		HWND window = CreateWindowExA(0, "STATIC", "", WS_POPUP, 0, 0, 64, 64, NULL, NULL, NULL, NULL);
+		if (window != NULL && SUCCEEDED(device->QueryInterface(__uuidof(IDXGIDevice), (VOID**)&dxgiDevice))
+			&& SUCCEEDED(dxgiDevice->GetAdapter(&adapter)) && SUCCEEDED(adapter->GetParent(__uuidof(IDXGIFactory), (VOID**)&factory)))
+		{
+			DXGI_SWAP_CHAIN_DESC desc = {};
+			desc.BufferDesc.Width = 64;
+			desc.BufferDesc.Height = 64;
+			desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.SampleDesc.Count = 1;
+			desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+			desc.BufferCount = 1;
+			desc.OutputWindow = window;
+			desc.Windowed = TRUE;
+			if (SUCCEEDED(factory->CreateSwapChain(device, &desc, &swapChain)))
+			{
+				VOID** vtable = *(VOID***)swapChain;
+				DWORD oldProtect;
+				if (VirtualProtect(&vtable[8], sizeof(VOID*), PAGE_READWRITE, &oldProtect)) // Present
+				{
+					vtable[8] = (VOID*)&SkipPresent;
+					VirtualProtect(&vtable[8], sizeof(VOID*), oldProtect, &oldProtect);
+				}
+				if (VirtualProtect(&vtable[22], sizeof(VOID*), PAGE_READWRITE, &oldProtect)) // Present1
+				{
+					vtable[22] = (VOID*)&SkipPresent1;
+					VirtualProtect(&vtable[22], sizeof(VOID*), oldProtect, &oldProtect);
+				}
+				Log("Server: skipping Present (nothing is copied to the window)");
+			}
+			else
+				Log("FAILED (no swap chain to take Present from): skip presenting");
+		}
+		if (swapChain) swapChain->Release();
+		if (factory) factory->Release();
+		if (adapter) adapter->Release();
+		if (dxgiDevice) dxgiDevice->Release();
+		if (window) DestroyWindow(window);
+	}
+
+	/// <summary>
+	/// The game's D3D11CreateDevice. Tries the game's own request first (unless -warp), then WARP, which needs no GPU.
+	/// </summary>
+	static HRESULT WINAPI D3D11CreateDeviceHook(VOID* adapter, INT driverType, HMODULE software, UINT flags,
+		const INT* featureLevels, UINT featureLevelCount, UINT sdkVersion, VOID** device, INT* featureLevel, VOID** context)
+	{
+		D3D11CreateDeviceFunc create = (D3D11CreateDeviceFunc)GetProcAddress(LoadLibraryA("d3d11.dll"), "D3D11CreateDevice");
+		if (create == NULL)
+			return E_FAIL;
+		HRESULT result = E_FAIL;
+		if (!g_forceWarp)
+		{
+			result = create(adapter, driverType, software, flags, featureLevels, featureLevelCount, sdkVersion, device, featureLevel, context);
+			if (FAILED(result))
+				Log("D3D11CreateDevice failed (0x%08lX), retrying with WARP (software rendering)", (unsigned long)result);
+		}
+		if (g_forceWarp || FAILED(result))
+		{
+			result = create(NULL, D3D_DRIVER_TYPE_WARP_, NULL, flags & ~D3D11_CREATE_DEVICE_DEBUG_, featureLevels, featureLevelCount,
+				sdkVersion, device, featureLevel, context);
+			Log("D3D11CreateDevice with WARP (software rendering): 0x%08lX", (unsigned long)result);
+		}
+		if (SUCCEEDED(result) && context != NULL && *context != NULL)
+			SkipRendering(*context);
+		if (SUCCEEDED(result) && device != NULL && *device != NULL)
+			SkipPresenting((IUnknown*)*device);
+		return result;
+	}
+
+	/// <summary>
+	/// Sends the renderer's D3D11CreateDevice thunk to D3D11CreateDeviceHook (jmp rel32 to an absolute jump near the exe).
+	/// </summary>
+	static VOID HookCreateDevice(BYTE* exe)
+	{
+		BYTE* thunk = exe + D3D11_CREATE_DEVICE_THUNK;
+		if (thunk[0] != 0xFF || thunk[1] != 0x25)
+		{
+			Log("SKIPPED (unexpected bytes at %p): fall back to WARP when Direct3D 11 device creation fails", thunk);
+			return;
+		}
+		BYTE* stub = AllocateNear(exe, 16);
+		if (stub == NULL)
+		{
+			Log("FAILED (no memory near the exe): fall back to WARP when Direct3D 11 device creation fails");
+			return;
+		}
+		stub[0] = 0xFF; stub[1] = 0x25; memset(stub + 2, 0, 4); // jmp qword ptr [rip+0]
+		UINT64 target = (UINT64)&D3D11CreateDeviceHook;
+		memcpy(stub + 6, &target, 8);
+		BYTE jump[6] = { 0xE9, 0, 0, 0, 0, 0x90 };
+		INT32 rel = (INT32)((INT64)stub - (INT64)(thunk + 5));
+		memcpy(jump + 1, &rel, 4);
+		if (WriteCode(thunk, jump, sizeof(jump)))
+			Log("Patched: %s Direct3D 11 device", g_forceWarp ? "use WARP (software rendering, -warp) for the" : "fall back to WARP (software rendering) if the GPU can't create the");
+	}
+
 	/// <summary>
 	/// Keeps this process's windows hidden. The christmas build has no -headless (it always creates its renderer and
 	/// window), so -headless runs it as -novr with its window hidden and audio off.
@@ -554,8 +755,15 @@ namespace XmasPatches
 			Log("Dedicated server mode (-server)");
 			ApplyPatch(exe, SERVER_FLAGS);
 			ApplyPatch(exe, SERVER_NO_MENU);
-			ApplyPatch(exe, SERVER_KEEP_PNSOVR);
+			ApplyPatch(exe, SERVER_RAD_ONLY);
+			ApplyPatch(exe, SERVER_NETGAME_RAD);
+			ApplyPatch(exe, SERVER_NO_VR);
 			ApplyPatch(exe, SERVER_PACKAGE);
+			// Servers often have no GPU. -warp: always render in software.
+			g_forceWarp = ReplaceFlag(GetCommandLineW(), L"-warp", L"     ");
+			ReplaceFlag(GetCommandLineA(), "-warp", "     ");
+			ApplyPatch(exe, SERVER_BASIC_RENDER_ADAPTER);
+			HookCreateDevice(exe);
 		}
 		RedirectApiHost((BYTE*)GetModuleHandleA(NULL));
 		g_userId = GetInstallUserId(server);

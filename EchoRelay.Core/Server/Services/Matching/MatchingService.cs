@@ -517,7 +517,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             Guid channel = matchingSession.Channel ?? matchingSession.LobbyId ?? new Guid();
 
             // Halloween and christmas clients have no v3 (their newest is v2).
-            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock || matchingSession.VersionLock == SummerBuild.ChristmasVersionLock)
+            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock || SummerBuild.IsChristmasVersionLock(matchingSession.VersionLock))
             {
                 await peer.Send(new LobbySessionFailurev2(channel, errorCode));
                 return;

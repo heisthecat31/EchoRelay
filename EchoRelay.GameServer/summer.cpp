@@ -744,6 +744,23 @@ namespace Summer
 		if (port == 0)
 			port = 6792;
 
+		// The christmas build passes the same server id on every server, and EchoRelay keys game servers by it, so a second
+		// server would replace the first. Give each server process its own id (kept for re-registrations).
+		if (g_build->executableTimestamp == 0x5A39494F)
+		{
+			static UINT64 processId = 0;
+			if (processId == 0)
+			{
+				LARGE_INTEGER counter;
+				QueryPerformanceCounter(&counter);
+				UINT64 z = ((UINT64)GetCurrentProcessId() << 32) ^ (UINT64)counter.QuadPart;
+				z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+				z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+				processId = (z ^ (z >> 31)) | 1;
+			}
+			serverId ^= (INT64)processId;
+		}
+
 		// ERGameServerRegistrationRequest: u64 server id | u32 internal ip (network order) | u16 port | u16 pad | i64 region | i64 version lock
 		std::string msg(32, '\0');
 		memcpy(&msg[0], &serverId, 8);
