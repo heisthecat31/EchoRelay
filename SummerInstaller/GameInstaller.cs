@@ -128,12 +128,47 @@ namespace SummerInstaller
             return url;
         }
 
+        /// <summary>
+        /// A download link that can't serve the file right now (a web page instead of the file, or an HTTP error), so the
+        /// next mirror should be tried.
+        /// </summary>
+        private class DownloadSourceException : Exception
+        {
+            public DownloadSourceException(string message, Exception? inner = null) : base(message, inner) { }
+        }
+
         private async Task DownloadAsync(GameBuild build, string partial, IProgress<InstallProgress> progress, CancellationToken cancel)
         {
             if (string.IsNullOrWhiteSpace(build.DownloadUrl))
                 throw new InvalidOperationException($"This installer has no download link for the {build.Name} yet (Resources\\installer.json → {(build.Id == "summer" ? "downloadUrl" : build.Id + "DownloadUrl")}).");
 
-            string url = ToDirectUrl(build.DownloadUrl.Trim());
+            // The main link, then any mirrors. All serve the same archive, so a partial download resumes on the next one
+            // (the checksum is verified afterwards either way).
+            string[] sources = new[] { build.DownloadUrl }.Concat(build.DownloadMirrors).Select(u => u.Trim()).Where(u => u.Length > 0).Distinct().ToArray();
+            for (int i = 0; ; i++)
+            {
+                try
+                {
+                    await DownloadFromAsync(build, ToDirectUrl(sources[i]), partial, progress, cancel);
+                    return;
+                }
+                catch (DownloadSourceException) when (i + 1 < sources.Length)
+                {
+                    // Try the next mirror.
+                }
+                catch (DownloadSourceException ex) when (sources.Length > 1)
+                {
+                    throw new InvalidOperationException($"None of the {sources.Length} download links worked. {ex.Message}", ex);
+                }
+                catch (DownloadSourceException ex)
+                {
+                    throw new InvalidOperationException(ex.Message, ex);
+                }
+            }
+        }
+
+        private async Task DownloadFromAsync(GameBuild build, string url, string partial, IProgress<InstallProgress> progress, CancellationToken cancel)
+        {
             progress.Report(new InstallProgress { Stage = InstallStage.Connecting, Detail = "Connecting…" });
 
             for (int attempt = 0; ; attempt++)
@@ -148,7 +183,8 @@ namespace SummerInstaller
                 // The whole file is already here.
                 if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable && existing > 0)
                     return;
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                    throw new DownloadSourceException($"The download server answered {(int)response.StatusCode} ({response.ReasonPhrase}).");
 
                 // Some hosts answer with an HTML confirmation page (e.g. Google Drive's large file warning); follow its form.
                 string? mediaType = response.Content.Headers.ContentType?.MediaType;
@@ -157,7 +193,11 @@ namespace SummerInstaller
                     string html = await response.Content.ReadAsStringAsync();
                     string? next = FollowConfirmationPage(html, url);
                     if (next == null || attempt >= 3)
-                        throw new InvalidOperationException("The download link returned a web page instead of the game files. Check that the link is a direct download link.");
+                    {
+                        // Keep the page for troubleshooting, then say what it was.
+                        try { File.WriteAllText(Path.Combine(Path.GetDirectoryName(partial)!, "download_error.html"), html); } catch { }
+                        throw new DownloadSourceException(DescribeDownloadPage(html));
+                    }
                     url = next;
                     continue;
                 }
@@ -197,6 +237,21 @@ namespace SummerInstaller
                     throw new IOException("The download ended early. Press Install again to resume it.");
                 return;
             }
+        }
+
+        /// <summary>
+        /// Explains why a download link returned a web page instead of the file.
+        /// </summary>
+        private static string DescribeDownloadPage(string html)
+        {
+            string text = html.ToLowerInvariant();
+            if (text.Contains("quota exceeded") || text.Contains("too many users have viewed or downloaded"))
+                return "Google Drive's download limit for this file has been reached (too many downloads recently). This usually clears within 24 hours; press Resume download later. Your progress so far is kept.";
+            if (text.Contains("you need access") || text.Contains("request access") || text.Contains("accounts.google.com") || text.Contains("sign in"))
+                return "The game files aren't shared publicly, so Google Drive asked for a sign-in. The file's owner needs to share it as \"Anyone with the link\".";
+            if (text.Contains("not found") || text.Contains("does not exist") || text.Contains("404"))
+                return "The game files weren't found at the download link. It may have been moved or deleted.";
+            return "The download link returned a web page instead of the game files. Try again later; if it keeps happening, the download link may be wrong.";
         }
 
         private static string? FollowConfirmationPage(string html, string baseUrl)

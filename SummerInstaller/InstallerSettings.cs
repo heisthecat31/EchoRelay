@@ -20,6 +20,11 @@ namespace SummerInstaller
         public string ShortName { get; set; } = "";
         public string Tagline { get; set; } = "";
         public string DownloadUrl { get; set; } = "";
+        /// <summary>
+        /// Other links to the same archive, tried in order when the download link can't serve it (e.g. Google Drive's
+        /// download quota). installer.json: "downloadMirrors" / "&lt;id&gt;DownloadMirrors", separated by spaces, commas or |.
+        /// </summary>
+        public string[] DownloadMirrors { get; set; } = Array.Empty<string>();
         public string Sha256 { get; set; } = "";
         public long DownloadSizeBytes { get; set; }
         public string DefaultInstallFolder { get; set; } = "";
@@ -109,6 +114,7 @@ namespace SummerInstaller
                 ShortName = "Summer 2019",
                 Tagline = settings.Tagline,
                 DownloadUrl = settings.DownloadUrl,
+                DownloadMirrors = GetList(all, "downloadMirrors"),
                 Sha256 = settings.Sha256,
                 DownloadSizeBytes = settings.DownloadSizeBytes,
                 DefaultInstallFolder = settings.DefaultInstallFolder,
@@ -124,6 +130,7 @@ namespace SummerInstaller
                 ShortName = "Halloween 2018",
                 Tagline = Get(all, "halloweenTagline", "The 2018 halloween build, running on community servers."),
                 DownloadUrl = Get(all, "halloweenDownloadUrl", ""),
+                DownloadMirrors = GetList(all, "halloweenDownloadMirrors"),
                 Sha256 = Get(all, "halloweenSha256", ""),
                 DefaultInstallFolder = Get(all, "halloweenDefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Halloween"),
                 ShortcutName = Get(all, "halloweenShortcutName", "Echo VR Halloween"),
@@ -141,6 +148,7 @@ namespace SummerInstaller
                 ShortName = "Christmas 2017",
                 Tagline = Get(all, "christmasTagline", "The 2017 christmas build, running on community servers."),
                 DownloadUrl = Get(all, "christmasDownloadUrl", ""),
+                DownloadMirrors = GetList(all, "christmasDownloadMirrors"),
                 Sha256 = Get(all, "christmasSha256", ""),
                 DefaultInstallFolder = Get(all, "christmasDefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Christmas"),
                 ShortcutName = Get(all, "christmasShortcutName", "Echo VR Christmas"),
@@ -179,6 +187,11 @@ namespace SummerInstaller
         private static string Get(Dictionary<string, object> values, string key, string fallback)
         {
             return values.TryGetValue(key, out object? value) && value is string s ? s : fallback;
+        }
+
+        private static string[] GetList(Dictionary<string, object> values, string key)
+        {
+            return Get(values, key, "").Split(new[] { ' ', '\t', '\r', '\n', ',', '|' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         private static string? ReadResource(string name)
