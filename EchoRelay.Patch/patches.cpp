@@ -155,6 +155,44 @@ VOID Log(EchoVR::LogLevel level, const CHAR* format, ...) {
 }
 
 /// <summary>
+/// The offset the game's fixed time step state pointer is read from. This address only exists in the final build.
+/// </summary>
+const UINT64 FIXED_TIME_STEP_POINTER_OFFSET = 0x020A00E8;
+
+/// <summary>
+/// Checks whether an address range lies within the loaded game module.
+/// </summary>
+/// <param name="address">The start of the range to check.</param>
+/// <param name="size">The size of the range, in bytes.</param>
+/// <returns>TRUE if the entire range is inside the game module.</returns>
+BOOL WithinGameModule(const VOID* address, SIZE_T size)
+{
+    const IMAGE_DOS_HEADER* dosHeader = (const IMAGE_DOS_HEADER*)EchoVR::g_GameBaseAddress;
+    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
+        return FALSE;
+
+    const IMAGE_NT_HEADERS64* ntHeaders = (const IMAGE_NT_HEADERS64*)(EchoVR::g_GameBaseAddress + dosHeader->e_lfanew);
+    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE)
+        return FALSE;
+
+    const CHAR* start = EchoVR::g_GameBaseAddress;
+    const CHAR* end = start + ntHeaders->OptionalHeader.SizeOfImage;
+    const CHAR* target = (const CHAR*)address;
+    return target >= start && target + size <= end;
+}
+
+/// <summary>
+/// Checks whether `-timestep` can be applied to the build we are running in. The fixed time step is reached through
+/// a pointer at a hard-coded address that only exists in the final build. The summer lobby build's image is smaller,
+/// so that address is unmapped there and dereferencing it kills the process during startup.
+/// </summary>
+/// <returns>TRUE if the fixed time step can be configured.</returns>
+BOOL FixedTimeStepSupported()
+{
+    return WithinGameModule(EchoVR::g_GameBaseAddress + FIXED_TIME_STEP_POINTER_OFFSET, sizeof(CHAR*));
+}
+
+/// <summary>
 /// Patches the game to enable headless mode, spawning a console window and applying patches to avoid game crashes.
 /// </summary>
 /// <param name="pGame">The pointer to the instance of the game structure.</param>
@@ -205,7 +243,7 @@ VOID PatchEnableHeadless(PVOID pGame)
     ProcessMemcpy(EchoVR::g_GameBaseAddress + 0x62CA91, pbPatch2, sizeof(pbPatch2));
 
     // If a timestep is set as non-zero, patch to enable `-fixedtimestep`.
-    if (headlessTimeStep != 0)
+    if (headlessTimeStep != 0 && FixedTimeStepSupported())
     {
         // Set the flag for `-fixedtimestep`.
         UINT64* flags = (UINT64*)((CHAR*)pGame + 2088);
@@ -459,8 +497,23 @@ UINT64 LoadLocalConfigHook(PVOID pGame)
     {
         // Patch the fixed time step based on tick count.
         // Fixed time step is in microseconds, tick rate is per second.
-        UINT32* timeStep = (UINT32*)(*(CHAR**)(EchoVR::g_GameBaseAddress + 0x020A00E8) + 0x90);
-        *timeStep = 1000000 / headlessTimeStep;
+        if (!FixedTimeStepSupported())
+        {
+            Log(EchoVR::LogLevel::Warning, "[ECHORELAY.PATCH] -timestep is not supported on this build of Echo VR, ignoring it.");
+        }
+        else
+        {
+            CHAR* timeStepState = *(CHAR**)(EchoVR::g_GameBaseAddress + FIXED_TIME_STEP_POINTER_OFFSET);
+            if (timeStepState == NULL)
+            {
+                Log(EchoVR::LogLevel::Warning, "[ECHORELAY.PATCH] -timestep could not be applied, the game's time step state is not initialized.");
+            }
+            else
+            {
+                UINT32* timeStep = (UINT32*)(timeStepState + 0x90);
+                *timeStep = (UINT32)(1000000 / headlessTimeStep);
+            }
+        }
     }
 
     // Store a reference to the local config.
