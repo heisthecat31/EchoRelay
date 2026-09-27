@@ -151,7 +151,7 @@ namespace EchoRelay.Core.Server.Services.Social
                 if (user != null)
                 {
                     user.RoomId = null;
-                    outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = RoomJson(room) }));
+                    outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = EmptyRoomJson(room.Id) }));
                 }
                 if (room.Members.Count == 0)
                 {
@@ -390,10 +390,12 @@ namespace EchoRelay.Core.Server.Services.Social
                 {
                     ulong roomId = data.Value<ulong>("room");
                     Room? room = _rooms.GetValueOrDefault(roomId);
-                    if (room != null && user.RoomId == roomId)
+                    bool member = room != null && user.RoomId == roomId;
+                    if (member)
                         LeaveRoom(user, outgoing);
                     result = Ok(rid);
-                    result["room"] = room != null ? RoomJson(room) : EmptyRoomJson(roomId);
+                    // Someone who was kicked (or removed) and then leaves gets an empty party, not the one they're out of.
+                    result["room"] = room != null && member ? RoomJson(room) : EmptyRoomJson(roomId);
                     break;
                 }
 
@@ -452,8 +454,10 @@ namespace EchoRelay.Core.Server.Services.Social
                     {
                         if (kicked != null)
                         {
+                            // The kicked player's party is now empty: the christmas client takes the party it's sent as the
+                            // one it's in, so sending the leader's party (without them) left it "still in it".
                             kicked.RoomId = null;
-                            outgoing.Add((kicked.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = RoomJson(room) }));
+                            outgoing.Add((kicked.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = EmptyRoomJson(roomId) }));
                         }
                         NotifyRoomUpdate(room, user.Id, outgoing);
                     }

@@ -65,6 +65,9 @@ namespace EchoRelay.Core.Server.Services.Matching
                     case SummerLobbyJoinSessionRequestv6 summerJoinSessionRequest:
                         await ProcessSummerJoinSessionRequestv6(sender, summerJoinSessionRequest);
                         break;
+                    case ChristmasLobbyJoinSessionRequestv5 christmasJoinSessionRequest:
+                        await ProcessChristmasJoinSessionRequestv5(sender, christmasJoinSessionRequest);
+                        break;
                     case SummerLobbyPlayerSessionsRequestv3 summerPlayerSessionsRequest:
                         await ProcessSummerPlayerSessionsRequestv3(sender, summerPlayerSessionsRequest);
                         break;
@@ -195,6 +198,23 @@ namespace EchoRelay.Core.Server.Services.Matching
             _summerPeers[sender] = true;
             TeamIndex team = Enum.IsDefined(typeof(TeamIndex), request.TeamIndex) ? (TeamIndex)request.TeamIndex : TeamIndex.Any;
             MatchingSession matchingSession = MatchingSession.FromJoinSpecificSessionCriteria(request.UserId, request.LobbyId, team, request.SessionSettings);
+            matchingSession.IsSummer = true;
+            matchingSession.VersionLock = request.VersionLock;
+            sender.SetSessionData(matchingSession);
+            await ProcessMatchingSession(sender, null, request.UserId, summer: true);
+        }
+
+        /// <summary>
+        /// Processes a christmas build request to join a specific session: a party member following their leader. It carries
+        /// no team or settings; the game server puts party members on their party's team.
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessChristmasJoinSessionRequestv5(Peer sender, ChristmasLobbyJoinSessionRequestv5 request)
+        {
+            _summerPeers[sender] = true;
+            MatchingSession matchingSession = MatchingSession.FromJoinSpecificSessionCriteria(request.UserId, request.LobbyId, TeamIndex.Any, new SessionSettings());
             matchingSession.IsSummer = true;
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);

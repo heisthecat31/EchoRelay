@@ -315,6 +315,20 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Null(SummerBuild.GetKnownName(12345));
         }
 
+        [Fact]
+        public void ChristmasJoinSessionRequestDecodesCapturedPayload()
+        {
+            // A christmas party member following their leader (captured from a live relay).
+            byte[] data = Convert.FromHexString("CB487EE2592DB9DC4EC6662CEC436798C3B159E222DD78F1F8F49FA8B1D0E8C80100000000000000020000000000000004000000000000001C4C0B9800000000");
+            ChristmasLobbyJoinSessionRequestv5 request = new ChristmasLobbyJoinSessionRequestv5();
+            request.Decode(data);
+            Assert.Equal(Guid.Parse("e27e48cb-2d59-dcb9-4ec6-662cec436798"), request.LobbyId);
+            Assert.True(SummerBuild.IsChristmasVersionLock(request.VersionLock));
+            Assert.Equal(SummerBuild.PlatformSymbolOvr, request.PlatformSymbol);
+            Assert.Equal("OVR-ORG-2550877212", request.UserId.ToString());
+            Assert.Equal(new ChristmasLobbyJoinSessionRequestv5().MessageTypeSymbol, Symbol.Hash("SNSLobbyJoinSessionRequestv5"));
+        }
+
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }
     }
 }
