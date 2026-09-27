@@ -539,7 +539,7 @@ namespace EchoRelay.Core.Server.Services.Login
             server["updatetime"] = account.Profile.Server.UpdateTime ?? now;
             server["createtime"] = account.Profile.Server.CreateTime ?? now;
             server["dev"] = new JObject { ["xplatformid"] = xplatformId };
-            server.Merge(GetSummerServerData(account), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
+            server.Merge(GetSummerServerData(account, publisherLock), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
 
             // Optionally unlock every cosmetic (the summer build lists unlocked item names in arrays, separately for arena
             // and combat) and max out the level used by level-gated items.
@@ -566,13 +566,45 @@ namespace EchoRelay.Core.Server.Services.Login
         private const string SummerServerDataKey = "summer_server";
 
         /// <summary>
-        /// Obtains the summer build server profile data stored for an account.
+        /// The christmas build's server profile updates are kept apart: it saves loadouts with symbol hashes (e.g. "name":
+        /// 3445406071846753926 for "general") where the summer and halloween builds use names.
+        /// </summary>
+        private const string ChristmasServerDataKey = "christmas_server";
+
+        private static string GetServerDataKey(string? publisherLock) => publisherLock == SummerBuild.ChristmasPublisherLock ? ChristmasServerDataKey : SummerServerDataKey;
+
+        /// <summary>
+        /// Obtains the lobby build server profile data stored for an account.
         /// </summary>
         /// <param name="account">The account to obtain the data for.</param>
+        /// <param name="publisherLock">The build's publisher lock (christmas has its own data).</param>
         /// <returns>The stored data, or an empty object.</returns>
-        private static JObject GetSummerServerData(AccountResource account)
+        private static JObject GetSummerServerData(AccountResource account, string? publisherLock = null)
         {
-            return account.Profile.Server.AdditionalData.TryGetValue(SummerServerDataKey, out JToken? data) && data is JObject obj ? obj : new JObject();
+            var stored = account.Profile.Server.AdditionalData;
+            JObject shared = stored.TryGetValue(SummerServerDataKey, out JToken? sharedData) && sharedData is JObject sharedObj ? sharedObj : new JObject();
+            if (publisherLock == SummerBuild.ChristmasPublisherLock)
+            {
+                if (stored.TryGetValue(ChristmasServerDataKey, out JToken? christmasData) && christmasData is JObject christmasObj)
+                    return christmasObj;
+                // Christmas saves made before it had its own data went to the shared data; take them from there.
+                return HasSymbolLoadout(shared) ? shared : new JObject();
+            }
+            // The summer and halloween builds can't read a christmas loadout.
+            if (HasSymbolLoadout(shared))
+            {
+                shared = (JObject)shared.DeepClone();
+                shared.Remove("loadout");
+            }
+            return shared;
+        }
+
+        /// <summary>
+        /// Whether server profile data holds a christmas build loadout (instance names saved as symbol hashes, not strings).
+        /// </summary>
+        private static bool HasSymbolLoadout(JObject data)
+        {
+            return data["loadout"]?["instances"] is JArray instances && instances.FirstOrDefault()?["name"]?.Type == JTokenType.Integer;
         }
 
         /// <summary>
@@ -644,9 +676,11 @@ namespace EchoRelay.Core.Server.Services.Login
             AccountResource? account = Storage.Accounts.Get(ResolveSummerAccount(request.UserId, request.Session, null));
             if (account == null)
                 return;
-            JObject data = GetSummerServerData(account);
+            // The game server runs the same build as the player it saves for.
+            string? publisherLock = GetSessionPublisherLock(request.Session);
+            JObject data = GetSummerServerData(account, publisherLock);
             data.Merge(request.Update, new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
-            account.Profile.Server.AdditionalData[SummerServerDataKey] = data;
+            account.Profile.Server.AdditionalData[GetServerDataKey(publisherLock)] = data;
             account.Profile.Server.ModifyTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             Storage.Accounts.Set(account);
 

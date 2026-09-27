@@ -108,6 +108,25 @@ namespace EchoRelay.Core.Game
         public static readonly long LevelChristmasLobby = Symbol.Hash("mpl_lobby_a_xmas");
 
         /// <summary>
+        /// The lobby builds' game types and levels, for naming symbols the final build's symbol cache doesn't know.
+        /// </summary>
+        private static readonly Lazy<Dictionary<long, string>> _knownNames = new Lazy<Dictionary<long, string>>(() =>
+            new[]
+            {
+                "social_2.0", "social_2.0_private", "social_2.0_npe", "echo_arena", "echo_arena_private", "echo_combat", "echo_combat_private",
+                "social", "arena",
+                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_arena_a", "mpl_combat_dyson",
+            }.ToDictionary(Symbol.Hash, name => name));
+
+        /// <summary>
+        /// Names a lobby build game type or level symbol, or null if it isn't one.
+        /// </summary>
+        public static string? GetKnownName(long symbol)
+        {
+            return _knownNames.Value.TryGetValue(symbol, out string? name) ? name : null;
+        }
+
+        /// <summary>
         /// Checks whether a game type is a social (lobby) game type of any of the lobby builds.
         /// </summary>
         public static bool IsSocialGameType(long? gameType)

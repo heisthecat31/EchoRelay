@@ -305,6 +305,16 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal(new HalloweenUpdateProfileFromServer().MessageTypeSymbol, Symbol.Hash("SNSUpdateProfileFromServer"));
         }
 
+        [Fact]
+        public void LobbyBuildSymbolsHaveNames()
+        {
+            // The App showed the christmas lobby as unknown(-1752788093133717341).
+            Assert.Equal("mpl_lobby_a_xmas", SummerBuild.GetKnownName(-1752788093133717341));
+            Assert.Equal("mpl_lobby_a_xmas", new Server.Storage.Resources.SymbolCache().GetName(-1752788093133717341));
+            Assert.Equal("social", SummerBuild.GetKnownName(4743086669210191378));
+            Assert.Null(SummerBuild.GetKnownName(12345));
+        }
+
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }
     }
 }

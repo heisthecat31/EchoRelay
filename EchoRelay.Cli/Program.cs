@@ -63,8 +63,12 @@ namespace EchoRelay.Cli
             [Option("statsinterval", Required = false, Default = 3000, HelpText = "Sets the interval at which the CLI will output its peer stats (in milliseconds).")]
             public double StatsUpdateInterval { get; set; }
 
-            [Option("noservervalidation", Required = false, Default = false, HelpText = "Disables validation of game servers using raw ping requests, ensuring their ports are exposed.")]
+            [Option("servervalidation", Required = false, Default = false, HelpText = "Validates game servers with raw ping requests when they register, ensuring their ports are exposed. Christmas 2017 servers don't answer them.")]
             public bool ServerDBValidateGameServers { get; set; }
+
+            // This used to set ServerDBValidateGameServers, so it turned validation on. Validation is off unless --servervalidation.
+            [Option("noservervalidation", Required = false, Default = false, HelpText = "Disables validation of game servers using raw ping requests (the default; overrides --servervalidation).")]
+            public bool NoServerDBValidateGameServers { get; set; }
 
             [Option("servervalidationtimeout", Required = false, Default = 3000, HelpText = "Sets the timeout for game server validation using raw ping requests. In milliseconds.")]
             public int ServerDBValidateGameServersTimeout { get; set; }
@@ -146,7 +150,7 @@ namespace EchoRelay.Cli
                     new ServerSettings(
                         port: (ushort)options.Port,
                         serverDbApiKey: options.ServerDBApiKey,
-                        serverDBValidateServerEndpoint: options.ServerDBValidateGameServers,
+                        serverDBValidateServerEndpoint: options.ServerDBValidateGameServers && !options.NoServerDBValidateGameServers,
                         serverDBValidateServerEndpointTimeout: options.ServerDBValidateGameServersTimeout,
                         favorPopulationOverPing: !options.LowPingMatching,
                         forceIntoAnySessionIfCreationFails: options.ForceMatching,

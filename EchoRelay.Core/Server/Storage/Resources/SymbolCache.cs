@@ -172,9 +172,10 @@ namespace EchoRelay.Core.Server.Storage.Resources
         /// <returns>Returns the name associated with the symbol, or null if it could not be resolved.</returns>
         public string? GetName(long symbol)
         {
-            // Try to get a name from this symbol.
+            // Try to get a name from this symbol. The cache is extracted from the final build, so fall back to the lobby builds'
+            // own game types and levels (e.g. the christmas lobby, mpl_lobby_a_xmas).
             _symbolsToName.TryGetValue(symbol, out var name);
-            return name;
+            return name ?? Game.SummerBuild.GetKnownName(symbol);
         }
         /// <summary>
         /// Obtains a symbol for a given symbol name.
