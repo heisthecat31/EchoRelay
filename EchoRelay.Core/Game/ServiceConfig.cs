@@ -49,6 +49,9 @@ namespace EchoRelay.Core.Game
         /// <summary>
         /// The filename of the server plugin (minus ".dll").
         /// </summary>
+        [JsonProperty("socialservice_host")]
+        public string? SocialServiceHost { get; set; }
+
         [JsonProperty("server_plugin")]
         public string? ServerPlugin { get; set; }
 
@@ -78,7 +81,7 @@ namespace EchoRelay.Core.Game
         /// <summary>
         /// Initializes a new <see cref="ServiceConfig"/> with the provided arguments.
         /// </summary>
-        public ServiceConfig(string? apiServiceHost, string configServiceHost, string loginServiceHost, string matchingServiceHost, string? serverdbServiceHost, string transactionServiceHost, string? publisherLock, string? serverPlugin)
+        public ServiceConfig(string? apiServiceHost, string configServiceHost, string loginServiceHost, string matchingServiceHost, string? serverdbServiceHost, string transactionServiceHost, string? publisherLock, string? serverPlugin, string? socialServiceHost = null)
         {
             // Set our provided arguments.
             ApiServiceHost = apiServiceHost;
@@ -89,6 +92,7 @@ namespace EchoRelay.Core.Game
             TransactionServiceHost = transactionServiceHost;
             ServerPlugin = serverPlugin;
             PublisherLock = publisherLock;
+            SocialServiceHost = socialServiceHost;
 
             // Initialize our additional tokens.
             AdditionalData = new Dictionary<string, JToken>();

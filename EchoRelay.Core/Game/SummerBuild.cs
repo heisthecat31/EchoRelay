@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 
 namespace EchoRelay.Core.Game
 {
@@ -76,6 +76,22 @@ namespace EchoRelay.Core.Game
                 return Array.Empty<string>();
             using StreamReader reader = new StreamReader(stream);
             return reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        });
+
+        /// <summary>
+        /// A copy of the summer build's own default server profile (sourcedb/rad15/json/r14/defaultprofile_ro.json).
+        /// It defines the summer formats: "loadout" as {"instances": [{"name", "items": [{"itemslot", "item"}]}], "number"}
+        /// with the general/blue/orange/social/blue_combat/orange_combat/social_combat instances, and "unlocks" /
+        /// "unlocks_combat" as arrays of item names (not the final build's {"arena": {item: true}} objects).
+        /// </summary>
+        public static Newtonsoft.Json.Linq.JObject DefaultServerProfile => (Newtonsoft.Json.Linq.JObject)_defaultServerProfile.Value.DeepClone();
+        private static readonly Lazy<Newtonsoft.Json.Linq.JObject> _defaultServerProfile = new Lazy<Newtonsoft.Json.Linq.JObject>(() =>
+        {
+            using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("EchoRelay.Core.Resources.summer_defaultprofile_ro.json");
+            if (stream == null)
+                return new Newtonsoft.Json.Linq.JObject();
+            using StreamReader reader = new StreamReader(stream);
+            return Newtonsoft.Json.Linq.JObject.Parse(reader.ReadToEnd());
         });
 
         /// <summary>

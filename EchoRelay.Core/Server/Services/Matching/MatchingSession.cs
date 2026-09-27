@@ -23,6 +23,11 @@ namespace EchoRelay.Core.Server.Services.Matching
         public ERGameServerStartSession.SessionSettings SessionSettings { get; private set; }
         public TeamIndex TeamIndex { get; private set; }
 
+        /// <summary>
+        /// The team the matched game server assigned this player (summer arena/combat, where players don't pick one).
+        /// </summary>
+        public TeamIndex? AssignedTeam { get; set; }
+
         public RegisteredGameServer? MatchedGameServer { get; set; }
         public Guid? MatchedSessionId { get; set; }
 

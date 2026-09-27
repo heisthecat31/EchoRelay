@@ -8,6 +8,7 @@ using EchoRelay.Core.Server.Services.Login;
 using EchoRelay.Core.Server.Services.Matching;
 using EchoRelay.Core.Server.Services.ServerDB;
 using EchoRelay.Core.Server.Services.Transaction;
+using EchoRelay.Core.Server.Services.Social;
 using EchoRelay.Core.Server.Storage;
 using EchoRelay.Core.Server.Storage.Resources;
 using EchoRelay.Core.Server.Storage.Types;
@@ -73,6 +74,11 @@ namespace EchoRelay.Core.Server
         /// The <see cref="TransactionService"/> service hosted by this server.
         /// </summary>
         public TransactionService TransactionService { get; private set; }
+
+        /// <summary>
+        /// The <see cref="SocialService"/> service hosted by this server (summer build parties and friends).
+        /// </summary>
+        public SocialService SocialService { get; private set; }
         /// <summary>
         /// The IP address of the current server. This is obtained by querying an online service. If it fails to fetch, it will be null.
         /// </summary>
@@ -167,6 +173,9 @@ namespace EchoRelay.Core.Server
             TransactionService = new TransactionService(this);
             RegisterServiceEvents(TransactionService);
 
+            SocialService = new SocialService(this);
+            RegisterServiceEvents(SocialService);
+
             // Create a map of our services
             _serviceMap = new Dictionary<string, Service>
             {
@@ -175,6 +184,7 @@ namespace EchoRelay.Core.Server
                 { Settings.MatchingServicePath.ToLower(), MatchingService },
                 { Settings.ServerDBServicePath.ToLower(), ServerDBService },
                 { Settings.TransactionServicePath.ToLower(), TransactionService },
+                { Settings.SocialServicePath.ToLower(), SocialService },
             }.AsReadOnly();
         }
         #endregion

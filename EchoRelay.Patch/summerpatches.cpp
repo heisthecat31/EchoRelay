@@ -1,4 +1,5 @@
-#include "summerpatches.h"
+﻿#include "summerpatches.h"
+#include "summersocial.h"
 #include <winternl.h>
 #include <cstdio>
 #include <cstdarg>
@@ -61,6 +62,7 @@ namespace SummerPatches
 
 	static FILE* g_log = NULL;
 	static BOOL g_patchPnsOvr = TRUE;
+	static BOOL g_echoRelaySocial = TRUE;
 	static PVOID g_dllNotificationCookie = NULL;
 
 	static VOID Log(const CHAR* format, ...)
@@ -167,8 +169,14 @@ namespace SummerPatches
 		if (name->Length == wcslen(L"pnsovr.dll") * sizeof(WCHAR) && _wcsnicmp(name->Buffer, L"pnsovr.dll", name->Length / sizeof(WCHAR)) == 0)
 		{
 			Log("pnsovr.dll loaded at %p", data->DllBase);
-			PatchPnsOvr((BYTE*)data->DllBase);
+			if (g_patchPnsOvr)
+				PatchPnsOvr((BYTE*)data->DllBase);
+			if (g_echoRelaySocial)
+				SummerSocial::HookPnsOvrModule((HMODULE)data->DllBase);
 		}
+		// The Oculus Platform SDK loader pnsovr.dll imports: its parties/friends calls are answered by EchoRelay.
+		if (g_echoRelaySocial && name->Length == wcslen(L"LibOVRPlatform64_1.dll") * sizeof(WCHAR) && _wcsnicmp(name->Buffer, L"LibOVRPlatform64_1.dll", name->Length / sizeof(WCHAR)) == 0)
+			SummerSocial::HookPlatformModule((HMODULE)data->DllBase, L"LibOVRPlatform64_1.dll");
 	}
 
 	// --------------------------------------------------------------------------------------------------------
@@ -382,11 +390,23 @@ namespace SummerPatches
 			ApplyGamePatch(NO_AUDIO_PATCH);
 		RedirectStatusHost();
 
-		if (g_patchPnsOvr)
+		// Parties and friends through EchoRelay instead of Oculus (unless -oculussocial). Not needed on dedicated servers.
+		g_echoRelaySocial = !isServer && !HasFlag(commandLine, L"-oculussocial");
+		SummerSocial::SetLogger(Log);
+		if (HasFlag(commandLine, L"-socialtrace"))
+			SummerSocial::EnableTracing();
+		if (g_echoRelaySocial)
+		{
+			HMODULE platform = GetModuleHandleA("LibOVRPlatform64_1.dll");
+			if (platform != NULL)
+				SummerSocial::HookPlatformModule(platform, L"LibOVRPlatform64_1.dll");
+		}
+
+		if (g_patchPnsOvr || g_echoRelaySocial)
 		{
 			// Patch pnsovr.dll now if it is already loaded, and whenever it gets loaded.
 			HMODULE pnsovr = GetModuleHandleA("pnsovr.dll");
-			if (pnsovr != NULL)
+			if (pnsovr != NULL && g_patchPnsOvr)
 				PatchPnsOvr((BYTE*)pnsovr);
 			LdrRegisterDllNotificationFunc registerNotification = (LdrRegisterDllNotificationFunc)GetProcAddress(GetModuleHandleA("ntdll.dll"), "LdrRegisterDllNotification");
 			if (registerNotification != NULL)

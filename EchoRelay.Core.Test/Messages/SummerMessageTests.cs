@@ -11,6 +11,21 @@ namespace EchoRelay.Core.Test.Messages
     public class SummerMessageTests
     {
         [Fact]
+        public void SharedReviveIdMapsToPerNameAccounts()
+        {
+            // Every summer client running through Revive reports this id (0x4C01DB400B0C9 truncated to 32 bits).
+            XPlatformId shared = new XPlatformId(PlatformCode.OVR_ORG, 3019944137);
+            Assert.True(Server.Services.Login.LoginService.IsSharedSummerUserId(shared));
+            Assert.False(Server.Services.Login.LoginService.IsSharedSummerUserId(new XPlatformId(PlatformCode.OVR_ORG, 12345)));
+
+            // Accounts are keyed by display name: stable, case-insensitive, distinct per name, and never a real (small) Oculus id.
+            XPlatformId a = Server.Services.Login.LoginService.GetSummerAccountId("PlayerOne");
+            Assert.Equal(a, Server.Services.Login.LoginService.GetSummerAccountId(" playerone "));
+            Assert.NotEqual(a, Server.Services.Login.LoginService.GetSummerAccountId("PlayerTwo"));
+            Assert.True(a.AccountId >= 0x4000000000000000UL);
+        }
+
+        [Fact]
         public void SymbolHashMatchesKnownSymbols()
         {
             Assert.Equal(-3415139097788326908, Symbol.Hash("mpl_lobby_b2"));
@@ -68,7 +83,7 @@ namespace EchoRelay.Core.Test.Messages
             // region, version lock, echo_arena_private, level -1, platform, lobby type 1, 7 unmapped bytes, channel, json, user id
             byte[] json = System.Text.Encoding.UTF8.GetBytes("{\"gametype\":691594351282457603,\"appid\":\"1369078409873402\"}\0");
             byte[] data = Convert.FromHexString("ffffffffffffffff22784f9c9593ad5a038cdbf465099909fffffffffffffffff8f49fa8b1d0e8c801000000000000000102030405060708090a0b0c0d0e0f10")
-                .Concat(json).Concat(Convert.FromHexString("0400000000000000c9b000b400000000")).ToArray();
+                .Concat(json).Concat(Convert.FromHexString("0400000000000000c9b000b400000000FFFF")).ToArray();
             SummerLobbyCreateSessionRequestv7 request = new SummerLobbyCreateSessionRequestv7();
             request.Decode(data);
             Assert.Equal(SummerBuild.VersionLock, request.VersionLock);
@@ -191,6 +206,70 @@ namespace EchoRelay.Core.Test.Messages
             SummerLoginProfileResult decoded = new SummerLoginProfileResult();
             decoded.Decode(data);
             Assert.Equal(SummerLoginProfileResult.RESULT_AUTHENTICATION_FAILED, decoded.Result);
+        }
+
+        [Fact]
+        public void RefreshProfileFromServerHasClientHeader()
+        {
+            // The client's decoder requires a 0x18 byte header (user id + 8 bytes), followed by null-terminated JSON.
+            XPlatformId userId = new XPlatformId(PlatformCode.OVR_ORG, 0xB400B0C9);
+            SummerRefreshProfileFromServer message = new SummerRefreshProfileFromServer(userId, new JObject { ["loadout"] = new JObject() });
+            byte[] encoded = message.Encode();
+            Assert.Equal(Symbol.Hash("SNSRefreshProfileFromServer"), message.MessageTypeSymbol);
+            Assert.Equal(Convert.FromHexString("0400000000000000c9b000b4000000000000000000000000"), encoded.Take(0x18).ToArray());
+            Assert.Equal((byte)'{', encoded[0x18]);
+            Assert.Equal(0, encoded[^1]);
+        }
+
+        [Fact]
+        public void DecodesCapturedProfileRequest()
+        {
+            // Captured from a summer client asking for another player's profile.
+            Packet packet = Packet.Decode(new Packet(new UnimplementedMessage(8801406627506010498) { Data = Convert.FromHexString("FA474A682BDD04000400000000000000E8AF00B400000000") }).Encode());
+            SummerProfileRequestv2 request = Assert.IsType<SummerProfileRequestv2>(packet[0]);
+            Assert.Equal(Symbol.Hash("SNSProfileRequestv2"), request.MessageTypeSymbol);
+            Assert.Equal(new XPlatformId(PlatformCode.OVR_ORG, 3019943912), request.UserId);
+        }
+
+        [Fact]
+        public void ProfileResponseHasClientHeader()
+        {
+            // The client's decoder requires a 0x10 byte header (the user id), followed by null-terminated JSON.
+            XPlatformId userId = new XPlatformId(PlatformCode.OVR_ORG, 3019943912);
+            SummerProfileResponsev2 message = new SummerProfileResponsev2(userId, new JObject { ["loadout"] = new JObject() });
+            byte[] encoded = message.Encode();
+            Assert.Equal(Symbol.Hash("SNSProfileResponsev2"), message.MessageTypeSymbol);
+            Assert.Equal(Convert.FromHexString("0400000000000000E8AF00B400000000"), encoded.Take(0x10).ToArray());
+            Assert.Equal((byte)'{', encoded[0x10]);
+            Assert.Equal(0, encoded[^1]);
+        }
+
+        [Fact]
+        public void DecodesCapturedJoinSessionRequest()
+        {
+            // Captured from a party member following their leader into a match.
+            byte[] data = Convert.FromHexString("686F47EE5353ED47D4AC2C4BA5664EB122784F9C9593AD5AF8F49FA8B1D0E8C8010000000000000003000000000000007B226170706964223A2231333639303738343039383733343032227D000400000000000000122FCEC16C697E67FFFF");
+            Packet packet = Packet.Decode(new Packet(new UnimplementedMessage(3387628926720258576) { Data = data }).Encode());
+            SummerLobbyJoinSessionRequestv6 request = Assert.IsType<SummerLobbyJoinSessionRequestv6>(packet[0]);
+            Assert.Equal(Symbol.Hash("SNSLobbyJoinSessionRequestv6"), request.MessageTypeSymbol);
+            Assert.Equal(Guid.Parse("EE476F68-5353-47ED-D4AC-2C4BA5664EB1"), request.LobbyId);
+            Assert.Equal(SummerBuild.VersionLock, request.VersionLock);
+            Assert.Equal(new XPlatformId(PlatformCode.OVR_ORG, 7457513948801019666), request.UserId);
+            Assert.Equal(-1, request.TeamIndex);
+        }
+
+        [Fact]
+        public void CreateSessionRequestReadsUserIdBeforeTeam()
+        {
+            // Same tail as the join request: ... json \0 | user id | i16 team.
+            byte[] json = System.Text.Encoding.UTF8.GetBytes("{\"gametype\":691594351282457603,\"appid\":\"1369078409873402\"}\0");
+            byte[] data = Convert.FromHexString("ffffffffffffffff22784f9c9593ad5a038cdbf465099909fffffffffffffffff8f49fa8b1d0e8c800000100000000000000000300000000000000")
+                .Concat(json).Concat(Convert.FromHexString("0400000000000000122FCEC16C697E67FFFF")).ToArray();
+            SummerLobbyCreateSessionRequestv7 request = new SummerLobbyCreateSessionRequestv7();
+            request.Decode(data);
+            Assert.Equal(new XPlatformId(PlatformCode.OVR_ORG, 7457513948801019666), request.UserId);
+            Assert.Equal(-1, request.TeamIndex);
+            Assert.Equal(691594351282457603, request.SessionSettings.GameType);
         }
 
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }

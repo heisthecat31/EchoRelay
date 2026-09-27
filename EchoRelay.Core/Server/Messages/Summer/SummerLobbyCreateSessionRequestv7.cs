@@ -1,4 +1,4 @@
-using EchoRelay.Core.Game;
+﻿using EchoRelay.Core.Game;
 using EchoRelay.Core.Utils;
 using Newtonsoft.Json;
 using System.Text;
@@ -31,6 +31,12 @@ namespace EchoRelay.Core.Server.Messages.Summer
         public Guid Channel;
         public SessionSettings SessionSettings;
         public XPlatformId UserId;
+        public short TeamIndex = -1;
+
+        /// <summary>
+        /// The bytes after the lobby type, as received (the layout past it isn't fully mapped; logged for diagnosis).
+        /// </summary>
+        public byte[] RawTail = Array.Empty<byte>();
 
         /// <summary>
         /// The lobby type requested for the new session.
@@ -60,6 +66,7 @@ namespace EchoRelay.Core.Server.Messages.Summer
             if (io.StreamMode == StreamMode.Read)
             {
                 byte[] rest = io.ReadBytes((int)(io.Length - io.Position));
+                RawTail = rest;
                 int jsonStart = Array.IndexOf(rest, (byte)'{');
                 int jsonEnd = jsonStart < 0 ? -1 : Array.IndexOf(rest, (byte)0, jsonStart);
                 if (jsonStart < 0 || jsonEnd < 0)
@@ -73,12 +80,13 @@ namespace EchoRelay.Core.Server.Messages.Summer
                 Channel = new Guid(channel);
                 Unmapped = rest.Take(channelStart).ToArray();
 
-                // The user id is the last 16 bytes.
+                // The message ends with the user id and an i16 team index.
                 UserId = new XPlatformId();
-                if (rest.Length - (jsonEnd + 1) >= XPlatformId.SIZE)
+                if (rest.Length - (jsonEnd + 1) >= XPlatformId.SIZE + 2)
                 {
-                    int userIdStart = rest.Length - XPlatformId.SIZE;
+                    int userIdStart = rest.Length - XPlatformId.SIZE - 2;
                     UserId = new XPlatformId((PlatformCode)BitConverter.ToUInt64(rest, userIdStart), BitConverter.ToUInt64(rest, userIdStart + 8));
+                    TeamIndex = BitConverter.ToInt16(rest, rest.Length - 2);
                 }
             }
             else
@@ -87,12 +95,13 @@ namespace EchoRelay.Core.Server.Messages.Summer
                 io.Stream(ref Channel);
                 io.StreamJSON(ref SessionSettings, true, JSONCompressionMode.None);
                 UserId.Stream(io);
+                io.Stream(ref TeamIndex);
             }
         }
 
         public override string ToString()
         {
-            return $"{GetType().Name}(version_lock={VersionLock}, game_type={GameTypeSymbol}, level={LevelSymbol}, lobby_type={LobbyType}, channel={Channel}, settings={SessionSettings}, user_id={UserId})";
+            return $"{GetType().Name}(version_lock={VersionLock}, game_type={GameTypeSymbol}, level={LevelSymbol}, lobby_type={LobbyType}, channel={Channel}, settings={SessionSettings}, user_id={UserId}, raw_tail={Convert.ToHexString(RawTail)})";
         }
         #endregion
     }

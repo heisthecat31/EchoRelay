@@ -1,0 +1,354 @@
+{
+    "loadout": {
+        "instances": [
+            {
+                "items": [
+                    {
+                        "item": "emote_blink_smiley_a",
+                        "itemslot": "emote1"
+                    },
+                    {
+                        "item": "emote_blink_smiley_a",
+                        "itemslot": "emote2"
+                    }
+                ],
+                "name": "general"
+            },
+            {
+                "items": [
+                    {
+                        "item": "pattern_default_head",
+                        "itemslot": "headpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal2"
+                    },
+                    {
+                        "item": "tint_blue_a_default",
+                        "itemslot": "headtint"
+                    },
+                    {
+                        "item": "pattern_default_upper",
+                        "itemslot": "upperpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal2"
+                    },
+                    {
+                        "item": "tint_blue_a_default",
+                        "itemslot": "uppertint"
+                    },
+                    {
+                        "item": "pattern_default_lower",
+                        "itemslot": "lowerpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "lowerdecal"
+                    },
+                    {
+                        "item": "tint_blue_a_lower",
+                        "itemslot": "lowertint"
+                    }
+                ],
+                "name": "blue"
+            },
+            {
+                "items": [
+                    {
+                        "item": "pattern_default_head",
+                        "itemslot": "headpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal2"
+                    },
+                    {
+                        "item": "tint_orange_a_default",
+                        "itemslot": "headtint"
+                    },
+                    {
+                        "item": "pattern_default_upper",
+                        "itemslot": "upperpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal2"
+                    },
+                    {
+                        "item": "tint_orange_a_default",
+                        "itemslot": "uppertint"
+                    },
+                    {
+                        "item": "pattern_default_lower",
+                        "itemslot": "lowerpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "lowerdecal"
+                    },
+                    {
+                        "item": "tint_orange_a_lower",
+                        "itemslot": "lowertint"
+                    }
+                ],
+                "name": "orange"
+            },
+            {
+                "items": [
+                    {
+                        "item": "pattern_default_head",
+                        "itemslot": "headpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal2"
+                    },
+                    {
+                        "item": "tint_neutral_a_default",
+                        "itemslot": "headtint"
+                    },
+                    {
+                        "item": "pattern_default_upper",
+                        "itemslot": "upperpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal2"
+                    },
+                    {
+                        "item": "tint_neutral_a_default",
+                        "itemslot": "uppertint"
+                    },
+                    {
+                        "item": "pattern_default_lower",
+                        "itemslot": "lowerpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "lowerdecal"
+                    },
+                    {
+                        "item": "tint_neutral_a_lower",
+                        "itemslot": "lowertint"
+                    }
+                ],
+                "name": "social"
+            },
+            {
+                "items": [
+                    {
+                        "item": "pattern_default_head",
+                        "itemslot": "headpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal2"
+                    },
+                    {
+                        "item": "tint_blue_a_default",
+                        "itemslot": "headtint"
+                    },
+                    {
+                        "item": "pattern_default_upper",
+                        "itemslot": "upperpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal2"
+                    },
+                    {
+                        "item": "tint_blue_a_default",
+                        "itemslot": "uppertint"
+                    },
+                    {
+                        "item": "pattern_default_lower",
+                        "itemslot": "lowerpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "lowerdecal"
+                    },
+                    {
+                        "item": "tint_blue_a_lower",
+                        "itemslot": "lowertint"
+                    }
+                ],
+                "name": "blue_combat"
+            },
+            {
+                "items": [
+                    {
+                        "item": "pattern_default_head",
+                        "itemslot": "headpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal2"
+                    },
+                    {
+                        "item": "tint_orange_a_default",
+                        "itemslot": "headtint"
+                    },
+                    {
+                        "item": "pattern_default_upper",
+                        "itemslot": "upperpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal2"
+                    },
+                    {
+                        "item": "tint_orange_a_default",
+                        "itemslot": "uppertint"
+                    },
+                    {
+                        "item": "pattern_default_lower",
+                        "itemslot": "lowerpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "lowerdecal"
+                    },
+                    {
+                        "item": "tint_orange_a_lower",
+                        "itemslot": "lowertint"
+                    }
+                ],
+                "name": "orange_combat"
+            },
+            {
+                "items": [
+                    {
+                        "item": "pattern_default_head",
+                        "itemslot": "headpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "headdecal2"
+                    },
+                    {
+                        "item": "tint_neutral_a_s10_default",
+                        "itemslot": "headtint"
+                    },
+                    {
+                        "item": "pattern_default_upper",
+                        "itemslot": "upperpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal1"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "upperdecal2"
+                    },
+                    {
+                        "item": "tint_neutral_a_s10_default",
+                        "itemslot": "uppertint"
+                    },
+                    {
+                        "item": "pattern_default_lower",
+                        "itemslot": "lowerpattern"
+                    },
+                    {
+                        "item": "decal_default",
+                        "itemslot": "lowerdecal"
+                    },
+                    {
+                        "item": "tint_neutral_a_s10_lower",
+                        "itemslot": "lowertint"
+                    }
+                ],
+                "name": "social_combat"
+            }
+        ],
+        "number": 1
+    },
+    "profile_stats": {
+        "Level": {
+            "cnt": 1,
+            "op": "add",
+            "val": 1
+        }
+    },
+    "profile_stats_combat": {
+        "Level": {
+            "cnt": 1,
+            "op": "add",
+            "val": 1
+        }
+    },
+    "unlocks": [
+        "emote_default",
+        "emote_blink_smiley_a",
+        "decal_default",
+        "decal_sheldon_a",
+        "pattern_default_head",
+        "pattern_default_upper",
+        "pattern_default_lower",
+        "tint_neutral_a_default",
+        "tint_blue_a_default",
+        "tint_orange_a_default",
+        "tint_neutral_a_lower",
+        "tint_blue_a_lower",
+        "tint_orange_a_lower",
+        "tint_neutral_a_s10_default",
+        "tint_neutral_a_s10_lower"
+    ],
+    "unlocks_combat": [
+        "emote_dizzy_eyes_a",
+        "decal_combat_flamingo_a",
+        "decal_combat_logo_a",
+        "pattern_lightning_a_head",
+        "pattern_lightning_a_upper",
+        "pattern_lightning_a_lower"
+    ],
+    "xplatformid": "default"
+}

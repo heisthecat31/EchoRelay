@@ -31,6 +31,36 @@ namespace EchoRelay.Core.Server.Services.Login
         /// are authorized by checking the user still holds a valid login session.
         /// </summary>
         private ConcurrentDictionary<XPlatformId, Guid> _latestUserSessions;
+
+        /// <summary>
+        /// Account ids that summer build clients report when Revive's Oculus platform emulation (LibRevive64 / Gammon) can't
+        /// find its config: every such player reports the same user (0x4C01DB400B0C9, truncated to 0xB400B0C9 by the game).
+        /// Accounts for these are keyed by the player's display name instead (see <see cref="GetSummerAccountId"/>).
+        /// </summary>
+        private static readonly HashSet<ulong> SharedSummerAccountIds = new HashSet<ulong> { 0xB400B0C9UL, 0x4C01DB400B0C9UL };
+
+        /// <summary>
+        /// The account each login session of a shared-id summer client belongs to.
+        /// </summary>
+        private readonly ConcurrentDictionary<Guid, XPlatformId> _summerSessionAccounts = new ConcurrentDictionary<Guid, XPlatformId>();
+
+        /// <summary>
+        /// The account most recently logged in from each address by a shared-id summer client. Used for requests that
+        /// carry neither a distinguishing user id nor a session (matching).
+        /// </summary>
+        private readonly ConcurrentDictionary<System.Net.IPAddress, XPlatformId> _summerAddressAccounts = new ConcurrentDictionary<System.Net.IPAddress, XPlatformId>();
+
+        /// <summary>
+        /// Accounts of summer players whose game reports their own (display-name derived) id truncated to 32 bits.
+        /// EchoRelay.Patch replaces Revive's shared id with <see cref="GetSummerAccountId"/>'s id; if the game shortens it,
+        /// requests carrying the short id still resolve to the player's account.
+        /// </summary>
+        private readonly ConcurrentDictionary<XPlatformId, XPlatformId> _summerShortIdAccounts = new ConcurrentDictionary<XPlatformId, XPlatformId>();
+
+        /// <summary>
+        /// Login connections of summer build clients, which are told about other players' profile changes.
+        /// </summary>
+        private readonly ConcurrentDictionary<Peer, bool> _summerClientPeers = new ConcurrentDictionary<Peer, bool>();
         #endregion
 
         #region Constructor
@@ -48,6 +78,47 @@ namespace EchoRelay.Core.Server.Services.Login
         #endregion
 
         #region Functions
+        /// <summary>
+        /// Checks whether a user id is the shared placeholder that summer clients running through Revive report.
+        /// </summary>
+        public static bool IsSharedSummerUserId(XPlatformId userId)
+        {
+            return userId.PlatformCode == PlatformCode.OVR_ORG && SharedSummerAccountIds.Contains(userId.AccountId);
+        }
+
+        /// <summary>
+        /// Derives the account id for a shared-id summer player from their display name (case-insensitive), in a range far
+        /// above real Oculus ids so it can't collide with one.
+        /// </summary>
+        public static XPlatformId GetSummerAccountId(string identity)
+        {
+            byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("echorelay-summer-account:" + identity.Trim().ToLowerInvariant()));
+            ulong accountId = (BitConverter.ToUInt64(hash, 0) & 0x3FFFFFFFFFFFFFFFUL) | 0x4000000000000000UL;
+            return new XPlatformId(PlatformCode.OVR_ORG, accountId);
+        }
+
+        /// <summary>
+        /// Resolves which stored account a summer request belongs to. Requests from clients reporting the shared Revive id
+        /// are mapped through their login session, or failing that the address they last logged in from; any other id is
+        /// its own account.
+        /// </summary>
+        /// <param name="userId">The user id the client reported.</param>
+        /// <param name="session">The login session in the request, if any.</param>
+        /// <param name="address">The address the request came from, if known.</param>
+        /// <returns>The account id to use for storage.</returns>
+        public XPlatformId ResolveSummerAccount(XPlatformId userId, Guid? session, System.Net.IPAddress? address)
+        {
+            if (_summerShortIdAccounts.TryGetValue(userId, out XPlatformId byShortId))
+                return byShortId;
+            if (!IsSharedSummerUserId(userId))
+                return userId;
+            if (session != null && _summerSessionAccounts.TryGetValue(session.Value, out XPlatformId bySession))
+                return bySession;
+            if (address != null && _summerAddressAccounts.TryGetValue(address, out XPlatformId byAddress))
+                return byAddress;
+            return userId;
+        }
+
         /// <summary>
         /// Checks if a provided user session token is valid.
         /// </summary>
@@ -98,6 +169,8 @@ namespace EchoRelay.Core.Server.Services.Login
         /// <param name="peer">The peer that disconnected.</param>
         private void LoginService_OnPeerDisconnected(Service service, Peer peer)
         {
+            _summerClientPeers.TryRemove(peer, out _);
+
             // If the peer had a session token, update its expiry time.
             Guid? session = peer.GetSessionData<Guid?>();
             if (session != null && _userSessions.TryGet(session.Value, out XPlatformId userId))
@@ -140,7 +213,10 @@ namespace EchoRelay.Core.Server.Services.Login
                         await ProcessSummerRefreshProfile(sender, summerRefreshProfile);
                         break;
                     case SummerUpdateProfileFromServerv2 summerProfileUpdate:
-                        ProcessSummerUpdateProfileFromServer(summerProfileUpdate);
+                        await ProcessSummerUpdateProfileFromServer(summerProfileUpdate);
+                        break;
+                    case SummerProfileRequestv2 summerProfileRequest:
+                        await ProcessSummerProfileRequest(sender, summerProfileRequest);
                         break;
                     case SummerLeaderboardRequest summerLeaderboardRequest:
                         await ProcessSummerLeaderboardRequest(sender, summerLeaderboardRequest);
@@ -224,7 +300,7 @@ namespace EchoRelay.Core.Server.Services.Login
         /// <param name="userId">The user identifier logging in.</param>
         /// <param name="lobbyVersion">The lobby version the client reported.</param>
         /// <returns>The account and new session, or a null account if authentication failed (a failure was already sent).</returns>
-        private async Task<(AccountResource? account, Guid session)> AuthenticateLogin(Peer sender, XPlatformId userId, ulong? lobbyVersion, bool summer = false)
+        private async Task<(AccountResource? account, Guid session)> AuthenticateLogin(Peer sender, XPlatformId userId, ulong? lobbyVersion, bool summer = false, string? summerFallbackIdentity = null)
         {
             // Validate the user identifier
             if(!userId.Valid())
@@ -242,16 +318,43 @@ namespace EchoRelay.Core.Server.Services.Login
             // Get the current timestamp
             ulong currentTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+            // Summer clients running through Revive all report the same placeholder user, so their accounts are keyed by the
+            // display name they log in with (or their headset serial if they give none), each with its own password lock.
+            XPlatformId accountId = userId;
+            if (summer && IsSharedSummerUserId(userId))
+            {
+                string? identity = HttpUtility.ParseQueryString(sender.RequestUri.Query).Get("displayname")?.Trim();
+                if (string.IsNullOrEmpty(identity))
+                    identity = string.IsNullOrWhiteSpace(summerFallbackIdentity) ? null : "hmd:" + summerFallbackIdentity;
+                if (identity == null)
+                    return await FailLogin(sender, userId, "Shared Oculus id without a display name", summer, SummerLoginProfileResult.RESULT_INVALID_REQUEST);
+                accountId = GetSummerAccountId(identity);
+            }
+            else if (summer && userId.AccountId <= uint.MaxValue)
+            {
+                // A player's own id (from EchoRelay.Patch) that the game shortened to 32 bits: use their full account.
+                string? identity = HttpUtility.ParseQueryString(sender.RequestUri.Query).Get("displayname")?.Trim();
+                if (!string.IsNullOrEmpty(identity))
+                {
+                    XPlatformId derived = GetSummerAccountId(identity);
+                    if ((derived.AccountId & uint.MaxValue) == userId.AccountId)
+                    {
+                        accountId = derived;
+                        _summerShortIdAccounts[userId] = derived;
+                    }
+                }
+            }
+
             // Try to obtain a user from the storage layer.
             // If the user doesn't exist, we create them.
-            AccountResource? account = Storage.Accounts.Get(userId);
+            AccountResource? account = Storage.Accounts.Get(accountId);
             if (account == null)
             {
                 // Create a default username for this user.
-                string displayName = userId.PlatformCode == PlatformCode.DMO ? "Anonymous [DEMO]" : $"User [{RandomNumberGenerator.GetInt32(int.MaxValue).ToString("X")}]";
+                string displayName = accountId.PlatformCode == PlatformCode.DMO ? "Anonymous [DEMO]" : $"User [{RandomNumberGenerator.GetInt32(int.MaxValue).ToString("X")}]";
 
                 // Create an account for this user id. We use the platform identifier string as the display name.
-                account = new AccountResource(userId, displayName, true, true, true);
+                account = new AccountResource(accountId, displayName, true, true, true);
                 account.Profile.Server.CreateTime = currentTimestamp;
             } 
             else
@@ -319,6 +422,11 @@ namespace EchoRelay.Core.Server.Services.Login
             _userSessions.AddOrUpdate(session, userId, TimeSpan.FromDays(3000));
             sender.SetSessionData(session);
             _latestUserSessions[userId] = session;
+            if (accountId != userId)
+            {
+                _summerSessionAccounts[session] = accountId;
+                _summerAddressAccounts[sender.Address] = accountId;
+            }
 
             return (account, session);
         }
@@ -332,11 +440,14 @@ namespace EchoRelay.Core.Server.Services.Login
         /// <returns>None</returns>
         private async Task ProcessSummerLoginRequest(Peer sender, SummerLoginRequest request)
         {
+            _summerClientPeers[sender] = true;
+
             // If we have existing session data for this peer's connection, invalidate it.
             InvalidatePeerUserSession(sender);
 
             // Authenticate the user, creating their account if needed.
-            var (account, session) = await AuthenticateLogin(sender, request.UserId, request.AccountInfo.LobbyVersion, summer: true);
+            var (account, session) = await AuthenticateLogin(sender, request.UserId, request.AccountInfo.LobbyVersion, summer: true,
+                summerFallbackIdentity: request.AccountInfo.HMDSerialNumber);
             if (account == null)
                 return;
 
@@ -348,7 +459,7 @@ namespace EchoRelay.Core.Server.Services.Login
             LoginSettingsResource? loginSettings = Storage.LoginSettings.Get();
             if (loginSettings != null)
                 await sender.Send(new LoginSettings(loginSettings));
-            var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion);
+            var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion, request.UserId);
             await sender.Send(new SummerLoginProfileResult(session, request.UserId, SummerLoginProfileResult.RESULT_SUCCESS, clientProfile, serverProfile));
         }
 
@@ -359,10 +470,12 @@ namespace EchoRelay.Core.Server.Services.Login
         /// <param name="account">The account to build profiles for.</param>
         /// <param name="lobbyVersion">The lobby version the client reported.</param>
         /// <returns>The client and server profile JSON objects.</returns>
-        public (JObject client, JObject server) BuildSummerProfiles(AccountResource account, ulong? lobbyVersion)
+        /// <param name="reportedUserId">The user id the client itself reports, if it differs from the account's (shared Revive ids).</param>
+        public (JObject client, JObject server) BuildSummerProfiles(AccountResource account, ulong? lobbyVersion, XPlatformId? reportedUserId = null)
         {
             JsonSerializer serializer = JsonSerializer.Create(StreamIO.JsonSerializerSettings);
-            string xplatformId = account.AccountIdentifier.ToString();
+            // The client checks profiles against its own user id, so they carry the id it reported.
+            string xplatformId = (reportedUserId ?? account.AccountIdentifier).ToString();
             string displayName = account.Profile.Server.DisplayName ?? account.Profile.Client.DisplayName ?? xplatformId;
             ulong now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -379,43 +492,35 @@ namespace EchoRelay.Core.Server.Services.Login
             client["npecompleted"] = true;
             if (client["legal"] is not JObject legal || !legal.HasValues)
                 client["legal"] = new JObject { ["points_policy_version"] = 1, ["eula_version"] = 1, ["game_admin_version"] = 1, ["splash_screen_version"] = 1 };
+            // Unlocks and stats belong to the (read-only) server profile; drop copies older versions put in the client profile.
+            foreach (string key in new[] { "unlocks", "unlocks_combat", "profile_stats", "profile_stats_combat", "newunlocks" })
+                client.Remove(key);
 
-            // Server profile: only the fields the summer build understands (later builds nest stats/unlocks differently).
-            JObject server = new JObject
-            {
-                ["displayname"] = displayName,
-                ["xplatformid"] = xplatformId,
-                ["_version"] = 1,
-                ["publisher_lock"] = SummerBuild.PublisherLock,
-                ["purchasedcombat"] = 1,
-                ["npecompleted"] = true,
-                ["lobbyversion"] = lobbyVersion ?? 0,
-                ["modifytime"] = account.Profile.Server.ModifyTime ?? now,
-                ["logintime"] = account.Profile.Server.LoginTime ?? now,
-                ["updatetime"] = account.Profile.Server.UpdateTime ?? now,
-                ["createtime"] = account.Profile.Server.CreateTime ?? now,
-                ["stats"] = new JObject(),
-                ["unlocks"] = new JObject(),
-                ["dev"] = new JObject { ["xplatformid"] = xplatformId },
-            };
-
-            // Apply what the summer build saved to the server profile (loadout, stats, ...).
+            // Server profile: the summer build's own default server profile (its loadout/unlock formats differ from the final
+            // build's), plus identity fields, then what the summer build saved for this account (e.g. its loadout).
+            JObject server = SummerBuild.DefaultServerProfile;
+            server["displayname"] = displayName;
+            server["xplatformid"] = xplatformId;
+            server["publisher_lock"] = SummerBuild.PublisherLock;
+            server["purchasedcombat"] = 1;
+            server["npecompleted"] = true;
+            server["lobbyversion"] = lobbyVersion ?? 0;
+            server["modifytime"] = account.Profile.Server.ModifyTime ?? now;
+            server["logintime"] = account.Profile.Server.LoginTime ?? now;
+            server["updatetime"] = account.Profile.Server.UpdateTime ?? now;
+            server["createtime"] = account.Profile.Server.CreateTime ?? now;
+            server["dev"] = new JObject { ["xplatformid"] = xplatformId };
             server.Merge(GetSummerServerData(account), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
 
-            // Optionally unlock every cosmetic and max out the level used by level-gated items.
+            // Optionally unlock every cosmetic (the summer build lists unlocked item names in arrays, separately for arena
+            // and combat) and max out the level used by level-gated items.
             if (Server.Settings.SummerUnlockAll)
             {
-                JObject unlocks = new JObject();
-                foreach (string item in SummerBuild.Unlockables)
-                    unlocks[item] = true;
                 JObject level = new JObject { ["Level"] = new JObject { ["op"] = "add", ["val"] = 50, ["cnt"] = 1 } };
-                foreach (JObject profile in new[] { client, server })
-                {
-                    profile["unlocks"] = unlocks.DeepClone();
-                    profile["unlocks_combat"] = unlocks.DeepClone();
-                    profile["profile_stats"] = level.DeepClone();
-                    profile["profile_stats_combat"] = level.DeepClone();
-                }
+                server["unlocks"] = new JArray(SummerBuild.Unlockables);
+                server["unlocks_combat"] = new JArray(SummerBuild.Unlockables);
+                server["profile_stats"] = level.DeepClone();
+                server["profile_stats_combat"] = level.DeepClone();
             }
             return (client, server);
         }
@@ -446,14 +551,14 @@ namespace EchoRelay.Core.Server.Services.Login
         private async Task ProcessSummerRefreshProfile(Peer sender, SummerRefreshProfile request)
         {
             // Game servers pass the player's login session, so validate it against the player being refreshed.
-            AccountResource? account = CheckUserSessionValid(request.Session, request.UserId) ? Storage.Accounts.Get(request.UserId) : null;
+            AccountResource? account = CheckUserSessionValid(request.Session, request.UserId) ? Storage.Accounts.Get(ResolveSummerAccount(request.UserId, request.Session, null)) : null;
             if (account == null)
             {
                 // 8 is a failure result that game servers recognize.
                 await sender.Send(new SummerRefreshProfileResult(request.UserId, 8, new JObject()));
                 return;
             }
-            var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion);
+            var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId);
             await sender.Send(new SummerRefreshProfileResult(request.UserId, SummerRefreshProfileResult.RESULT_SUCCESS, serverProfile));
         }
 
@@ -461,11 +566,11 @@ namespace EchoRelay.Core.Server.Services.Login
         /// Processes a summer build server profile update (e.g. a loadout change), merging it into the stored summer server profile data.
         /// </summary>
         /// <param name="request">The request contents.</param>
-        private void ProcessSummerUpdateProfileFromServer(SummerUpdateProfileFromServerv2 request)
+        private async Task ProcessSummerUpdateProfileFromServer(SummerUpdateProfileFromServerv2 request)
         {
             if (!CheckUserSessionValid(request.Session, request.UserId))
                 return;
-            AccountResource? account = Storage.Accounts.Get(request.UserId);
+            AccountResource? account = Storage.Accounts.Get(ResolveSummerAccount(request.UserId, request.Session, null));
             if (account == null)
                 return;
             JObject data = GetSummerServerData(account);
@@ -473,6 +578,46 @@ namespace EchoRelay.Core.Server.Services.Login
             account.Profile.Server.AdditionalData[SummerServerDataKey] = data;
             account.Profile.Server.ModifyTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             Storage.Accounts.Set(account);
+
+            // Push the updated server profile to the player's own client (the login connection holding the session the game
+            // server reported). Otherwise the client keeps the server profile it received at login, and presents the old
+            // loadout until it logs in again.
+            var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId);
+            Peer[] clientPeers;
+            lock (PeersLock)
+                clientPeers = Peers.Where(peer => peer.GetSessionData<Guid?>() == request.Session).ToArray();
+            foreach (Peer clientPeer in clientPeers)
+                await clientPeer.Send(new SummerRefreshProfileFromServer(request.UserId, serverProfile));
+
+            // Push it to everyone else's client too, so players already in a lobby with them re-dress their avatar.
+            // Clients store and apply an SNSProfileResponsev2 whether or not they requested it.
+            foreach (Peer otherPeer in _summerClientPeers.Keys.Except(clientPeers))
+            {
+                try
+                {
+                    await otherPeer.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
+                }
+                catch
+                {
+                    // A client disconnecting mid-send shouldn't stop the others getting the update.
+                }
+            }
+        }
+
+        /// <summary>
+        /// Processes a summer build request for another player's server profile, sent by clients for each player they see
+        /// join. They dress that player's avatar (loadout) from the reply.
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessSummerProfileRequest(Peer sender, SummerProfileRequestv2 request)
+        {
+            AccountResource? account = Storage.Accounts.Get(ResolveSummerAccount(request.UserId, null, null));
+            if (account == null)
+                return;
+            var (_, serverProfile) = BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId);
+            await sender.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
         }
 
         /// <summary>
@@ -539,7 +684,8 @@ namespace EchoRelay.Core.Server.Services.Login
             int start = 0;
             if (request.Scope == SummerLeaderboardRequest.SCOPE_USER && request.UserIds.Length > 0)
             {
-                int userIndex = ranked.FindIndex(entry => entry.account.AccountIdentifier == request.UserIds[0]);
+                XPlatformId centerOn = ResolveSummerAccount(request.UserIds[0], sender.GetSessionData<Guid?>(), sender.Address);
+                int userIndex = ranked.FindIndex(entry => entry.account.AccountIdentifier == centerOn);
                 start = Math.Max(0, Math.Min(userIndex - count / 2, ranked.Count - count));
             }
 
@@ -657,8 +803,8 @@ namespace EchoRelay.Core.Server.Services.Login
                 return;
             }
 
-            // Obtain the account associated with the request.
-            AccountResource? account = Storage.Accounts.Get(request.UserId);
+            // Obtain the account associated with the request (summer clients with a shared Revive id map through their session).
+            AccountResource? account = Storage.Accounts.Get(ResolveSummerAccount(request.UserId, request.Session, null));
             if (account == null)
             {
                 // TODO: Send UpdateProfileFailure(?)

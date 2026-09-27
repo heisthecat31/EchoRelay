@@ -45,6 +45,11 @@ namespace EchoRelay.Core.Server
         public string TransactionServicePath { get; }
 
         /// <summary>
+        /// The HTTP path for the social service (summer build parties and friends, fed by EchoRelay.Patch).
+        /// </summary>
+        public string SocialServicePath { get; } = "/social";
+
+        /// <summary>
         /// The grace period for which a disconnected peer may reconnect and use the same session token.
         /// Sessions after this time will expire for clients which disconnected.
         /// </summary>
@@ -172,6 +177,7 @@ namespace EchoRelay.Core.Server
                 matchingServiceHost: webSocketHost + MatchingServicePath,
                 serverdbServiceHost: serverConfig ? serverDBHost : null,
                 transactionServiceHost: webSocketHost + TransactionServicePath,
+                socialServiceHost: webSocketHost + SocialServicePath,
                 publisherLock: publisherLock,
                 serverPlugin: serverPlugin
                 );

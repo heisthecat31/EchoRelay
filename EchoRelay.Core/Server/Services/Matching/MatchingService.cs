@@ -59,6 +59,9 @@ namespace EchoRelay.Core.Server.Services.Matching
                     case SummerLobbyCreateSessionRequestv7 summerCreateSessionRequest:
                         await ProcessSummerCreateSessionRequestv7(sender, summerCreateSessionRequest);
                         break;
+                    case SummerLobbyJoinSessionRequestv6 summerJoinSessionRequest:
+                        await ProcessSummerJoinSessionRequestv6(sender, summerJoinSessionRequest);
+                        break;
                     case SummerLobbyPlayerSessionsRequestv3 summerPlayerSessionsRequest:
                         await ProcessSummerPlayerSessionsRequestv3(sender, summerPlayerSessionsRequest);
                         break;
@@ -146,9 +149,30 @@ namespace EchoRelay.Core.Server.Services.Matching
         private async Task ProcessSummerCreateSessionRequestv7(Peer sender, SummerLobbyCreateSessionRequestv7 request)
         {
             _summerPeers[sender] = true;
+
+            // The user id at the end of this message isn't reliable (its layout isn't fully mapped). If it isn't a logged in
+            // player, use the player this matching connection already identified as (e.g. a party leader in the lobby).
+            if (!Server.LoginService.CheckUserLoggedIn(request.UserId) && sender.UserId != null)
+                request.UserId = sender.UserId;
             long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
             long? level = request.LevelSymbol != -1 ? request.LevelSymbol : request.SessionSettings.Level;
             MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, request.LobbyType, TeamIndex.Any, request.SessionSettings);
+            matchingSession.IsSummer = true;
+            sender.SetSessionData(matchingSession);
+            await ProcessMatchingSession(sender, null, request.UserId, summer: true);
+        }
+
+        /// <summary>
+        /// Processes a summer build request to join a specific session, e.g. a party member following their leader.
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessSummerJoinSessionRequestv6(Peer sender, SummerLobbyJoinSessionRequestv6 request)
+        {
+            _summerPeers[sender] = true;
+            TeamIndex team = Enum.IsDefined(typeof(TeamIndex), request.TeamIndex) ? (TeamIndex)request.TeamIndex : TeamIndex.Any;
+            MatchingSession matchingSession = MatchingSession.FromJoinSpecificSessionCriteria(request.UserId, request.LobbyId, team, request.SessionSettings);
             matchingSession.IsSummer = true;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
@@ -202,7 +226,9 @@ namespace EchoRelay.Core.Server.Services.Matching
             }
 
             // Verify the account behind the request.
-            AccountResource? account = Storage.Accounts.Get(userId);
+            // Summer clients with a shared Revive id are mapped to the account they logged in with (by address, as matching
+            // requests carry no session).
+            AccountResource? account = Storage.Accounts.Get(summer ? Server.LoginService.ResolveSummerAccount(userId, null, sender.Address) : userId);
             if (account == null)
             {
                 await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.BadRequest, "Failed to obtain profile");

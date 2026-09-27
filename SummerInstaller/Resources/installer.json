@@ -1,0 +1,11 @@
+{
+  "title": "Echo VR",
+  "subtitle": "Summer Lobby",
+  "tagline": "The 2019 summer build, running on community servers.",
+  "downloadUrl": "https://drive.google.com/file/d/1HXxFzJBvoYLIBNBaW8LAt8q0QpH9gUD5/view?usp=sharing",
+  "sha256": "1BDF51C4C710153F867A6F448018066D2E45843A4AD939811971D8FAA398EBB8",
+  "downloadSizeBytes": 3386701653,
+  "defaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Summer",
+  "shortcutName": "Echo VR Summer",
+  "gameFilesRepository": "heisthecat31/EchoRelay"
+}

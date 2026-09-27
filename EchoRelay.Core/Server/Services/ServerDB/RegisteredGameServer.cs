@@ -165,6 +165,12 @@ namespace EchoRelay.Core.Server.Services.ServerDB
         /// Represents the active player sessions in the server.
         /// </summary>
         private Dictionary<Guid, (Peer peer, TeamIndex requestedTeam)> _playerSessions;
+
+        /// <summary>
+        /// Teams assigned to summer players who were matched here but haven't taken their player session yet, so players
+        /// joining at the same time are balanced too.
+        /// </summary>
+        private Dictionary<Peer, TeamIndex> _pendingTeams;
       
         /// <summary>
         /// A lock used for asynchronous/awaitable concurrent access to this object.
@@ -217,11 +223,50 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             SessionLobbyType = ERGameServerStartSession.LobbyType.Unassigned;
             SessionPlayerLimits = GameTypePlayerLimits.DefaultLimits;
             _playerSessions = new Dictionary<Guid, (Peer, TeamIndex)>();
+            _pendingTeams = new Dictionary<Peer, TeamIndex>();
             _accessLock = new AsyncLock();
         }
         #endregion
 
         #region Functions
+        /// <summary>
+        /// Picks a team for a summer player joining this server's session. Summer clients don't choose a team, and a request
+        /// for "any" used to put everyone on blue. Arena and combat players go to whichever of blue/orange has fewer players
+        /// (blue on a tie); social lobbies, spectators and moderators keep what they asked for.
+        /// </summary>
+        private TeamIndex AssignSummerTeam(Peer peer, TeamIndex requested)
+        {
+            if (requested == TeamIndex.Spectator || requested == TeamIndex.Moderator)
+                return requested;
+            long? gameType = SessionGameTypeSymbol;
+            bool social = gameType == null || gameType == SummerBuild.GameTypeSocial
+                || gameType == Symbol.Hash("social_2.0_private") || gameType == Symbol.Hash("social_2.0_npe");
+            if (social)
+                return TeamIndex.Blue;
+            if (requested == TeamIndex.Blue || requested == TeamIndex.Orange)
+                return requested;
+
+            // Keep a party together: join the team of a party member already in (or joining) this session.
+            if (peer.UserId != null)
+            {
+                HashSet<ulong> party = Server.SocialService.GetPartyMembers(peer.UserId.AccountId).ToHashSet();
+                if (party.Count > 0)
+                {
+                    foreach (var (member, team) in _playerSessions.Values.Select(x => (x.peer, x.requestedTeam)).Concat(_pendingTeams.Select(x => (x.Key, x.Value))))
+                    {
+                        if (member != peer && member.UserId != null && party.Contains(member.UserId.AccountId) && (team == TeamIndex.Blue || team == TeamIndex.Orange))
+                            return team;
+                    }
+                }
+            }
+
+            IEnumerable<TeamIndex> teams = _playerSessions.Values.Select(x => x.requestedTeam)
+                .Concat(_pendingTeams.Where(x => x.Key != peer).Select(x => x.Value));
+            int blue = teams.Count(team => team == TeamIndex.Blue);
+            int orange = teams.Count(team => team == TeamIndex.Orange);
+            return orange < blue ? TeamIndex.Orange : TeamIndex.Blue;
+        }
+
         public bool CheckTeamAvailability(TeamIndex requestedTeam)
         {
             // If the session wasn't started, there is availability to join any team.
@@ -258,6 +303,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             SessionPlayerLimits = GameTypePlayerLimits.DefaultLimits;
 
             _playerSessions.Clear();
+            _pendingTeams.Clear();
             SessionLocked = false;
             _sessionLoaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -383,7 +429,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     matchingSession: matchingSession.MatchedSessionId!.Value,
                     channelUUID: SessionChannel ?? new Guid(),
                     endpoint: new LobbyPingRequestv3.EndpointData(InternalAddress, ExternalAddress, Port),
-                    teamIndex: IsSummer ? (short)Math.Max((short)0, (short)matchingSession.TeamIndex) : (short)matchingSession.TeamIndex,
+                    teamIndex: IsSummer ? (short)(matchingSession.AssignedTeam = _pendingTeams[matchingPeer] = AssignSummerTeam(matchingPeer, matchingSession.TeamIndex)).Value : (short)matchingSession.TeamIndex,
                     unk1: 0,
                     serverEncoderFlags: (ulong)serverEncoderSettings,
                     clientEncoderFlags: (ulong)clientEncoderSettings,
@@ -466,7 +512,8 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                         // Send the player sessions to the player (summer clients only understand v3).
                         if (IsSummer)
                         {
-                            await matchingPeer.Send(new LobbyPlayerSessionsSuccessv3(0xFF, matchingSession.UserId, playerSessions[0], Math.Max((short)0, (short)matchingSession.TeamIndex), 0, 0));
+                            TeamIndex team = matchingSession.AssignedTeam ?? AssignSummerTeam(matchingPeer, matchingSession.TeamIndex);
+                            await matchingPeer.Send(new LobbyPlayerSessionsSuccessv3(0xFF, matchingSession.UserId, playerSessions[0], (short)team, 0, 0));
                         }
                         else
                         {
@@ -476,7 +523,8 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                         }
 
                         // Add the pending player session associated to this peer.
-                        _playerSessions[playerSessions[0]] = (matchingPeer, matchingSession.TeamIndex);
+                        _playerSessions[playerSessions[0]] = (matchingPeer, IsSummer ? (matchingSession.AssignedTeam ?? TeamIndex.Blue) : matchingSession.TeamIndex);
+                        _pendingTeams.Remove(matchingPeer);
                     }
 
                 }
@@ -619,6 +667,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 SessionLocked = false;
                 SessionPlayerLimits = GameTypePlayerLimits.DefaultLimits;
                 _playerSessions.Clear();
+                _pendingTeams.Clear();
 
                 return Task.CompletedTask;
             });

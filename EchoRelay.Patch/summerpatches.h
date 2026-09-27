@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 
 /// <summary>
@@ -13,6 +13,8 @@
 ///   -noovr      Skip Oculus/VR initialization (implied by -server).
 ///   -multi      Allow more than one instance of the game (implied by -server).
 ///   -oculusauth Keep pnsovr.dll's Oculus access token and entitlement checks (they are bypassed by default).
+///   -oculussocial Leave the tablet's friends list and parties to Oculus (by default EchoRelay provides them).
+///   -socialtrace  Log the friends/party SDK emulation in detail (echorelay_patch.log).
 /// </summary>
 namespace SummerPatches
 {

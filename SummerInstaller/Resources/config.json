@@ -1,0 +1,9 @@
+{
+  "apiservice_host": "http://168.119.2.92:6800/api",
+  "configservice_host": "ws://168.119.2.92:6800/config",
+  "loginservice_host": "ws://168.119.2.92:6800/login?auth=AccountPassword&displayname=AccountName",
+  "matchingservice_host": "ws://168.119.2.92:6800/matching",
+  "transactionservice_host": "ws://168.119.2.92:6800/transaction",
+  "socialservice_host": "ws://168.119.2.92:6800/social",
+  "publisher_lock": "rad15_summer"
+}

@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\summer_unlockables.txt" LogicalName="EchoRelay.Core.Resources.summer_unlockables.txt" />
+    <EmbeddedResource Include="Resources\summer_defaultprofile_ro.json" LogicalName="EchoRelay.Core.Resources.summer_defaultprofile_ro.json" />
   </ItemGroup>
 
   <ItemGroup>
