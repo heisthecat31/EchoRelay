@@ -28,6 +28,14 @@ namespace EchoRelay.Core.Server.Services.Social
             public string Name = "";
             public Peer Peer = null!;
             public ulong? RoomId;
+
+            /// <summary>
+            /// When the player was removed from a party and given their own (see GiveOwnParty), the id their game still
+            /// knows its party by (the old party's) and the id of the party they're really in. The game only learns a party
+            /// id by creating or joining one, so the new party is shown to it under the old id until it joins another.
+            /// </summary>
+            public ulong? GameRoomId;
+            public ulong? RealRoomId;
         }
 
         /// <summary>
@@ -149,10 +157,7 @@ namespace EchoRelay.Core.Server.Services.Social
                 SocialUser? user = _users.Values.FirstOrDefault(u => u.Id == userId);
                 room.Members.Remove(userId);
                 if (user != null)
-                {
-                    user.RoomId = null;
-                    outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = EmptyRoomJson(room.Id) }));
-                }
+                    GiveOwnParty(user, room, outgoing);
                 if (room.Members.Count == 0)
                 {
                     _rooms.Remove(room.Id);
@@ -219,7 +224,8 @@ namespace EchoRelay.Core.Server.Services.Social
         }
 
         /// <summary>
-        /// Disbands a party: every member is removed from it.
+        /// Disbands a party: every member but the leader is removed, and each gets a party of their own (as every player has
+        /// when their game starts). The leader keeps the party, now alone.
         /// </summary>
         /// <returns>An error message, or null on success.</returns>
         public async Task<string?> AdminDisband(ulong partyId)
@@ -229,7 +235,7 @@ namespace EchoRelay.Core.Server.Services.Social
             {
                 if (!_rooms.TryGetValue(partyId, out Room? room))
                     return "That party no longer exists.";
-                members = room.Members.ToArray();
+                members = room.Members.Where(id => id != room.OwnerId).ToArray();
             }
             foreach (ulong member in members)
                 await AdminRemoveFromParty(member);
@@ -284,6 +290,19 @@ namespace EchoRelay.Core.Server.Services.Social
 
         private async Task SendAll(List<(Peer peer, JObject data)> outgoing)
         {
+            lock (_lock)
+            {
+                for (int i = 0; i < outgoing.Count; i++)
+                {
+                    var (peer, data) = outgoing[i];
+                    if (_users.TryGetValue(peer, out SocialUser? user) && user.RealRoomId != null && data["room"] is JObject room && room.Value<ulong?>("id") == user.RealRoomId)
+                    {
+                        JObject translated = (JObject)data.DeepClone();
+                        translated["room"]!["id"] = user.GameRoomId;
+                        outgoing[i] = (peer, translated);
+                    }
+                }
+            }
             foreach (var (peer, data) in outgoing)
             {
                 try
@@ -324,6 +343,17 @@ namespace EchoRelay.Core.Server.Services.Social
 
             ulong rid = data.Value<ulong>("rid");
             string op = data.Value<string>("op") ?? "";
+            if (user.RealRoomId != null)
+            {
+                if (op == "join" || op == "create")
+                {
+                    // The game moves to a party it knows by its real id.
+                    user.GameRoomId = null;
+                    user.RealRoomId = null;
+                }
+                else if (data.Value<ulong?>("room") == user.GameRoomId)
+                    data["room"] = user.RealRoomId;
+            }
             JObject result;
             switch (op)
             {
@@ -453,12 +483,7 @@ namespace EchoRelay.Core.Server.Services.Social
                     if (room.Members.Remove(kickId))
                     {
                         if (kicked != null)
-                        {
-                            // The kicked player's party is now empty: the christmas client takes the party it's sent as the
-                            // one it's in, so sending the leader's party (without them) left it "still in it".
-                            kicked.RoomId = null;
-                            outgoing.Add((kicked.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = EmptyRoomJson(roomId) }));
-                        }
+                            GiveOwnParty(kicked, room, outgoing);
                         NotifyRoomUpdate(room, user.Id, outgoing);
                     }
                     result = Ok(rid);
@@ -520,6 +545,24 @@ namespace EchoRelay.Core.Server.Services.Social
                     break;
             }
             outgoing.Add((sender, result));
+        }
+
+        /// <summary>
+        /// Gives a player who was removed from a party (kicked, removed or disbanded) a party of their own, as leader, like the
+        /// one every player's game creates when it starts. The game can't be told about a new party id (it only learns one by
+        /// creating or joining), so it's shown the new party under the id of the one it was removed from; told it had no party,
+        /// the christmas client couldn't be in a party again until it restarted.
+        /// </summary>
+        private void GiveOwnParty(SocialUser user, Room from, List<(Peer, JObject)> outgoing)
+        {
+            ulong gameRoomId = user.RealRoomId == from.Id && user.GameRoomId != null ? user.GameRoomId.Value : from.Id;
+            Room own = new Room { Id = NewId(), OwnerId = user.Id, MaxUsers = from.MaxUsers };
+            own.Members.Add(user.Id);
+            _rooms[own.Id] = own;
+            user.RoomId = own.Id;
+            user.GameRoomId = gameRoomId;
+            user.RealRoomId = own.Id;
+            outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = RoomJson(own) }));
         }
 
         /// <summary>

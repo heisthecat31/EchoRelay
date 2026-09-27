@@ -104,13 +104,92 @@ namespace SummerInstaller
 
             progress.Report(new InstallProgress { Stage = InstallStage.Configuring, Detail = "Writing the game config" });
             // The game download carries the EchoRelay game files (dbgcore.dll, pnsradgameserver.dll) and sourcedb the build
-            // needs, so nothing else is downloaded.
+            // needs; newer game DLLs from the latest EchoRelay release replace the ones it shipped with.
             WriteConfig(installFolder, config, displayName, password, build, publisherLock);
+            progress.Report(new InstallProgress { Stage = InstallStage.Configuring, Detail = "Checking for game file updates" });
+            await UpdateGameFilesAsync(build, installFolder, cancel);
 
             // The archive is no longer needed.
             try { Directory.Delete(DownloadFolder(installFolder), true); } catch { }
             progress.Report(new InstallProgress { Stage = InstallStage.Done, Fraction = 1 });
         }
+
+        #region Game file updates
+        /// <summary>
+        /// The EchoRelay DLLs a release's GameFiles zip carries for a build: (path in the zip, path in the install).
+        /// The christmas build loads the patch as dbghelp.dll, and the zip keeps its copies under christmas/.
+        /// </summary>
+        private static (string entry, string target)[] GameFilesFor(GameBuild build) => build.Id == "christmas"
+            ? new[] { ("christmas/bin/win7/dbghelp.dll", @"bin\win7\dbghelp.dll"), ("christmas/bin/win7/pnsradgameserver.dll", @"bin\win7\pnsradgameserver.dll") }
+            : new[] { ("bin/win7/dbgcore.dll", @"bin\win7\dbgcore.dll"), ("bin/win7/pnsradgameserver.dll", @"bin\win7\pnsradgameserver.dll") };
+
+        private static string GameFilesVersionPath(string installFolder) => Path.Combine(installFolder, "bin", "win7", "echorelay_gamefiles.txt");
+
+        /// <summary>
+        /// Installs the latest EchoRelay release's game DLLs (the patch and the game server plugin) if they're newer than the
+        /// installed ones. The game downloads are only rebuilt occasionally, so fixes to these arrive this way. Failures
+        /// (offline, rate limited, ...) are ignored: the installed files keep working.
+        /// </summary>
+        /// <returns>The release tag installed, or null if nothing changed.</returns>
+        public async Task<string?> UpdateGameFilesAsync(GameBuild build, string installFolder, CancellationToken cancel)
+        {
+            if (string.IsNullOrWhiteSpace(_settings.GameFilesRepository) || !IsInstalled(installFolder))
+                return null;
+            try
+            {
+                using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+                timeout.CancelAfter(TimeSpan.FromSeconds(30));
+
+                // Find the latest release and its GameFiles asset.
+                string api = $"https://api.github.com/repos/{_settings.GameFilesRepository.Trim()}/releases/latest";
+                using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, api);
+                request.Headers.Accept.ParseAdd("application/vnd.github+json");
+                using HttpResponseMessage response = await Http.SendAsync(request, timeout.Token);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+                string json = await response.Content.ReadAsStringAsync();
+                string tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"").Groups[1].Value;
+                string asset = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+-GameFiles\\.zip)\"").Groups[1].Value;
+                if (tag.Length == 0 || asset.Length == 0)
+                    return null;
+                string versionPath = GameFilesVersionPath(installFolder);
+                if (File.Exists(versionPath) && File.ReadAllText(versionPath).Trim() == tag)
+                    return null;
+
+                // Download and install the DLLs. A loaded DLL can't be overwritten but can be renamed, so move the old one aside.
+                using HttpResponseMessage download = await Http.GetAsync(asset, timeout.Token);
+                download.EnsureSuccessStatusCode();
+                byte[] zip = await download.Content.ReadAsByteArrayAsync();
+                using (ZipArchive archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read))
+                {
+                    foreach (var (entryName, file) in GameFilesFor(build))
+                    {
+                        ZipArchiveEntry? entry = archive.GetEntry(entryName);
+                        if (entry == null)
+                            continue;
+                        string target = Path.Combine(installFolder, file);
+                        string temp = target + ".new";
+                        using (Stream source = entry.Open())
+                        using (FileStream destination = File.Create(temp))
+                            source.CopyTo(destination);
+                        if (File.Exists(target))
+                        {
+                            string old = target + ".old";
+                            try { File.Delete(old); } catch { }
+                            File.Move(target, old);
+                        }
+                        File.Move(temp, target);
+                    }
+                }
+                File.WriteAllText(versionPath, tag);
+                return tag;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        #endregion
 
         #region Download
         /// <summary>

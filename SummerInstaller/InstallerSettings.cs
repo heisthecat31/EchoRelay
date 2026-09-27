@@ -55,6 +55,11 @@ namespace SummerInstaller
         public string Subtitle { get; set; } = "Summer Lobby";
         /// <summary>The installer's own name, under the title (it installs either build).</summary>
         public string AppName { get; set; } = "Classic Lobbies";
+        /// <summary>
+        /// The GitHub repository whose latest release's GameFiles zip keeps the EchoRelay game DLLs up to date ("owner/repo";
+        /// empty turns the updates off).
+        /// </summary>
+        public string GameFilesRepository { get; set; } = "heisthecat31/EchoRelay";
         public string Tagline { get; set; } = "";
         public string DownloadUrl { get; set; } = "";
         public string Sha256 { get; set; } = "";
@@ -95,6 +100,7 @@ namespace SummerInstaller
                     Title = Get(values, "title", "Echo VR"),
                     Subtitle = Get(values, "subtitle", "Summer Lobby"),
                     AppName = Get(values, "appName", "Classic Lobbies"),
+                    GameFilesRepository = Get(values, "gameFilesRepository", "heisthecat31/EchoRelay"),
                     Tagline = Get(values, "tagline", ""),
                     DownloadUrl = Get(values, "downloadUrl", ""),
                     Sha256 = Get(values, "sha256", ""),

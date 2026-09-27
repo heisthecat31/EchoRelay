@@ -609,15 +609,22 @@ namespace SummerInstaller
         #endregion
 
         #region Done view / window
-        private void LaunchGame()
+        private async void LaunchGame()
         {
             try
             {
+                // Pick up newer EchoRelay game files (the patch DLL etc.) before starting; quietly skipped if offline.
+                IsEnabled = false;
+                ShowBanner("Checking for game file updates…", info: true);
+                string? updated = await _installer.UpdateGameFilesAsync(_build, InstallFolder, CancellationToken.None);
+                if (updated != null)
+                    ShowBanner($"Updated the EchoRelay game files to {updated}.", info: true);
                 GameInstaller.Launch(InstallFolder, _build);
                 Close();
             }
             catch (Exception ex)
             {
+                IsEnabled = true;
                 ShowBanner("Couldn't start the game: " + ex.Message);
             }
         }
