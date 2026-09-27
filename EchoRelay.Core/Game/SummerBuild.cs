@@ -126,6 +126,20 @@ namespace EchoRelay.Core.Game
             return _knownNames.Value.TryGetValue(symbol, out string? name) ? name : null;
         }
 
+        private static readonly HashSet<long> _privateGameTypes = new HashSet<long>
+        {
+            Symbol.Hash("echo_arena_private"), Symbol.Hash("echo_combat_private"), Symbol.Hash("social_2.0_private"),
+        };
+
+        /// <summary>
+        /// Checks whether a game type is a private match's (e.g. echo_arena_private, from a lobby terminal's private match).
+        /// A session created for one must be private, whatever lobby type the request's (not fully mapped) fields read as.
+        /// </summary>
+        public static bool IsPrivateGameType(long? gameType)
+        {
+            return gameType != null && _privateGameTypes.Contains(gameType.Value);
+        }
+
         /// <summary>
         /// Checks whether a game type is a social (lobby) game type of any of the lobby builds.
         /// </summary>
@@ -151,7 +165,7 @@ namespace EchoRelay.Core.Game
         {
             if (IsChristmasVersionLock(versionLock))
             {
-                if (gameType == GameTypeArenaChristmas || gameType == GameTypeArena)
+                if (gameType == GameTypeArenaChristmas || gameType == GameTypeArena || gameType == Symbol.Hash("echo_arena_private"))
                     return LevelArena;
                 return IsSocialGameType(gameType) ? LevelChristmasLobby : null;
             }

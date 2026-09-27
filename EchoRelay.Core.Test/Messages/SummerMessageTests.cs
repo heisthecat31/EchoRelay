@@ -329,6 +329,26 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal(new ChristmasLobbyJoinSessionRequestv5().MessageTypeSymbol, Symbol.Hash("SNSLobbyJoinSessionRequestv5"));
         }
 
+        [Fact]
+        public void ChristmasCreateSessionRequestDecodesCapturedPayload()
+        {
+            // A christmas party leader creating a private match for a party of two (captured from a live relay).
+            byte[] data = Convert.FromHexString("FFFFFFFFFFFFFFFFC3B159E222DD78F1038CDBF465099909F8F49FA8B1D0E8C8020000000000000001000000030000007B2267616D6574797065223A3639313539343335313238323435373630332C226C6576656C223A2D317D000400000000000000F9BF4DA90000000004000000000000001C4C0B980000000000000100");
+            ChristmasLobbyCreateSessionRequestv6 request = new ChristmasLobbyCreateSessionRequestv6();
+            request.Decode(data);
+            Assert.True(SummerBuild.IsChristmasVersionLock(request.VersionLock));
+            Assert.Equal(Symbol.Hash("echo_arena_private"), request.GameTypeSymbol);
+            Assert.True(SummerBuild.IsPrivateGameType(request.GameTypeSymbol));
+            Assert.Equal(SummerBuild.PlatformSymbolOvr, request.PlatformSymbol);
+            Assert.Equal(Server.Messages.ServerDB.ERGameServerStartSession.LobbyType.Private, request.LobbyType);
+            Assert.Equal(new[] { "OVR-ORG-2840444921", "OVR-ORG-2550877212" }, request.Entrants.Select(e => e.ToString()));
+            Assert.Equal("OVR-ORG-2840444921", request.UserId.ToString());
+            Assert.Equal(-1, request.SessionSettings.Level);
+            // echo_arena_private has a default level on christmas (the request's level is -1).
+            Assert.Equal(SummerBuild.LevelArena, SummerBuild.DefaultLevelForGameType(request.GameTypeSymbol, request.VersionLock));
+            Assert.Equal(new ChristmasLobbyCreateSessionRequestv6().MessageTypeSymbol, Symbol.Hash("SNSLobbyCreateSessionRequestv6"));
+        }
+
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }
     }
 }

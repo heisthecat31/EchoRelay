@@ -65,6 +65,9 @@ namespace EchoRelay.Core.Server.Services.Matching
                     case SummerLobbyJoinSessionRequestv6 summerJoinSessionRequest:
                         await ProcessSummerJoinSessionRequestv6(sender, summerJoinSessionRequest);
                         break;
+                    case ChristmasLobbyCreateSessionRequestv6 christmasCreateSessionRequest:
+                        await ProcessChristmasCreateSessionRequestv6(sender, christmasCreateSessionRequest);
+                        break;
                     case ChristmasLobbyJoinSessionRequestv5 christmasJoinSessionRequest:
                         await ProcessChristmasJoinSessionRequestv5(sender, christmasJoinSessionRequest);
                         break;
@@ -180,7 +183,10 @@ namespace EchoRelay.Core.Server.Services.Matching
                 request.UserId = sender.UserId;
             long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
             long? level = request.LevelSymbol != -1 ? request.LevelSymbol : request.SessionSettings.Level;
-            MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, request.LobbyType, TeamIndex.Any, request.SessionSettings);
+            // A private match's game type makes the session private: the request's lobby type byte isn't reliably mapped,
+            // and read as public it put "private" matches in public sessions (and other players' private ones).
+            LobbyType lobbyType = SummerBuild.IsPrivateGameType(gameType) ? LobbyType.Private : request.LobbyType;
+            MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, lobbyType, TeamIndex.Any, request.SessionSettings);
             matchingSession.IsSummer = true;
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
@@ -202,6 +208,29 @@ namespace EchoRelay.Core.Server.Services.Matching
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
+        }
+
+        /// <summary>
+        /// Processes a christmas build create session request (a lobby terminal's private match). The party leader creates the
+        /// session; the other members follow by lobby id (SNSLobbyJoinSessionRequestv5).
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessChristmasCreateSessionRequestv6(Peer sender, ChristmasLobbyCreateSessionRequestv6 request)
+        {
+            _summerPeers[sender] = true;
+            XPlatformId userId = request.UserId;
+            if (!Server.LoginService.CheckUserLoggedIn(userId) && sender.UserId != null)
+                userId = sender.UserId;
+            long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
+            long? level = request.SessionSettings.Level is long settingsLevel && settingsLevel != -1 ? settingsLevel : null;
+            LobbyType lobbyType = SummerBuild.IsPrivateGameType(gameType) ? LobbyType.Private : request.LobbyType;
+            MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(userId, null, gameType, level, lobbyType, TeamIndex.Any, request.SessionSettings);
+            matchingSession.IsSummer = true;
+            matchingSession.VersionLock = request.VersionLock;
+            sender.SetSessionData(matchingSession);
+            await ProcessMatchingSession(sender, null, userId, summer: true);
         }
 
         /// <summary>
