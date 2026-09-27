@@ -1,5 +1,4 @@
 ﻿using EchoRelay.App.Forms.Controls;
-using EchoRelay.App.Forms.Controls;
 using EchoRelay.App.Forms.Dialogs;
 using EchoRelay.App.Properties;
 using EchoRelay.App.Settings;
