@@ -507,8 +507,14 @@ namespace EchoRelay.Core.Server.Services.Login
             string displayName = account.Profile.Server.DisplayName ?? account.Profile.Client.DisplayName ?? xplatformId;
             ulong now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-            // Client profile: whatever the client last saved, with the fields the summer client requires.
-            JObject client = JObject.FromObject(account.Profile.Client, serializer);
+            // Client profile: whatever the client last saved, with the fields the summer client requires. The christmas build
+            // has its own (see ProcessUpdateProfile); the other builds get combat choices a christmas save hashed as names again.
+            JObject client = publisherLock == SummerBuild.ChristmasPublisherLock
+                && account.Profile.Server.AdditionalData.TryGetValue(ChristmasClientDataKey, out JToken? christmasClient) && christmasClient is JObject christmasClientObj
+                ? (JObject)christmasClientObj.DeepClone()
+                : JObject.FromObject(account.Profile.Client, serializer);
+            if (publisherLock != SummerBuild.ChristmasPublisherLock)
+                SummerBuild.RepairCombatChoices(client);
             client["displayname"] = displayName;
             client["xplatformid"] = xplatformId;
             client["modifytime"] = now;
@@ -570,6 +576,12 @@ namespace EchoRelay.Core.Server.Services.Login
         /// 3445406071846753926 for "general") where the summer and halloween builds use names.
         /// </summary>
         private const string ChristmasServerDataKey = "christmas_server";
+
+        /// <summary>
+        /// The christmas build's client profile saves are kept apart too: it hashes the combat choices it doesn't use
+        /// ("weapon": "rocket" becomes "4743087768721687050"), which left summer players with no weapons.
+        /// </summary>
+        private const string ChristmasClientDataKey = "christmas_client";
 
         private static string GetServerDataKey(string? publisherLock) => publisherLock == SummerBuild.ChristmasPublisherLock ? ChristmasServerDataKey : SummerServerDataKey;
 
@@ -954,7 +966,25 @@ namespace EchoRelay.Core.Server.Services.Login
             ulong currentTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
             // TODO: For now, we just trust all the update data and merge it in. We should scrutinize it more.
-            account.Profile.Client = request.ClientProfile;
+            // A christmas client's save is kept apart, so it can't overwrite the client profile the other builds use.
+            if (_christmasClientPeers.ContainsKey(sender))
+            {
+                JsonSerializer serializer = JsonSerializer.Create(StreamIO.JsonSerializerSettings);
+                account.Profile.Server.AdditionalData[ChristmasClientDataKey] = JObject.FromObject(request.ClientProfile, serializer);
+            }
+            else
+            {
+                account.Profile.Client = request.ClientProfile;
+                // Repair combat choices an earlier christmas save hashed, so they're stored as names again.
+                JsonSerializer serializer = JsonSerializer.Create(StreamIO.JsonSerializerSettings);
+                JObject saved = JObject.FromObject(account.Profile.Client, serializer);
+                if (SummerBuild.RepairCombatChoices(saved))
+                {
+                    account.Profile.Client.Weapon = saved.Value<string>("weapon");
+                    account.Profile.Client.Grenade = saved.Value<string>("grenade");
+                    account.Profile.Client.Ability = saved.Value<string>("ability");
+                }
+            }
 
             // Update the account.
             account.Profile.Server.UpdateTime = currentTimestamp;

@@ -119,6 +119,49 @@ namespace EchoRelay.Core.Game
             }.ToDictionary(Symbol.Hash, name => name));
 
         /// <summary>
+        /// The summer build's combat choices in the client profile, by symbol: weapons, grenades (ordnance) and abilities
+        /// (tactical). The christmas client stores these as symbol hashes when it saves a profile it read them from.
+        /// </summary>
+        private static readonly Lazy<Dictionary<long, string>> _combatChoiceNames = new Lazy<Dictionary<long, string>>(() =>
+            new[]
+            {
+                "assault", "blaster", "rocket", "scout", "magnum",
+                "det", "stun", "arc", "burst",
+                "buff", "heal", "sensor", "shield", "wraith",
+            }.ToDictionary(Symbol.Hash, name => name));
+
+        /// <summary>
+        /// The client profile keys holding combat choices by name.
+        /// </summary>
+        private static readonly string[] _combatChoiceKeys = { "weapon", "grenade", "ability" };
+
+        /// <summary>
+        /// Turns combat choices saved as symbol hashes ("weapon": "4743087768721687050") back into the names the summer and
+        /// halloween builds read ("rocket"). A client profile saved by the christmas build has them hashed, and the summer
+        /// build then can't load its weapon settings ("Unable to load weapon settings in R15NetEquipment"): no combat.
+        /// Unknown hashes are removed, so the game picks its default.
+        /// </summary>
+        /// <returns>True if the profile was changed.</returns>
+        public static bool RepairCombatChoices(Newtonsoft.Json.Linq.JObject clientProfile)
+        {
+            bool changed = false;
+            foreach (string key in _combatChoiceKeys)
+            {
+                if (clientProfile[key]?.Type is not (Newtonsoft.Json.Linq.JTokenType.String or Newtonsoft.Json.Linq.JTokenType.Integer))
+                    continue;
+                string value = clientProfile[key]!.ToString();
+                if (!long.TryParse(value, out long symbol))
+                    continue;
+                if (_combatChoiceNames.Value.TryGetValue(symbol, out string? name))
+                    clientProfile[key] = name;
+                else
+                    clientProfile.Remove(key);
+                changed = true;
+            }
+            return changed;
+        }
+
+        /// <summary>
         /// Names a lobby build game type or level symbol, or null if it isn't one.
         /// </summary>
         public static string? GetKnownName(long symbol)

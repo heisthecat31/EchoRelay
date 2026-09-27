@@ -349,6 +349,31 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal(new ChristmasLobbyCreateSessionRequestv6().MessageTypeSymbol, Symbol.Hash("SNSLobbyCreateSessionRequestv6"));
         }
 
+        [Fact]
+        public void RepairCombatChoicesRestoresNamesAChristmasSaveHashed()
+        {
+            // A real account after playing christmas: its summer combat choices (rocket, burst, heal) saved as hashes.
+            JObject client = new JObject
+            {
+                ["weapon"] = "4743087768721687050",
+                ["grenade"] = "-2076784119188203612",
+                ["ability"] = "-3980269165860216900",
+                ["weaponarm"] = 1,
+            };
+            Assert.True(EchoRelay.Core.Game.SummerBuild.RepairCombatChoices(client));
+            Assert.Equal("rocket", (string?)client["weapon"]);
+            Assert.Equal("burst", (string?)client["grenade"]);
+            Assert.Equal("heal", (string?)client["ability"]);
+            Assert.Equal(1, (int?)client["weaponarm"]);
+
+            // Names are left alone, and an unknown hash is dropped so the game uses its default.
+            JObject named = new JObject { ["weapon"] = "scout", ["grenade"] = "12345" };
+            Assert.True(EchoRelay.Core.Game.SummerBuild.RepairCombatChoices(named));
+            Assert.Equal("scout", (string?)named["weapon"]);
+            Assert.Null(named["grenade"]);
+            Assert.False(EchoRelay.Core.Game.SummerBuild.RepairCombatChoices(new JObject { ["weapon"] = "assault" }));
+        }
+
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }
     }
 }

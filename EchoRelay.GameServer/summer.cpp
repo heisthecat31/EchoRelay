@@ -563,7 +563,7 @@ namespace Summer
 			g_sessionActive = true;
 			g_sessionLoadReported = false;
 			g_inGame = false;
-			Log("Starting session: %s", json.c_str());
+			Log("Starting session (lobby type %u): %s", (unsigned)(BYTE)p[34], json.c_str());
 			InjectEvent("SNSLobbyStartSessionv2", msg.data(), msg.size());
 			break;
 		}
