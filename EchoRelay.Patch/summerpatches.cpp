@@ -39,7 +39,7 @@ namespace SummerPatches
 		BytePatch serverFlagsGate;  // makes the block serverFlags patches run, on builds where it is behind a flag
 		BytePatch serverFlags;
 		BytePatch serverPackage;
-		BytePatch serverProviders; // keeps a dedicated server's net providers, on builds that would load pnsdemo.dll
+		BytePatch serverProviders[2]; // a dedicated server's net providers, on builds that would load pnsdemo.dll
 		BytePatch noOvr;
 		BytePatch noOvrStatus;
 		BytePatch noAudio;
@@ -63,7 +63,7 @@ namespace SummerPatches
 				0x14005578C, { 0x83, 0x8B, 0x40, 0x6C, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x40, 0x6C, 0x00, 0x00, 0x06 }, 7 },
 			{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped",
 				0x140044F53, { 0x48, 0x8D, 0x15, 0x96, 0x91, 0x14, 0x01 }, { 0x48, 0x8D, 0x15, 0x86, 0x91, 0x14, 0x01 }, 7 },
-			NO_PATCH, // dedicated servers run without net providers on this build
+			{ NO_PATCH, NO_PATCH }, // dedicated servers run without net providers on this build
 			{ "skip Oculus/VR initialization", 0x1407CF501, { 0x74, 0x22 }, { 0xEB, 0x22 }, 2 },
 			{ "silence 'Failed to get Oculus session status' (logged every frame without VR)",
 				0x14049424D, { 0x74, 0x24 }, { 0xEB, 0x24 }, 2 },
@@ -95,10 +95,16 @@ namespace SummerPatches
 				0x1400B915B, { 0x83, 0x89, 0xB8, 0x58, 0x00, 0x00, 0x01 }, { 0x83, 0x89, 0xB8, 0x58, 0x00, 0x00, 0x06 }, 7 },
 			{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped",
 				0x1400B1826, { 0x48, 0x8D, 0x15, 0x13, 0x48, 0xEF, 0x00 }, { 0x48, 0x8D, 0x15, 0x03, 0x48, 0xEF, 0x00 }, 7 },
-			// Dedicated mode (flag 4) picks the pnsdemo.dll provider here, which is not shipped, and this build's NetGame
-			// needs a provider (summer's runs without one). Keep the OVR and RAD providers a client uses instead.
-			{ "keep the OVR/RAD net providers in dedicated mode (instead of pnsdemo.dll, which is not shipped)",
-				0x1400B4628, { 0x0F, 0x84, 0xF3, 0x00, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
+			// Dedicated mode (flag 4) loads pnsdemo.dll here, which is not shipped, then the RAD provider (EchoRelay). Skip
+			// straight to the RAD provider (xor r14d, r14d; jmp 0x1400B4796), so a server needs neither pnsdemo.dll nor the
+			// Oculus platform (pnsovr.dll). Unlike summer's, this build's NetGame can't run with an empty provider slot
+			// (ending a session fails with "Net service provider not initialized"), so it gets the RAD provider in both.
+			{
+				{ "create only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped, and no Oculus)",
+					0x1400B4721, { 0x4C, 0x8D, 0x05, 0x48, 0x1B, 0xEF, 0x00, 0x33 }, { 0x45, 0x33, 0xF6, 0xE9, 0x6D, 0x00, 0x00, 0x00 }, 8 },
+				{ "give the dedicated server's NetGame the RAD provider in place of the demo one (mov r8, r14 -> mov r8, r15)",
+					0x1400B4846, { 0x4D, 0x8B, 0xC6 }, { 0x4D, 0x8B, 0xC7 }, 3 },
+			},
 			{ "skip Oculus/VR initialization", 0x140D32111, { 0x74, 0x20 }, { 0xEB, 0x20 }, 2 },
 			{ "silence 'Failed to get Oculus session status' (logged every frame without VR)",
 				0x1402EDD0D, { 0x74, 0x1E }, { 0xEB, 0x1E }, 2 },
@@ -498,8 +504,9 @@ namespace SummerPatches
 				ApplyGamePatch(g_build->serverFlagsGate, "run the startup flags block");
 			ApplyGamePatch(g_build->serverFlags, "dedicated server startup flags");
 			ApplyGamePatch(g_build->serverPackage, "load the client data package in server mode");
-			if (g_build->serverProviders.size != 0)
-				ApplyGamePatch(g_build->serverProviders, "keep the net providers in dedicated mode");
+			for (const BytePatch& providers : g_build->serverProviders)
+				if (providers.size != 0)
+					ApplyGamePatch(providers, "dedicated server net providers");
 		}
 		if (noOvr)
 		{
