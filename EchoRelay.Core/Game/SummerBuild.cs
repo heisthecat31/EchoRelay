@@ -45,6 +45,12 @@ namespace EchoRelay.Core.Game
         public const long ChristmasLiveVersionLock = unchecked((long)0xF178DD22E259B1C3);
 
         /// <summary>
+        /// The version lock the 2018 christmas ("winter") lobby build (rad15_winter, goldmaster 268902) sends. It speaks the
+        /// summer build's messages, except for its login settings (SNSLoginClientSettings, like halloween).
+        /// </summary>
+        public const long WinterVersionLock = unchecked((long)0xA1764C13F7D836C6);
+
+        /// <summary>
         /// Checks whether a version lock belongs to the christmas build (under any publisher lock).
         /// </summary>
         public static bool IsChristmasVersionLock(long? versionLock)
@@ -57,7 +63,7 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static bool IsLobbyVersionLock(long versionLock)
         {
-            return versionLock == VersionLock || versionLock == HalloweenVersionLock || IsChristmasVersionLock(versionLock);
+            return versionLock == VersionLock || versionLock == HalloweenVersionLock || versionLock == WinterVersionLock || IsChristmasVersionLock(versionLock);
         }
 
         /// <summary>
@@ -69,6 +75,16 @@ namespace EchoRelay.Core.Game
         /// The publisher lock halloween lobby build (rad15_halloween) clients log in with.
         /// </summary>
         public const string HalloweenPublisherLock = "rad15_halloween";
+
+        /// <summary>
+        /// The publisher lock christmas 2018 ("winter") build clients log in with.
+        /// </summary>
+        public const string WinterPublisherLock = "rad15_winter";
+
+        /// <summary>
+        /// The PE header timestamp of the christmas 2018 ("winter") lobby build's echovr.exe.
+        /// </summary>
+        public const uint WinterExecutableTimestamp = 0x5C17F6B9;
 
         /// <summary>
         /// The publisher lock christmas 2017 build (rad14) clients log in with. Like halloween, the christmas client rejects
@@ -115,7 +131,7 @@ namespace EchoRelay.Core.Game
             {
                 "social_2.0", "social_2.0_private", "social_2.0_npe", "echo_arena", "echo_arena_private", "echo_combat", "echo_combat_private",
                 "social", "arena",
-                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_arena_a", "mpl_combat_dyson",
+                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_arena_a", "mpl_combat_dyson",
             }.ToDictionary(Symbol.Hash, name => name));
 
         /// <summary>
@@ -196,6 +212,11 @@ namespace EchoRelay.Core.Game
         /// The halloween build's social lobby. It has no mpl_lobby_b2_summer; its data ships mpl_lobby_b2_spooky instead.
         /// </summary>
         public static readonly long LevelHalloweenLobby = Symbol.Hash("mpl_lobby_b2_spooky");
+
+        /// <summary>
+        /// The christmas 2018 ("winter") build's social lobby.
+        /// </summary>
+        public static readonly long LevelWinterLobby = Symbol.Hash("mpl_lobby_b2_xmas");
         public static readonly long LevelLobby = Symbol.Hash("mpl_lobby_b2");
         public static readonly long LevelArena = Symbol.Hash("mpl_arena_a");
         public static readonly long LevelCombatDyson = Symbol.Hash("mpl_combat_dyson");
@@ -212,7 +233,7 @@ namespace EchoRelay.Core.Game
                     return LevelArena;
                 return IsSocialGameType(gameType) ? LevelChristmasLobby : null;
             }
-            long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : LevelSummerLobby;
+            long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : versionLock == WinterVersionLock ? LevelWinterLobby : LevelSummerLobby;
             if (gameType == null)
                 return lobby;
             if (gameType == GameTypeSocial || gameType == Symbol.Hash("social_2.0_private") || gameType == Symbol.Hash("social_2.0_npe"))
@@ -308,6 +329,7 @@ namespace EchoRelay.Core.Game
                 ExecutableTimestamp => "Summer 2019",
                 HalloweenExecutableTimestamp => "Halloween 2018",
                 ChristmasExecutableTimestamp => "Christmas 2017",
+                WinterExecutableTimestamp => "Christmas 2018",
                 _ => null,
             };
         }

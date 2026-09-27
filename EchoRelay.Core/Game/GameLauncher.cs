@@ -34,8 +34,8 @@ namespace EchoRelay.Core.Game
                 return;
             }
 
-            // The halloween lobby build takes the same flags as summer (EchoRelay.Patch emulates the ones it lacks).
-            if (timestamp == SummerBuild.ExecutableTimestamp || timestamp == SummerBuild.HalloweenExecutableTimestamp)
+            // The halloween and christmas 2018 lobby builds take the same flags as summer (EchoRelay.Patch emulates the ones they lack).
+            if (timestamp == SummerBuild.ExecutableTimestamp || timestamp == SummerBuild.HalloweenExecutableTimestamp || timestamp == SummerBuild.WinterExecutableTimestamp)
             {
                 if (role == LaunchRole.Server)
                     args.Add("-server");

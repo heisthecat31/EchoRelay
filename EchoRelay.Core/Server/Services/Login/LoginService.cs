@@ -481,8 +481,8 @@ namespace EchoRelay.Core.Server.Services.Login
             LoginSettingsResource? loginSettings = Storage.LoginSettings.Get();
             if (loginSettings != null)
             {
-                // The halloween build only knows the original name of this message.
-                if (_halloweenClientPeers.ContainsKey(sender))
+                // The halloween and christmas 2018 builds only know the original name of this message.
+                if (_halloweenClientPeers.ContainsKey(sender) || request.AccountInfo.PublisherLock == SummerBuild.WinterPublisherLock)
                     await sender.Send(new HalloweenLoginClientSettings(loginSettings));
                 else
                     await sender.Send(new LoginSettings(loginSettings));

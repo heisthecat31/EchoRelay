@@ -45,7 +45,7 @@ namespace SummerPatches
 		BytePatch noAudio;
 		BytePatch headless;        // emulates -headless on builds without it (applied instead of noAudio; it clears audio too)
 		BytePatch multiInstance;
-		BytePatch pnsOvr[3];
+		BytePatch pnsOvr[5];
 		UINT64 statusHostString;   // 0 when the status/news redirect has not been located on this build
 		UINT64 statusHostLeas[2];
 		BOOL socialSupported;      // parties/friends through EchoRelay (summersocial)
@@ -128,6 +128,50 @@ namespace SummerPatches
 			FALSE,
 			// No -headless in this build, and its renderer (even under -spectatorstream) creates an OVR swap chain, which
 			// fails fatally ("Failed to create OVR D3D swap chain (-1004)") if Oculus initialization was skipped.
+			FALSE,
+			FALSE,
+		},
+		{
+			// The 2018 christmas ("winter") lobby build, two months after halloween and the same generation. Sites were
+			// located against the halloween build: by masked signatures (watchdog, data package, status/audio/headless,
+			// the provider hand-off), by shape (mutex, VR init) and by strings (-mpmnu setter, pnsdemo.dll, API host).
+			"christmas 2018 (rad15_winter, goldmaster 268902)", 0x5C17F6B9, 0x5C17F5CD,
+			{ "disable the deadlock watchdog (long level loads trip it and it deliberately crashes the game)",
+				0x140D700E7, { 0x76, 0x2E }, { 0xEB, 0x2E }, 2 },
+			NO_PATCH, // the lobby flags setter below runs by default on this build
+			{ "set the dedicated server startup flags (or dword [rcx+58C0h], 1 -> 6)",
+				0x1400CAFAB, { 0x83, 0x89, 0xC0, 0x58, 0x00, 0x00, 0x01 }, { 0x83, 0x89, 0xC0, 0x58, 0x00, 0x00, 0x06 }, 7 },
+			{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped",
+				0x1400C3386, { 0x48, 0x8D, 0x15, 0x33, 0x6F, 0xF3, 0x00 }, { 0x48, 0x8D, 0x15, 0x23, 0x6F, 0xF3, 0x00 }, 7 },
+			{
+				// As on halloween: skip pnsdemo.dll straight to the RAD provider (xor r14d, r14d; jmp 0x1400C6AEE).
+				{ "create only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped, and no Oculus)",
+					0x1400C6A78, { 0x4C, 0x8D, 0x05, 0x91, 0x3F, 0xF3, 0x00, 0x33 }, { 0x45, 0x33, 0xF6, 0xE9, 0x6E, 0x00, 0x00, 0x00 }, 8 },
+				{ "give the dedicated server's NetGame the RAD provider in place of the demo one (mov r8, r14 -> mov r8, r15)",
+					0x1400C6BA3, { 0x4D, 0x8B, 0xC6 }, { 0x4D, 0x8B, 0xC7 }, 3 },
+			},
+			{ "skip Oculus/VR initialization", 0x140D917D1, { 0x74, 0x20 }, { 0xEB, 0x20 }, 2 },
+			{ "silence 'Failed to get Oculus session status' (logged every frame without VR)",
+				0x1402FE9FD, { 0x74, 0x1E }, { 0xEB, 0x1E }, 2 },
+			{ "disable audio, as -noaudio would (always clear the audio flag bit while parsing the command line)",
+				0x140306D96, { 0x74, 0x07 }, { 0x90, 0x90 }, 2 },
+			{ "run with no graphics or audio, as -headless does on later builds (and dword [rbx+1D4h], 0FFFEFEFCh)",
+				0x140306D8A,
+				{ 0x41, 0x8B, 0xCF, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x95, 0xC1, 0x85, 0xC9, 0x74, 0x07, 0x83, 0xA3, 0xD4, 0x01, 0x00, 0x00, 0xFD },
+				{ 0x81, 0xA3, 0xD4, 0x01, 0x00, 0x00, 0xFC, 0xFE, 0xFE, 0xFF, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 21 },
+			{ "skip the single-instance mutex check", 0x140D916D5, { 0x74, 0x58 }, { 0xEB, 0x58 }, 2 },
+			{
+				// Unlike halloween, this build also requires a second value (the Oculus user proof's nonce) before logging in,
+				// on both the first and the retry path.
+				{ "send SNSLoginRequest without an Oculus user proof", 0xF741, { 0x74, 0x64 }, { 0x90, 0x90 }, 2 },
+				{ "send SNSLoginRequest without an Oculus access token", 0xF74A, { 0x74, 0x5B }, { 0x90, 0x90 }, 2 },
+				{ "send SNSLoginRequest without an Oculus user proof (retry path)", 0x11F55, { 0x0F, 0x84, 0x22, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
+				{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x11F62, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
+				{ "skip the Oculus entitlement check", 0x12874, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+			},
+			0x141156AD0,                  // "https://api.readyatdawn.com"
+			{ 0x1408FFA6A, 0x1408FFB4B }, // lea rdx, [host] for status/services and status/news
+			FALSE,
 			FALSE,
 			FALSE,
 		},
