@@ -1,5 +1,7 @@
 ﻿#define _CRT_RAND_S
 #include <stdlib.h>
+// First: it brings in winsock2.h, which must precede xmaspatches.h's windows.h (and its winsock.h).
+#include "summersocial.h"
 #include "xmaspatches.h"
 #include <winternl.h>
 #include <dxgi.h>
@@ -150,6 +152,7 @@ namespace XmasPatches
 	static FILE* g_log = NULL;
 	static UINT64 g_userId = 0;
 	static PVOID g_dllNotificationCookie = NULL;
+	static BOOL g_echoRelaySocial = FALSE;
 
 	static VOID Log(const CHAR* format, ...)
 	{
@@ -506,6 +509,14 @@ namespace XmasPatches
 		{
 			Log("pnsovr.dll loaded at %p", data->DllBase);
 			PatchPnsOvr((BYTE*)data->DllBase);
+			if (g_echoRelaySocial)
+				SummerSocial::HookPnsOvrModule((HMODULE)data->DllBase);
+		}
+		// The Oculus Platform SDK pnsovr.dll imports: its parties (rooms) and friends calls are answered by EchoRelay.
+		else if (g_echoRelaySocial && name->Length == wcslen(L"LibOVRPlatform64_1.dll") * sizeof(WCHAR) &&
+			_wcsnicmp(name->Buffer, L"LibOVRPlatform64_1.dll", name->Length / sizeof(WCHAR)) == 0)
+		{
+			SummerSocial::HookPlatformModule((HMODULE)data->DllBase, L"LibOVRPlatform64_1.dll");
 		}
 	}
 
@@ -769,10 +780,28 @@ namespace XmasPatches
 		g_userId = GetInstallUserId(server);
 		Log("This install's user id: %llu", (unsigned long long)g_userId);
 
+		// Parties through EchoRelay instead of Oculus rooms (unless -oculussocial). Every player starts in a party of one
+		// (a private room it owns); with no Oculus services that room was never created, so players weren't the leader of
+		// their own party and got "reserved for party leader". Dedicated servers have no parties.
+		g_echoRelaySocial = !server && !ReplaceFlag(GetCommandLineW(), L"-oculussocial", L"             ");
+		ReplaceFlag(GetCommandLineA(), "-oculussocial", "             ");
+		if (g_echoRelaySocial)
+		{
+			SummerSocial::SetLogger(Log);
+			SummerSocial::SetLocalUserId(g_userId);
+			HMODULE platform = GetModuleHandleA("LibOVRPlatform64_1.dll");
+			if (platform != NULL)
+				SummerSocial::HookPlatformModule(platform, L"LibOVRPlatform64_1.dll");
+		}
+
 		// pnsovr.dll is loaded later, by the game's net service provider loader.
 		HMODULE pnsovr = GetModuleHandleA("pnsovr.dll");
 		if (pnsovr != NULL)
+		{
 			PatchPnsOvr((BYTE*)pnsovr);
+			if (g_echoRelaySocial)
+				SummerSocial::HookPnsOvrModule(pnsovr);
+		}
 		LdrRegisterDllNotificationFunc registerNotification = (LdrRegisterDllNotificationFunc)GetProcAddress(GetModuleHandleA("ntdll.dll"), "LdrRegisterDllNotification");
 		if (registerNotification != NULL)
 			registerNotification(0, OnDllNotification, NULL, &g_dllNotificationCookie);

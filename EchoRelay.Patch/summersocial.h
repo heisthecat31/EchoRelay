@@ -25,6 +25,12 @@ namespace SummerSocial
 	VOID HookPnsOvrModule(HMODULE module);
 
 	/// <summary>
+	/// Sets the local player's user id, for builds whose Oculus SDK login can't report one (christmas 2017: EchoRelay.Patch
+	/// gives each install its own id). Without it, the id comes from the SDK's ovr_GetLoggedInUserID.
+	/// </summary>
+	VOID SetLocalUserId(UINT64 userId);
+
+	/// <summary>
 	/// Sets the logging function to use.
 	/// </summary>
 	VOID SetLogger(VOID(*log)(const CHAR* format, ...));

@@ -490,7 +490,10 @@ namespace SummerSocial
 			url = config.Str("socialservice_host");
 			if (url.empty())
 			{
+				// The christmas 2017 build's config names it login_host.
 				std::string login = config.Str("loginservice_host");
+				if (login.empty())
+					login = config.Str("login_host");
 				size_t scheme = login.find("://");
 				size_t slash = scheme == std::string::npos ? std::string::npos : login.find('/', scheme + 3);
 				if (scheme != std::string::npos)
@@ -584,8 +587,12 @@ namespace SummerSocial
 	/// <summary>
 	/// Replaces Revive's shared user id with this player's own id.
 	/// </summary>
+	static UINT64 g_forcedUserId = 0;
+
 	static UINT64 MapUserId(UINT64 id)
 	{
+		if (g_forcedUserId != 0)
+			return g_forcedUserId;
 		if (!IsSharedReviveId(id))
 			return id;
 		static bool computed = false;
@@ -816,9 +823,9 @@ namespace SummerSocial
 	/// </summary>
 	static void EnsureStarted()
 	{
-		if (g_started || Real_ovr_GetLoggedInUserID == NULL)
+		if (g_started || (Real_ovr_GetLoggedInUserID == NULL && g_forcedUserId == 0))
 			return;
-		UINT64 userId = MapUserId(Real_ovr_GetLoggedInUserID());
+		UINT64 userId = g_forcedUserId != 0 ? g_forcedUserId : MapUserId(Real_ovr_GetLoggedInUserID());
 		if (userId == 0)
 			return;
 		if (g_started.exchange(true))
@@ -1188,6 +1195,11 @@ namespace SummerSocial
 	{
 		PatchPnsOvrImports();
 		return Real_RadPluginInit();
+	}
+
+	VOID SetLocalUserId(UINT64 userId)
+	{
+		g_forcedUserId = userId;
 	}
 
 	VOID HookPnsOvrModule(HMODULE module)
