@@ -97,6 +97,146 @@ namespace EchoRelay.Core.Server.Services.Social
             }
         }
 
+        #region Administration
+        /// <summary>
+        /// A player online on the social service, for administration.
+        /// </summary>
+        public record PartyPlayer(ulong Id, string Name, bool Online);
+
+        /// <summary>
+        /// A party, for administration.
+        /// </summary>
+        public record PartyInfo(ulong Id, PartyPlayer Leader, IReadOnlyList<PartyPlayer> Members, int MaxMembers, bool Locked);
+
+        /// <summary>
+        /// Fired when parties change (a player joins, leaves, is promoted, ...), so an admin view can refresh.
+        /// </summary>
+        public event Action? OnPartiesChanged;
+
+        /// <summary>
+        /// Obtains every party and the online players, for administration.
+        /// </summary>
+        public (IReadOnlyList<PartyInfo> Parties, IReadOnlyList<PartyPlayer> Players) GetPartySnapshot()
+        {
+            lock (_lock)
+            {
+                PartyPlayer Player(ulong id)
+                {
+                    SocialUser? user = _users.Values.FirstOrDefault(u => u.Id == id);
+                    return new PartyPlayer(id, user?.Name ?? id.ToString(), user != null);
+                }
+                List<PartyInfo> parties = _rooms.Values
+                    .Select(room => new PartyInfo(room.Id, Player(room.OwnerId), room.Members.Select(Player).ToList(), room.MaxUsers, room.Locked))
+                    .ToList();
+                List<PartyPlayer> players = _users.Values.Select(u => new PartyPlayer(u.Id, u.Name, true)).OrderBy(p => p.Name).ToList();
+                return (parties, players);
+            }
+        }
+
+        /// <summary>
+        /// Removes a player from their party (as the party leader's kick does). Their game gets the party without them; a
+        /// removed leader hands leadership to the next member.
+        /// </summary>
+        /// <returns>An error message, or null on success.</returns>
+        public async Task<string?> AdminRemoveFromParty(ulong userId)
+        {
+            List<(Peer, JObject)> outgoing = new List<(Peer, JObject)>();
+            lock (_lock)
+            {
+                Room? room = _rooms.Values.FirstOrDefault(r => r.Members.Contains(userId));
+                if (room == null)
+                    return "That player isn't in a party.";
+                SocialUser? user = _users.Values.FirstOrDefault(u => u.Id == userId);
+                room.Members.Remove(userId);
+                if (user != null)
+                {
+                    user.RoomId = null;
+                    outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "roomupdate", ["room"] = RoomJson(room) }));
+                }
+                if (room.Members.Count == 0)
+                {
+                    _rooms.Remove(room.Id);
+                    _invites.RemoveAll(invite => invite.RoomId == room.Id);
+                }
+                else
+                {
+                    if (room.OwnerId == userId)
+                        room.OwnerId = room.Members[0];
+                    NotifyRoomUpdate(room, userId, outgoing);
+                }
+            }
+            await SendAll(outgoing);
+            OnPartiesChanged?.Invoke();
+            return null;
+        }
+
+        /// <summary>
+        /// Makes a party member the party's leader.
+        /// </summary>
+        /// <returns>An error message, or null on success.</returns>
+        public async Task<string?> AdminPromote(ulong userId)
+        {
+            List<(Peer, JObject)> outgoing = new List<(Peer, JObject)>();
+            lock (_lock)
+            {
+                Room? room = _rooms.Values.FirstOrDefault(r => r.Members.Contains(userId));
+                if (room == null)
+                    return "That player isn't in a party.";
+                room.OwnerId = userId;
+                NotifyRoomUpdate(room, 0, outgoing);
+            }
+            await SendAll(outgoing);
+            OnPartiesChanged?.Invoke();
+            return null;
+        }
+
+        /// <summary>
+        /// Adds a player to a party. The game only moves between parties through its own join, so the player gets an invite
+        /// from the party (shown in game, from its leader) that works even if the party is locked or full.
+        /// </summary>
+        /// <returns>An error message, or null on success.</returns>
+        public async Task<string?> AdminInviteToParty(ulong userId, ulong partyId)
+        {
+            List<(Peer, JObject)> outgoing = new List<(Peer, JObject)>();
+            lock (_lock)
+            {
+                if (!_rooms.TryGetValue(partyId, out Room? room))
+                    return "That party no longer exists.";
+                SocialUser? user = _users.Values.FirstOrDefault(u => u.Id == userId);
+                if (user == null)
+                    return "That player isn't online.";
+                if (room.Members.Contains(userId))
+                    return "That player is already in the party.";
+                // An invite gets past the lock; make room for them too.
+                room.MaxUsers = Math.Max(room.MaxUsers, room.Members.Count + 1);
+                Invite invite = new Invite { Id = NewId(), RoomId = partyId, FromId = room.OwnerId, ToId = userId, SentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+                _invites.RemoveAll(existing => existing.RoomId == partyId && existing.ToId == userId);
+                _invites.Add(invite);
+                outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "invite", ["invite"] = InviteJson(invite) }));
+            }
+            await SendAll(outgoing);
+            return null;
+        }
+
+        /// <summary>
+        /// Disbands a party: every member is removed from it.
+        /// </summary>
+        /// <returns>An error message, or null on success.</returns>
+        public async Task<string?> AdminDisband(ulong partyId)
+        {
+            ulong[] members;
+            lock (_lock)
+            {
+                if (!_rooms.TryGetValue(partyId, out Room? room))
+                    return "That party no longer exists.";
+                members = room.Members.ToArray();
+            }
+            foreach (ulong member in members)
+                await AdminRemoveFromParty(member);
+            return null;
+        }
+        #endregion
+
         private void SocialService_OnPeerDisconnected(Service service, Peer peer)
         {
             // A disconnected player leaves their party and stops being online.
@@ -111,6 +251,7 @@ namespace EchoRelay.Core.Server.Services.Social
                 _invites.RemoveAll(invite => invite.ToId == user.Id);
             }
             _ = SendAll(outgoing);
+            OnPartiesChanged?.Invoke();
         }
 
         protected override async Task HandlePacket(Peer sender, Packet packet)
@@ -136,6 +277,8 @@ namespace EchoRelay.Core.Server.Services.Social
                         outgoing.Add((sender, Error(rid.Value, ERROR_NOT_ALLOWED, ex.Message)));
                 }
                 await SendAll(outgoing);
+                if (socialMessage.Data.Value<string>("t") != "pkt")
+                    OnPartiesChanged?.Invoke();
             }
         }
 

@@ -1,4 +1,5 @@
 ﻿using EchoRelay.App.Forms.Controls;
+using EchoRelay.App.Forms.Controls;
 using EchoRelay.App.Forms.Dialogs;
 using EchoRelay.App.Properties;
 using EchoRelay.App.Settings;
@@ -41,12 +42,23 @@ namespace EchoRelay
         /// The UI editors for different storage resources.
         /// </summary>
         public StorageEditorBase[] StorageEditors { get; }
+
+        /// <summary>
+        /// The Parties tab: every online player's party, with admin actions.
+        /// </summary>
+        private readonly PartiesControl partiesControl = new PartiesControl { Dock = DockStyle.Fill };
+        private readonly TabPage tabParties = new TabPage("Parties") { Padding = new Padding(3), UseVisualStyleBackColor = true };
         #endregion
 
         #region Constructor
         public MainWindow()
         {
             InitializeComponent();
+
+            // The Parties tab goes after Game Servers.
+            tabParties.Controls.Add(partiesControl);
+            tabControlMain.TabPages.Insert(tabControlMain.TabPages.IndexOf(tabGameServers) + 1, tabParties);
+            partiesControl.OnRefreshed += () => tabParties.Text = partiesControl.PartyCount > 0 ? $"Parties ({partiesControl.PartyCount})" : "Parties";
 
             // Append the assembly version to the window title.
             Version? assemblyVersion = this.GetType().Assembly.GetName().Version;
@@ -178,6 +190,7 @@ namespace EchoRelay
                 startServerToolStripMenuItem.Text = "Stop server";
                 progressBarStatus.Style = ProgressBarStyle.Marquee;
                 serverInfoControl.UpdateServerInfo(Server, true, SummerBuild.IsSummerExecutable(Settings.GameExecutableFilePath));
+                partiesControl.SetServer(Server);
             });
         }
         private void Server_OnServerStopped(Server server)
@@ -192,6 +205,7 @@ namespace EchoRelay
                 startServerToolStripMenuItem.Text = "Start server";
                 progressBarStatus.Style = ProgressBarStyle.Continuous;
                 serverInfoControl.UpdateServerInfo(null, true);
+                partiesControl.SetServer(null);
             });
         }
 
