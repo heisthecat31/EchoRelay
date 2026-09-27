@@ -499,6 +499,20 @@ namespace EchoRelay
             GameLauncher.Launch(Settings.GameExecutableFilePath, GameLauncher.LaunchRole.Client);
         }
 
+        private void closeAllGameServersToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (MessageBox.Show("Force-close every Echo VR game server running on this PC (all builds, including hidden headless servers)? " +
+                "Players in their matches will be disconnected. Game clients are left running.", "Echo Relay: Close All Game Servers",
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
+                return;
+
+            var (closed, failed) = GameLauncher.CloseAllGameServers();
+            string message = closed == 0 && failed.Count == 0 ? "No game servers are running on this PC." : $"Closed {closed} game server{(closed == 1 ? "" : "s")}.";
+            if (failed.Count > 0)
+                message += $"\n\nCouldn't close {failed.Count} (try running Echo Relay as administrator):\n" + string.Join("\n", failed);
+            MessageBox.Show(message, "Echo Relay: Close All Game Servers", MessageBoxButtons.OK, failed.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
         private void customToolStripMenuItem_Click(object sender, EventArgs e)
         {
             // Create a game launcher dialog and show it

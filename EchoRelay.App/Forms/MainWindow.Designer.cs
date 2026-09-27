@@ -49,6 +49,7 @@
             toolStripSeparator1 = new ToolStripSeparator();
             customToolStripMenuItem = new ToolStripMenuItem();
             settingsToolStripMenuItem = new ToolStripMenuItem();
+            closeAllGameServersToolStripMenuItem = new ToolStripMenuItem();
             helpToolStripMenuItem = new ToolStripMenuItem();
             aboutToolStripMenuItem = new ToolStripMenuItem();
             rtbLog = new RichTextBox();
@@ -168,7 +169,7 @@
             // 
             // toolsToolStripMenuItem
             // 
-            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { startServerToolStripMenuItem, launchEchoVRToolStripMenuItem, settingsToolStripMenuItem });
+            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { startServerToolStripMenuItem, launchEchoVRToolStripMenuItem, closeAllGameServersToolStripMenuItem, settingsToolStripMenuItem });
             toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
             toolsToolStripMenuItem.Size = new Size(46, 20);
             toolsToolStripMenuItem.Text = "Tools";
@@ -249,8 +250,15 @@
             customToolStripMenuItem.Text = "Custom";
             customToolStripMenuItem.Click += customToolStripMenuItem_Click;
             // 
+            // closeAllGameServersToolStripMenuItem
+            //
+            closeAllGameServersToolStripMenuItem.Name = "closeAllGameServersToolStripMenuItem";
+            closeAllGameServersToolStripMenuItem.Size = new Size(180, 22);
+            closeAllGameServersToolStripMenuItem.Text = "Close All Game Servers";
+            closeAllGameServersToolStripMenuItem.Click += closeAllGameServersToolStripMenuItem_Click;
+            //
             // settingsToolStripMenuItem
-            // 
+            //
             settingsToolStripMenuItem.Name = "settingsToolStripMenuItem";
             settingsToolStripMenuItem.Size = new Size(180, 22);
             settingsToolStripMenuItem.Text = "Settings";
@@ -681,6 +689,7 @@
         private ToolStripMenuItem aboutToolStripMenuItem;
         private RichTextBox rtbLog;
         private ToolStripMenuItem settingsToolStripMenuItem;
+        private ToolStripMenuItem closeAllGameServersToolStripMenuItem;
         private ToolStripMenuItem launchEchoVRToolStripMenuItem;
         private ToolStripSeparator toolStripSeparator1;
         private ToolStripMenuItem clientOVRToolStripMenuItem;

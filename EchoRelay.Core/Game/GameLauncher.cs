@@ -82,6 +82,53 @@ namespace EchoRelay.Core.Game
             Process.Start(executableFilePath, args);
         }
 
+        /// <summary>
+        /// The game executables of every build (final and lobby builds use echovr.exe, christmas 2017 EchoArena.exe).
+        /// </summary>
+        private static readonly string[] GameProcessNames = { "echovr", "EchoArena" };
+
+        /// <summary>
+        /// Force-closes every game server running on this machine, whatever build, folder or state (including hidden
+        /// headless servers, which have no window to close). A game server is a game process with pnsradgameserver.dll
+        /// loaded, which only happens in server mode; the command line can't tell, since EchoRelay.Patch rewrites -server.
+        /// Game clients are left running.
+        /// </summary>
+        /// <returns>The number of servers closed, and the ones that couldn't be (e.g. run by another user or as administrator).</returns>
+        public static (int Closed, List<string> Failed) CloseAllGameServers()
+        {
+            int closed = 0;
+            List<string> failed = new List<string>();
+            foreach (Process process in GameProcessNames.SelectMany(Process.GetProcessesByName))
+            {
+                using (process)
+                {
+                    bool isServer;
+                    try
+                    {
+                        isServer = process.Modules.Cast<ProcessModule>().Any(module => module.ModuleName.Equals("pnsradgameserver.dll", StringComparison.OrdinalIgnoreCase));
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add($"{process.ProcessName} (pid {process.Id}): can't be inspected ({ex.Message})");
+                        continue;
+                    }
+                    if (!isServer)
+                        continue;
+                    try
+                    {
+                        process.Kill(true);
+                        process.WaitForExit(5000);
+                        closed++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add($"{process.ProcessName} (pid {process.Id}): {ex.Message}");
+                    }
+                }
+            }
+            return (closed, failed);
+        }
+
         #region Enums
         /// <summary>
         /// Describes the type of launch that should occur. A client, server, or offline mode.
