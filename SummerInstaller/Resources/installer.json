@@ -14,5 +14,12 @@
   "halloweenSha256": "8F6B45355471C567E0905EED57BFB3139F80ED62AC319AEE16A515A91286C488",
   "halloweenDownloadSizeBytes": 3213368330,
   "halloweenDefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Halloween",
-  "halloweenShortcutName": "Echo VR Halloween"
+  "halloweenShortcutName": "Echo VR Halloween",
+  "christmasSubtitle": "Christmas Lobby",
+  "christmasTagline": "The 2017 christmas build, running on community servers.",
+  "christmasDownloadUrl": "https://drive.google.com/file/d/1f77YmSOwOttsUaXBwiD2VYCIh3veOAuK/view?usp=sharing",
+  "christmasSha256": "2BD5282E477E7A6522CFDBC9E1532F0151B7639F512CC42F5547DC504C1FF5C9",
+  "christmasDownloadSizeBytes": 2329495836,
+  "christmasDefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Christmas",
+  "christmasShortcutName": "Echo VR Christmas"
 }

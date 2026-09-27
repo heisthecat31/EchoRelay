@@ -12,7 +12,7 @@ namespace SummerInstaller
     /// </summary>
     public class GameBuild
     {
-        /// <summary>"summer" or "halloween".</summary>
+        /// <summary>"summer", "halloween" or "christmas".</summary>
         public string Id { get; set; } = "";
         /// <summary>Shown on the build switch and as the window subtitle, e.g. "Summer Lobby".</summary>
         public string Name { get; set; } = "";
@@ -28,6 +28,13 @@ namespace SummerInstaller
         public string PublisherLock { get; set; } = "";
         /// <summary>echovr.exe's PE header timestamp, which identifies the build in an existing install.</summary>
         public uint ExecutableTimestamp { get; set; }
+        /// <summary>The game executable, relative to the install folder (the christmas build's is EchoArena.exe).</summary>
+        public string Executable { get; set; } = @"bin\win7\echovr.exe";
+        /// <summary>
+        /// The christmas 2017 build reads its services from older config keys (login_host, matchmaker_host, serverdb_host),
+        /// so the installer writes those too.
+        /// </summary>
+        public bool UsesLegacyConfigKeys { get; set; }
         /// <summary>The lobby, as named in the "press Play" hint.</summary>
         public string LobbyName { get; set; } = "";
 
@@ -127,6 +134,25 @@ namespace SummerInstaller
             if (all.TryGetValue("halloweenDownloadSizeBytes", out object? halloweenSize) && halloweenSize != null)
                 halloween.DownloadSizeBytes = Convert.ToInt64(halloweenSize);
             settings.Builds.Add(halloween);
+            GameBuild christmas = new GameBuild
+            {
+                Id = "christmas",
+                Name = Get(all, "christmasSubtitle", "Christmas Lobby"),
+                ShortName = "Christmas 2017",
+                Tagline = Get(all, "christmasTagline", "The 2017 christmas build, running on community servers."),
+                DownloadUrl = Get(all, "christmasDownloadUrl", ""),
+                Sha256 = Get(all, "christmasSha256", ""),
+                DefaultInstallFolder = Get(all, "christmasDefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Christmas"),
+                ShortcutName = Get(all, "christmasShortcutName", "Echo VR Christmas"),
+                PublisherLock = "rad15_live",
+                ExecutableTimestamp = 0x5A39494F,
+                Executable = @"bin\win7\EchoArena.exe",
+                UsesLegacyConfigKeys = true,
+                LobbyName = "christmas lobby",
+            };
+            if (all.TryGetValue("christmasDownloadSizeBytes", out object? christmasSize) && christmasSize != null)
+                christmas.DownloadSizeBytes = Convert.ToInt64(christmasSize);
+            settings.Builds.Add(christmas);
             return settings;
         }
 

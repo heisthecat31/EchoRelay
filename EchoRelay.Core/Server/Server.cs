@@ -311,7 +311,7 @@ namespace EchoRelay.Core.Server
 
         /// <summary>
         /// Answers the plain HTTP API requests the summer build makes (dbgcore.dll points them at the API service path):
-        /// {api}/status/services (menu service status) and {api}/status/news (lobby news board).
+        /// {api}/status/services (menu service status), {api}/status/news (lobby news board) and {api}/status/serverdb.
         /// </summary>
         /// <param name="context">The HTTP request context.</param>
         /// <returns>True if the request was answered.</returns>
@@ -320,7 +320,8 @@ namespace EchoRelay.Core.Server
             string path = context.Request.Url?.AbsolutePath.TrimEnd('/').ToLowerInvariant() ?? "";
             string api = Settings.ApiServicePath.TrimEnd('/').ToLowerInvariant();
             JObject? response = null;
-            if (path == api + "/status/services")
+            // The christmas 2017 build's dedicated servers check {api}/status/serverdb before logging in.
+            if (path == api + "/status/services" || path == api + "/status/serverdb")
                 response = new JObject { ["available"] = true, ["message"] = Settings.SummerServiceStatus };
             else if (path == api + "/status/news")
                 response = new JObject { ["message"] = Settings.SummerNews };

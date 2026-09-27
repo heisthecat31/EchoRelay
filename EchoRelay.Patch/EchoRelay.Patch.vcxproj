@@ -105,12 +105,15 @@
     <ClInclude Include="processmem.h" />
     <ClInclude Include="summerpatches.h" />
     <ClInclude Include="summersocial.h" />
+    <ClInclude Include="xmaspatches.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="patches.cpp" />
     <ClCompile Include="summerpatches.cpp" />
     <ClCompile Include="summersocial.cpp" />
+    <ClCompile Include="xmaspatches.cpp" />
+    <ClCompile Include="dbghelpforwards.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

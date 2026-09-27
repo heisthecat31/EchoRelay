@@ -24,15 +24,15 @@ namespace SummerInstaller
     }
 
     /// <summary>
-    /// Downloads, verifies, extracts and configures a lobby build (summer or halloween).
+    /// Downloads, verifies, extracts and configures a lobby build (summer, halloween or christmas).
     /// </summary>
     public class GameInstaller
     {
         /// <summary>
-        /// The game executable, relative to the install folder. Used to find the game root inside the archive and to
-        /// detect an existing install.
+        /// The game executables of the builds, relative to the install folder (see <see cref="GameBuild.Executable"/>).
+        /// Used to detect an existing install.
         /// </summary>
-        public const string GameExecutable = @"bin\win7\echovr.exe";
+        private static readonly string[] GameExecutables = { @"bin\win7\echovr.exe", @"bin\win7\EchoArena.exe" };
 
         private readonly InstallerSettings _settings;
         private static readonly HttpClient Http;
@@ -52,27 +52,33 @@ namespace SummerInstaller
             _settings = settings;
         }
 
-        public static bool IsInstalled(string folder) => File.Exists(Path.Combine(folder, GameExecutable));
+        public static bool IsInstalled(string folder) => GameExecutables.Any(exe => File.Exists(Path.Combine(folder, exe)));
 
         /// <summary>
-        /// Identifies the build installed in a folder from echovr.exe's PE header timestamp.
+        /// Identifies the build installed in a folder from its game executable's PE header timestamp.
         /// </summary>
         /// <returns>The installed build, or null if there is none (or it's a build this installer doesn't know).</returns>
         public static GameBuild? DetectInstalledBuild(string folder, System.Collections.Generic.IEnumerable<GameBuild> builds)
         {
-            try
+            foreach (GameBuild build in builds)
             {
-                using FileStream stream = File.OpenRead(Path.Combine(folder, GameExecutable));
-                using BinaryReader reader = new BinaryReader(stream);
-                stream.Position = 0x3C;
-                stream.Position = reader.ReadInt32() + 8; // PE signature (4) + machine (2) + section count (2)
-                uint timestamp = reader.ReadUInt32();
-                return builds.FirstOrDefault(b => b.ExecutableTimestamp == timestamp);
+                try
+                {
+                    string exe = Path.Combine(folder, build.Executable);
+                    if (!File.Exists(exe))
+                        continue;
+                    using FileStream stream = File.OpenRead(exe);
+                    using BinaryReader reader = new BinaryReader(stream);
+                    stream.Position = 0x3C;
+                    stream.Position = reader.ReadInt32() + 8; // PE signature (4) + machine (2) + section count (2)
+                    if (reader.ReadUInt32() == build.ExecutableTimestamp)
+                        return build;
+                }
+                catch
+                {
+                }
             }
-            catch
-            {
-                return null;
-            }
+            return null;
         }
 
         private static string DownloadFolder(string installFolder) => Path.Combine(installFolder, ".download");
@@ -86,7 +92,7 @@ namespace SummerInstaller
         /// <summary>
         /// Runs the full install: download (resuming a partial one), verify, extract, write the config.
         /// </summary>
-        public async Task InstallAsync(GameBuild build, string installFolder, string config, string displayName, string password, IProgress<InstallProgress> progress, CancellationToken cancel)
+        public async Task InstallAsync(GameBuild build, string installFolder, string config, string displayName, string password, string publisherLock, IProgress<InstallProgress> progress, CancellationToken cancel)
         {
             Directory.CreateDirectory(installFolder);
             Directory.CreateDirectory(DownloadFolder(installFolder));
@@ -94,12 +100,12 @@ namespace SummerInstaller
 
             await DownloadAsync(build, partial, progress, cancel);
             await Task.Run(() => Verify(build, partial, progress, cancel), cancel);
-            await Task.Run(() => Extract(partial, installFolder, progress, cancel), cancel);
+            await Task.Run(() => Extract(build, partial, installFolder, progress, cancel), cancel);
 
             progress.Report(new InstallProgress { Stage = InstallStage.Configuring, Detail = "Writing the game config" });
             // The game download carries the EchoRelay game files (dbgcore.dll, pnsradgameserver.dll) and sourcedb the build
             // needs, so nothing else is downloaded.
-            WriteConfig(installFolder, config, displayName, password, build.PublisherLock);
+            WriteConfig(installFolder, config, displayName, password, build, publisherLock);
 
             // The archive is no longer needed.
             try { Directory.Delete(DownloadFolder(installFolder), true); } catch { }
@@ -248,15 +254,15 @@ namespace SummerInstaller
             }
         }
 
-        private static void Extract(string archivePath, string installFolder, IProgress<InstallProgress> progress, CancellationToken cancel)
+        private static void Extract(GameBuild build, string archivePath, string installFolder, IProgress<InstallProgress> progress, CancellationToken cancel)
         {
             using ZipArchive archive = ZipFile.OpenRead(archivePath);
 
-            // The archive may wrap the game in a folder; the game root is wherever bin/win7/echovr.exe sits.
-            string marker = GameExecutable.Replace('\\', '/');
+            // The archive may wrap the game in a folder; the game root is wherever the game executable (bin/win7/...) sits.
+            string marker = build.Executable.Replace('\\', '/');
             ZipArchiveEntry? exe = archive.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').EndsWith(marker, StringComparison.OrdinalIgnoreCase));
             if (exe == null)
-                throw new InvalidDataException($"The download doesn't contain the game ({GameExecutable} not found in the archive).");
+                throw new InvalidDataException($"The download doesn't contain the game ({build.Executable} not found in the archive).");
             string prefix = exe.FullName.Replace('\\', '/');
             prefix = prefix.Substring(0, prefix.Length - marker.Length);
 
@@ -311,7 +317,7 @@ namespace SummerInstaller
 
         private static readonly Regex PublisherLockPattern = new Regex(@"(""publisher_lock""\s*:\s*"")((?:[^""\\]|\\.)*)("")");
 
-        private static readonly Regex LoginHostPattern = new Regex(@"(""loginservice_host""\s*:\s*"")((?:[^""\\]|\\.)*)("")");
+        private static readonly Regex LoginHostPattern = new Regex(@"(""(?:loginservice_host|login_host)""\s*:\s*"")((?:[^""\\]|\\.)*)("")");
 
         public static string ConfigPath(string installFolder) => Path.Combine(installFolder, "_local", "config.json");
 
@@ -446,14 +452,69 @@ namespace SummerInstaller
         /// Writes a config to &lt;install&gt;\_local\config.json with the player's display name and password in the login
         /// URL and the build's publisher_lock, keeping a backup of a different existing one.
         /// </summary>
-        public static void WriteConfig(string installFolder, string config, string displayName, string password, string publisherLock)
+        public static void WriteConfig(string installFolder, string config, string displayName, string password, GameBuild build, string publisherLock)
         {
             config = ApplyPublisherLock(ApplyCredentials(config, displayName, password), publisherLock);
+            if (build.UsesLegacyConfigKeys)
+                config = AddLegacyConfigKeys(config);
             string path = ConfigPath(installFolder);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             if (File.Exists(path) && File.ReadAllText(path) != config)
                 File.Copy(path, path + ".bak", true);
             File.WriteAllText(path, config, new UTF8Encoding(false));
+        }
+
+        /// <summary>
+        /// Reads a string value from a flat config, or null.
+        /// </summary>
+        private static string? GetConfigValue(string config, string key)
+        {
+            Match m = new Regex(@"""" + Regex.Escape(key) + @"""\s*:\s*""((?:[^""\\]|\\.)*)""").Match(config);
+            return m.Success ? Regex.Unescape(m.Groups[1].Value) : null;
+        }
+
+        /// <summary>
+        /// Sets a string value in a flat config, adding the key if it is missing.
+        /// </summary>
+        private static string SetConfigValue(string config, string key, string value)
+        {
+            string escaped = value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            Regex existing = new Regex(@"(""" + Regex.Escape(key) + @"""\s*:\s*"")((?:[^""\\]|\\.)*)("")");
+            if (existing.IsMatch(config))
+                return existing.Replace(config, m => m.Groups[1].Value + escaped + m.Groups[3].Value, 1);
+            int close = config.LastIndexOf('}');
+            if (close < 0)
+                return config;
+            string before = config.Substring(0, close).TrimEnd();
+            string separator = before.EndsWith("{") ? "" : ",";
+            return before + separator + "\n  \"" + key + "\": \"" + escaped + "\"\n" + config.Substring(close);
+        }
+
+        /// <summary>
+        /// Adds the service keys the christmas 2017 build reads (login_host, matchmaker_host, serverdb_host and
+        /// radserverdb_host) from the keys of the later builds' configs (loginservice_host, matchingservice_host,
+        /// serverdb_host). Services a config doesn't name are assumed next to the login service, as EchoRelay serves them.
+        /// </summary>
+        public static string AddLegacyConfigKeys(string config)
+        {
+            string? login = GetConfigValue(config, "loginservice_host") ?? GetConfigValue(config, "login_host");
+            if (login == null)
+                return config;
+            string SiblingService(string name)
+            {
+                if (!Uri.TryCreate(login, UriKind.Absolute, out Uri? uri))
+                    return login;
+                string path = uri.AbsolutePath;
+                int slash = path.LastIndexOf('/');
+                return uri.GetLeftPart(UriPartial.Authority) + (slash >= 0 ? path.Substring(0, slash) : "") + "/" + name;
+            }
+            string matching = GetConfigValue(config, "matchingservice_host") ?? GetConfigValue(config, "matchmaker_host") ?? SiblingService("matching");
+            string serverDb = GetConfigValue(config, "serverdb_host") ?? SiblingService("serverdb");
+            config = SetConfigValue(config, "login_host", login);
+            config = SetConfigValue(config, "matchmaker_host", matching);
+            config = SetConfigValue(config, "serverdb_host", serverDb);
+            config = SetConfigValue(config, "radserverdb_host", serverDb);
+            return config;
         }
         #endregion
 
@@ -469,9 +530,9 @@ namespace SummerInstaller
                 return;
             dynamic shell = Activator.CreateInstance(shellType)!;
             dynamic shortcut = shell.CreateShortcut(link);
-            shortcut.TargetPath = Path.Combine(installFolder, GameExecutable);
+            shortcut.TargetPath = Path.Combine(installFolder, build.Executable);
             shortcut.WorkingDirectory = installFolder;
-            shortcut.IconLocation = Path.Combine(installFolder, GameExecutable) + ",0";
+            shortcut.IconLocation = Path.Combine(installFolder, build.Executable) + ",0";
             shortcut.Description = _settings.Title + " " + build.Name;
             shortcut.Save();
         }
@@ -479,9 +540,9 @@ namespace SummerInstaller
         /// <summary>
         /// Starts the game (from the install folder, like the Play shortcut).
         /// </summary>
-        public static void Launch(string installFolder)
+        public static void Launch(string installFolder, GameBuild build)
         {
-            Process.Start(new ProcessStartInfo(Path.Combine(installFolder, GameExecutable))
+            Process.Start(new ProcessStartInfo(Path.Combine(installFolder, build.Executable))
             {
                 WorkingDirectory = installFolder,
                 UseShellExecute = true,

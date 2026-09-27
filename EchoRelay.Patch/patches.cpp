@@ -2,6 +2,7 @@
 #include "patches.h"
 #include "processmem.h"
 #include "summerpatches.h"
+#include "xmaspatches.h"
 #include <detours.h>
 
 /// <summary>
@@ -624,6 +625,13 @@ VOID Initialize()
     if (initialized)
         return;
     initialized = true;
+
+    // The christmas 2017 build (rad14, EchoArena.exe) loads this library as dbghelp.dll and gets its own patch set.
+    if (XmasPatches::IsXmasBuild())
+    {
+        XmasPatches::Initialize();
+        return;
+    }
 
     // The lobby builds (rad15_summer, rad15_halloween) have entirely different code; they get their own patch set.
     if (SummerPatches::IsLobbyBuild())

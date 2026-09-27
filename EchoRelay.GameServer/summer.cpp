@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "summer.h"
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
@@ -37,15 +37,24 @@ namespace Summer
 		UINT64 netGameSetState;
 		/// The first 15 bytes of NetGame::SetState, which the hook relocates (all position-independent).
 		BYTE setStatePrologue[15];
+		/// The NetGame state "in game" (the session's level finished loading).
+		INT32 inGameState;
+		/// The build's session success message is SNSLobbySessionSuccessv3: v4 without its leading u64 game type.
+		BOOL sessionSuccessV3;
+		/// IServerLib::RequestRegistration takes no region: (server id, version lock, local config).
+		BOOL registrationWithoutRegion;
 	};
 
 	static const BuildProfile BUILDS[] = {
 		{ "summer (rad15_summer, goldmaster 340872)", 0x5D388D3C, 0xE700A0, 0x17620, 0x604610,
-			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 } },
+			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 7, FALSE, FALSE },
 		{ "halloween (rad15_halloween, goldmaster 253636)", 0x5BC7B897, 0x46E9E0, 0x95270, 0x8EEC90,
-			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 } },
+			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 7, FALSE, FALSE },
+		// The christmas 2017 build (rad14, EchoArena.exe) uses the message's CSymbol64 as the local event id (eventSymbol 0),
+		// has no "loading global" NetGame state (so "in game" is 5) and the older SNSLobbySessionSuccessv3.
+		{ "christmas 2017 (rad14, ea_rel6_0)", 0x5A39494F, 0x267630, 0, 0x3D2330,
+			{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xFA, 0x48, 0x8B, 0xD9 }, 5, TRUE, TRUE },
 	};
-	const INT32 NETGAME_STATE_IN_GAME = 7;
 
 	typedef UINT64 ReceiveLocalEventFunc(VOID* broadcaster, UINT64 eventId, const CHAR* name, const VOID* msg, UINT64 msgSize);
 	typedef UINT64 EventSymbolFunc(const CHAR* name);
@@ -456,6 +465,34 @@ namespace Summer
 	// ------------------------------------------------------------------------------------------------------------
 
 	/// <summary>
+	/// The engine's CSymbol64 hash (case-insensitive CRC-64 variant), also used for EchoRelay's message ids.
+	/// </summary>
+	static UINT64 Symbol64(const CHAR* name)
+	{
+		static UINT64 table[256];
+		static bool initialized = false;
+		const UINT64 polynomial = 0x95AC9329AC4BC9B5ULL;
+		if (!initialized)
+		{
+			for (int i = 0; i < 256; i++)
+			{
+				UINT64 c = 0;
+				for (int b = 7; b >= 0; b--)
+					c = (c << 1) ^ (((i >> b) & 1) ? polynomial : 0);
+				table[i] = c << 1;
+			}
+			initialized = true;
+		}
+		UINT64 hash = 0xFFFFFFFFFFFFFFFFULL;
+		for (const unsigned char* p = (const unsigned char*)name; *p; p++)
+		{
+			unsigned char ch = (*p >= 'A' && *p <= 'Z') ? *p + 32 : *p;
+			hash = ch ^ table[hash >> 56] ^ (hash << 8);
+		}
+		return hash;
+	}
+
+	/// <summary>
 	/// Delivers a message to the game's broadcaster as a local event, as if it came from the official services.
 	/// </summary>
 	static VOID InjectEvent(const CHAR* name, const VOID* data, UINT64 size)
@@ -465,7 +502,8 @@ namespace Summer
 			Log("Cannot deliver %s: not initialized", name);
 			return;
 		}
-		UINT64 id = EventSymbol(name);
+		// Builds without a separate event hash use the message's CSymbol64 as its local event id.
+		UINT64 id = EventSymbol != NULL ? EventSymbol(name) : Symbol64(name);
 		Log("Delivering %s (%llu bytes)", name, size);
 		ReceiveLocalEvent(g_broadcaster, id, name, data, size);
 	}
@@ -530,8 +568,16 @@ namespace Summer
 			break;
 		}
 		case SYM_SESSION_SUCCESS_V4:
-			// Same layout in both builds: tells the server the connecting client's packet encoder settings.
-			InjectEvent("SNSLobbySessionSuccessv4", p.data(), p.size());
+			// Tells the server the connecting client's packet encoder settings. Older builds take v3: v4 without the game type.
+			if (g_build->sessionSuccessV3)
+			{
+				if (p.size() > 8)
+					InjectEvent("SNSLobbySessionSuccessv3", p.data() + 8, p.size() - 8);
+			}
+			else
+			{
+				InjectEvent("SNSLobbySessionSuccessv4", p.data(), p.size());
+			}
 			break;
 		case SYM_PLAYERS_ACCEPTED:
 			// u8 + player session guids, identical in both builds.
@@ -572,7 +618,7 @@ namespace Summer
 		if (current != previous)
 		{
 			Log("NetGame state %d -> %d", previous, current);
-			g_inGame = current == NETGAME_STATE_IN_GAME;
+			g_inGame = current == g_build->inGameState;
 		}
 		return result;
 	}
@@ -687,6 +733,12 @@ namespace Summer
 		if (url.rfind(L"wss://", 0) == 0) url = L"https://" + url.substr(6);
 		else if (url.rfind(L"ws://", 0) == 0) url = L"http://" + url.substr(5);
 		WinHttpCrackUrl(url.c_str(), 0, 0, &parts);
+		// Older builds pass no region, so the arguments are one place earlier.
+		if (g_build->registrationWithoutRegion)
+		{
+			versionLock = regionId;
+			regionId = 0;
+		}
 		UINT32 address = GetLocalAddressToward(host, parts.nPort);
 		UINT16 port = GetBroadcasterPort();
 		if (port == 0)
@@ -790,7 +842,7 @@ namespace Summer
 			if (g_build == NULL)
 				return NULL;
 			ReceiveLocalEvent = (ReceiveLocalEventFunc*)(g_base + g_build->receiveLocalEvent);
-			EventSymbol = (EventSymbolFunc*)(g_base + g_build->eventSymbol);
+			EventSymbol = g_build->eventSymbol != 0 ? (EventSymbolFunc*)(g_base + g_build->eventSymbol) : NULL;
 			g_lib = new SummerServerLib();
 			g_lib->vtbl = g_vtable;
 			Log("%s build detected, providing the lobby ServerLib", g_build->name);

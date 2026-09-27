@@ -53,6 +53,9 @@ namespace EchoRelay.Core.Server.Services.Matching
                         if (_summerPeers.ContainsKey(sender))
                             await sender.Send(new LobbyMatchmakerStatus(0));
                         break;
+                    case ChristmasLobbyFindSessionRequestv6 christmasFindSessionRequest:
+                        await ProcessChristmasFindSessionRequestv6(sender, christmasFindSessionRequest);
+                        break;
                     case SummerLobbyFindSessionRequestv8 summerFindSessionRequest:
                         await ProcessSummerFindSessionRequestv8(sender, summerFindSessionRequest);
                         break;
@@ -135,6 +138,23 @@ namespace EchoRelay.Core.Server.Services.Matching
             MatchingSession matchingSession = level != null
                 ? MatchingSession.FromCreateSessionCriteria(request.UserId, request.Channel, gameType, level, LobbyType.Public, TeamIndex.Any, request.SessionSettings)
                 : MatchingSession.FromFindSessionCriteria(request.UserId, request.Channel, gameType, TeamIndex.Any, request.SessionSettings);
+            matchingSession.IsSummer = true;
+            matchingSession.VersionLock = request.VersionLock;
+            sender.SetSessionData(matchingSession);
+            await ProcessMatchingSession(sender, null, request.UserId, summer: true);
+        }
+
+        /// <summary>
+        /// Processes a christmas build find session request. Same as summer's v8, without a level.
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        /// <returns>None</returns>
+        private async Task ProcessChristmasFindSessionRequestv6(Peer sender, ChristmasLobbyFindSessionRequestv6 request)
+        {
+            _summerPeers[sender] = true;
+            long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
+            MatchingSession matchingSession = MatchingSession.FromFindSessionCriteria(request.UserId, request.Channel, gameType, TeamIndex.Any, request.SessionSettings);
             matchingSession.IsSummer = true;
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
@@ -496,8 +516,8 @@ namespace EchoRelay.Core.Server.Services.Matching
             long gameTypeSymbol = matchingSession.GameTypeSymbol ?? -1;
             Guid channel = matchingSession.Channel ?? matchingSession.LobbyId ?? new Guid();
 
-            // Halloween clients have no v3 (their newest is v2).
-            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock)
+            // Halloween and christmas clients have no v3 (their newest is v2).
+            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock || matchingSession.VersionLock == SummerBuild.ChristmasVersionLock)
             {
                 await peer.Send(new LobbySessionFailurev2(channel, errorCode));
                 return;

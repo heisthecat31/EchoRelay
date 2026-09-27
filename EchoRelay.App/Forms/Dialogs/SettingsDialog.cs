@@ -27,6 +27,7 @@ namespace EchoRelay.App.Forms.Dialogs
             SettingsFilePath = settingsFilePath;
 
             txtExecutablePath.Text = Settings.GameExecutableFilePath;
+            AddGameVersionSelector();
             numericTCPPort.Value = Settings.Port;
             if (Settings.FilesystemDatabaseDirectory != null)
                 txtDbFolder.Text = Settings.FilesystemDatabaseDirectory;
@@ -44,6 +45,107 @@ namespace EchoRelay.App.Forms.Dialogs
             DialogResult = DialogResult.Cancel;
         }
 
+        #region Game version quick switch
+        private ComboBox cmbGameVersion = null!;
+        private Button btnForgetGameVersion = null!;
+
+        /// <summary>
+        /// The game executables known to the quick switch (build name -> path), saved with the settings.
+        /// </summary>
+        private readonly Dictionary<string, string> _gameExecutables = new Dictionary<string, string>();
+        private bool _updatingGameVersion;
+
+        /// <summary>
+        /// Adds a "Version" row to the game settings, which remembers an executable for each Echo VR build and switches
+        /// between them. It is built here rather than in the designer, and pushes the rest of the dialog down by one row.
+        /// </summary>
+        private void AddGameVersionSelector()
+        {
+            const int rowHeight = 29;
+            foreach (Control control in Controls)
+                if (control != groupBoxGame && control.Top > groupBoxGame.Top)
+                    control.Top += rowHeight;
+            groupBoxGame.Height += rowHeight;
+            Height += rowHeight;
+
+            Label lblVersion = new Label { AutoSize = true, Location = new Point(6, 25), Text = "Version:" };
+            cmbGameVersion = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(106, 22),
+                Size = new Size(txtExecutablePath.Width - 76, 23),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            };
+            btnForgetGameVersion = new Button
+            {
+                Text = "Forget",
+                Location = new Point(cmbGameVersion.Right + 6, 21),
+                Size = new Size(70, 25),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                UseVisualStyleBackColor = true,
+            };
+            foreach (Control control in groupBoxGame.Controls)
+                control.Top += rowHeight;
+            groupBoxGame.Controls.Add(lblVersion);
+            groupBoxGame.Controls.Add(cmbGameVersion);
+            groupBoxGame.Controls.Add(btnForgetGameVersion);
+            new ToolTip().SetToolTip(cmbGameVersion, "Switch between the Echo VR builds you have set up. Pick an executable with \"...\" to add a build.");
+
+            foreach (var entry in Settings.GameExecutables)
+                _gameExecutables[entry.Key] = entry.Value;
+            RememberGameExecutable(Settings.GameExecutableFilePath);
+            RefreshGameVersions();
+
+            cmbGameVersion.SelectedIndexChanged += (_, _) =>
+            {
+                if (_updatingGameVersion || cmbGameVersion.SelectedItem is not string version)
+                    return;
+                if (_gameExecutables.TryGetValue(version, out string? path))
+                    txtExecutablePath.Text = path;
+            };
+            btnForgetGameVersion.Click += (_, _) =>
+            {
+                if (cmbGameVersion.SelectedItem is not string version)
+                    return;
+                _gameExecutables.Remove(version);
+                RefreshGameVersions();
+                if (cmbGameVersion.Items.Count > 0)
+                    cmbGameVersion.SelectedIndex = 0;
+            };
+        }
+
+        /// <summary>
+        /// Adds an executable to the quick switch, under its build's name (or its folder, for an unknown build).
+        /// </summary>
+        private string? RememberGameExecutable(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return null;
+            string name = Core.Game.SummerBuild.GetBuildName(path) ?? $"Other ({Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(path))) ?? path)})";
+            _gameExecutables[name] = path;
+            return name;
+        }
+
+        /// <summary>
+        /// Refills the version list, selecting the build of the current executable.
+        /// </summary>
+        private void RefreshGameVersions()
+        {
+            _updatingGameVersion = true;
+            cmbGameVersion.Items.Clear();
+            string? selected = null;
+            foreach (var entry in _gameExecutables.OrderBy(x => x.Key))
+            {
+                cmbGameVersion.Items.Add(entry.Key);
+                if (string.Equals(entry.Value, txtExecutablePath.Text, StringComparison.OrdinalIgnoreCase))
+                    selected = entry.Key;
+            }
+            cmbGameVersion.SelectedItem = selected;
+            btnForgetGameVersion.Enabled = cmbGameVersion.Items.Count > 0;
+            _updatingGameVersion = false;
+        }
+        #endregion
+
         private void btnOpenGameFolder_Click(object sender, EventArgs e)
         {
             // Create a folder browser dialog to let the user select the game executable.
@@ -52,8 +154,10 @@ namespace EchoRelay.App.Forms.Dialogs
             openFileDialog.Multiselect = false;
             if (openFileDialog.ShowDialog() == DialogResult.OK)
             {
-                // Set the executable path.
+                // Set the executable path, and remember it for the version quick switch.
                 txtExecutablePath.Text = openFileDialog.FileName;
+                RememberGameExecutable(openFileDialog.FileName);
+                RefreshGameVersions();
             }
         }
 
@@ -102,6 +206,8 @@ namespace EchoRelay.App.Forms.Dialogs
             // Set the provided in our settings object.
             Settings.Port = (ushort)numericTCPPort.Value;
             Settings.GameExecutableFilePath = txtExecutablePath.Text;
+            RememberGameExecutable(txtExecutablePath.Text);
+            Settings.GameExecutables = new Dictionary<string, string>(_gameExecutables);
             Settings.FilesystemDatabaseDirectory = txtDbFolder.Text;
             Settings.MongoDBConnectionString = null; // TODO: currently unsupported
             Settings.StartServerOnStartup = chkStartServerOnStartup.Checked;

@@ -239,8 +239,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             if (requested == TeamIndex.Spectator || requested == TeamIndex.Moderator)
                 return requested;
             long? gameType = SessionGameTypeSymbol;
-            bool social = gameType == null || gameType == SummerBuild.GameTypeSocial
-                || gameType == Symbol.Hash("social_2.0_private") || gameType == Symbol.Hash("social_2.0_npe");
+            bool social = SummerBuild.IsSocialGameType(gameType);
             if (social)
                 return TeamIndex.Blue;
             if (requested == TeamIndex.Blue || requested == TeamIndex.Orange)
@@ -465,7 +464,11 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 {
                     await WaitForSessionLoaded();
                     await Peer.Send(sessionSuccessv4);
-                    await matchingPeer.Send(sessionSuccessv4);
+                    // Christmas clients take v3 (the game server plugin converts v4 itself).
+                    if (VersionLock == SummerBuild.ChristmasVersionLock)
+                        await matchingPeer.Send(new LobbySessionSuccessv3(sessionSuccessv4));
+                    else
+                        await matchingPeer.Send(sessionSuccessv4);
                     return;
                 }
 

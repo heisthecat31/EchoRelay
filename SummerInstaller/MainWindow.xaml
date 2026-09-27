@@ -1,7 +1,7 @@
 <Window x:Class="SummerInstaller.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Echo VR Classic Lobbies" Width="600" Height="840" MinWidth="560" MinHeight="800"
+        Title="Echo VR Classic Lobbies" Width="600" Height="910" MinWidth="560" MinHeight="870"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanMinimize"
         AllowsTransparency="True" Background="Transparent" Icon="Resources/icon.ico"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
@@ -101,11 +101,13 @@
                             <StackPanel>
                                 <!-- Build -->
                                 <TextBlock Text="Game version" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
-                                <UniformGrid Columns="2" Margin="0,8,0,18">
+                                <UniformGrid Columns="3" Margin="0,8,0,18">
                                     <RadioButton x:Name="SummerBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="0,0,6,0"
                                                  Content="Summer 2019" Tag="summer" Checked="BuildOption_Checked" AutomationProperties.Name="Summer 2019 build"/>
-                                    <RadioButton x:Name="HalloweenBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,0,0,0"
+                                    <RadioButton x:Name="HalloweenBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,0,6,0"
                                                  Content="Halloween 2018" Tag="halloween" Checked="BuildOption_Checked" AutomationProperties.Name="Halloween 2018 build"/>
+                                    <RadioButton x:Name="ChristmasBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,0,0,0"
+                                                 Content="Christmas 2017" Tag="christmas" Checked="BuildOption_Checked" AutomationProperties.Name="Christmas 2017 build"/>
                                 </UniformGrid>
 
                                 <TextBlock Text="Install location" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
@@ -172,6 +174,27 @@
                                             <TextBlock Text="Change…" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
+                                </Grid>
+
+                                <!-- Publisher lock -->
+                                <Grid Margin="0,18,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <TextBlock Text="Publisher lock" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
+                                        <TextBlock x:Name="PublisherLockText" Margin="0,4,0,0" FontSize="12.5" Foreground="{StaticResource TextFaint}" TextWrapping="Wrap"
+                                                   Text="Tells the server which game version you play. Follows the game version."/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="SummerLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13"
+                                                     Content="Summer" Tag="rad15_summer" Checked="PublisherLockOption_Checked" ToolTip="rad15_summer" AutomationProperties.Name="Summer publisher lock"/>
+                                        <RadioButton x:Name="HalloweenLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13" Margin="8,0,0,0"
+                                                     Content="Halloween" Tag="rad15_halloween" Checked="PublisherLockOption_Checked" ToolTip="rad15_halloween" AutomationProperties.Name="Halloween publisher lock"/>
+                                        <RadioButton x:Name="ChristmasLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13" Margin="8,0,0,0"
+                                                     Content="Christmas" Tag="rad15_live" Checked="PublisherLockOption_Checked" ToolTip="rad15_live" AutomationProperties.Name="Christmas publisher lock"/>
+                                    </StackPanel>
                                 </Grid>
 
                                 <CheckBox x:Name="ShortcutCheck" Content="Create a desktop shortcut" IsChecked="True" Margin="0,18,0,0"/>

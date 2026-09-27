@@ -16,6 +16,12 @@ namespace EchoRelay.App.Settings
         public string GameExecutableFilePath { get; set; } = "";
 
         /// <summary>
+        /// Game executables saved for quick switching between Echo VR builds, keyed by build name (e.g. "Summer 2019").
+        /// </summary>
+        [JsonProperty("game_executables")]
+        public Dictionary<string, string> GameExecutables { get; set; } = new Dictionary<string, string>();
+
+        /// <summary>
         /// The directory containing the game executable, derived from <see cref="GameExecutableFilePath"/>.
         /// </summary>
         [JsonIgnore]

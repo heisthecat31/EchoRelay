@@ -18,9 +18,20 @@ namespace SummerInstaller
         private CancellationTokenSource? _cancel;
 
         /// <summary>
-        /// The build being installed or played (summer or halloween). Follows the build found in an existing install.
+        /// The build being installed or played (summer, halloween or christmas). Follows the build found in an existing install.
         /// </summary>
         private GameBuild _build;
+
+        /// <summary>
+        /// A publisher lock the player picked in place of the build's own, or null to follow the game version.
+        /// </summary>
+        private string? _publisherLockOverride;
+        private bool _showingPublisherLock;
+
+        /// <summary>
+        /// The publisher lock written to the config: the player's choice, or the build's own.
+        /// </summary>
+        private string PublisherLock => _publisherLockOverride ?? _build.PublisherLock;
         private double _fraction;
         private bool _installing;
 
@@ -82,9 +93,34 @@ namespace SummerInstaller
             TaglineText.Visibility = string.IsNullOrEmpty(_build.Tagline) ? Visibility.Collapsed : Visibility.Visible;
             Title = $"{_settings.Title} {_settings.AppName}";
             DoneHint.Text = $"Start the Oculus app and connect your headset before pressing Play. In the game, press Play on the menu to join the {_build.LobbyName}.";
-            RadioButton option = _build.Id == "halloween" ? HalloweenBuildOption : SummerBuildOption;
+            RadioButton option = _build.Id == "halloween" ? HalloweenBuildOption : _build.Id == "christmas" ? ChristmasBuildOption : SummerBuildOption;
             if (option.IsChecked != true)
                 option.IsChecked = true;
+            // A new game version brings its own publisher lock.
+            _publisherLockOverride = null;
+            ShowPublisherLock();
+        }
+
+        /// <summary>
+        /// Shows the publisher lock in use on the lock switch.
+        /// </summary>
+        private void ShowPublisherLock()
+        {
+            _showingPublisherLock = true;
+            foreach (RadioButton option in new[] { SummerLockOption, HalloweenLockOption, ChristmasLockOption })
+                option.IsChecked = (string)option.Tag == PublisherLock;
+            _showingPublisherLock = false;
+            PublisherLockText.Text = _publisherLockOverride == null
+                ? "Tells the server which game version you play. Follows the game version."
+                : $"Tells the server which game version you play. Set to {PublisherLock} instead of the {_build.ShortName} default ({_build.PublisherLock}).";
+        }
+
+        private void PublisherLockOption_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_showingPublisherLock || sender is not RadioButton { Tag: string publisherLock })
+                return;
+            _publisherLockOverride = publisherLock == _build.PublisherLock ? null : publisherLock;
+            ShowPublisherLock();
         }
 
         private void BuildOption_Checked(object sender, RoutedEventArgs e)
@@ -220,7 +256,7 @@ namespace SummerInstaller
                 // Keep the config current (a changed name, password or server) before playing.
                 try
                 {
-                    GameInstaller.WriteConfig(InstallFolder, _config, DisplayName, Password, _build.PublisherLock);
+                    GameInstaller.WriteConfig(InstallFolder, _config, DisplayName, Password, _build, PublisherLock);
                 }
                 catch (Exception ex)
                 {
@@ -406,7 +442,7 @@ namespace SummerInstaller
 
             try
             {
-                await _installer.InstallAsync(build, folder, config, name, password, progress, _cancel.Token);
+                await _installer.InstallAsync(build, folder, config, name, password, PublisherLock, progress, _cancel.Token);
                 if (ShortcutCheck.IsChecked == true)
                 {
                     try { _installer.CreateDesktopShortcut(folder, build); } catch { }
@@ -577,7 +613,7 @@ namespace SummerInstaller
         {
             try
             {
-                GameInstaller.Launch(InstallFolder);
+                GameInstaller.Launch(InstallFolder, _build);
                 Close();
             }
             catch (Exception ex)

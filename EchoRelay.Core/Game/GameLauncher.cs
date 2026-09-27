@@ -15,7 +15,27 @@ namespace EchoRelay.Core.Game
             // The summer lobby build (rad15_summer) has different flags: our dbgcore.dll (EchoRelay.Patch) implements
             // -server/-noovr for it, the game itself knows -headless and -spectatorstream (windowed), and there is no
             // offline mode, moderator flag or timestep option.
-            if (SummerBuild.IsSummerExecutable(executableFilePath))
+            // The christmas 2017 build (EchoArena.exe) only knows -novr; EchoRelay.Patch (dbghelp.dll) adds -server and an
+            // emulated -headless (no audio, window hidden). It runs from the game's root folder.
+            uint? timestamp = SummerBuild.ReadPETimestamp(executableFilePath);
+            if (timestamp == SummerBuild.ChristmasExecutableTimestamp)
+            {
+                if (role == LaunchRole.Server)
+                    args.Add("-server");
+                if (windowed || spectatorStream || noOVR)
+                    args.Add("-novr");
+                if (headless)
+                    args.Add("-headless");
+                ProcessStartInfo startInfo = new ProcessStartInfo(executableFilePath);
+                foreach (string arg in args)
+                    startInfo.ArgumentList.Add(arg);
+                startInfo.WorkingDirectory = Directory.GetParent(executableFilePath)?.Parent?.Parent?.FullName ?? "";
+                Process.Start(startInfo);
+                return;
+            }
+
+            // The halloween lobby build takes the same flags as summer (EchoRelay.Patch emulates the ones it lacks).
+            if (timestamp == SummerBuild.ExecutableTimestamp || timestamp == SummerBuild.HalloweenExecutableTimestamp)
             {
                 if (role == LaunchRole.Server)
                     args.Add("-server");
