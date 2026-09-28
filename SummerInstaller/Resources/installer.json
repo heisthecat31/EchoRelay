@@ -27,9 +27,9 @@
   "christmasShortcutName": "Echo VR Christmas",
   "winterSubtitle": "Christmas 2018 Lobby",
   "winterTagline": "The 2018 christmas build, running on community servers.",
-  "winterDownloadUrl": "",
-  "winterSha256": "7534C553A75A7D8B5A0AB11C4C2F4FB968C102EEDC87F821D25FF220AAEB1EF4",
-  "winterDownloadSizeBytes": 3391471787,
+  "winterDownloadUrl": "https://drive.google.com/file/d/1NMSzR9Zsk4RMTZEPuA9r-afqXu1R8NjZ/view?usp=sharing",
+  "winterSha256": "62AC329BCEC18C44926D80A1478D89A4B3D23ADC11C77A0926EE59458498C1DA",
+  "winterDownloadSizeBytes": 3391659282,
   "winterDefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Christmas 2018",
   "winterShortcutName": "Echo VR Christmas 2018"
 }
