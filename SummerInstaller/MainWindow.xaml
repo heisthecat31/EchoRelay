@@ -178,6 +178,35 @@
                                     </Button>
                                 </Grid>
 
+                                <!-- Game server requests (only when the server can start game servers of this version) -->
+                                <Grid x:Name="GameServerRow" Margin="0,18,0,0" Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <TextBlock Text="Game server" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
+                                        <TextBlock Margin="0,4,0,0" FontSize="12.5" Foreground="{StaticResource TextFaint}" TextWrapping="Wrap"
+                                                   Text="Have the server start one for you in a region, then press Play."/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="RegionAction" Style="{StaticResource SecondaryButton}" Height="40" Padding="14,0" Margin="0,0,8,0" Click="Region_Click"
+                                                AutomationProperties.Name="Game server region" ToolTip="The region to request a game server in. Click to change.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE909;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="RegionText" Text="Region" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="RequestServerAction" Style="{StaticResource SecondaryButton}" Height="40" Padding="16,0" Click="RequestServer_Click"
+                                                AutomationProperties.Name="Request server" ToolTip="Ask the server to start a game server of this version for you, in the region shown (if it allows it)">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Request" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+
                                 <!-- Publisher lock -->
                                 <Grid Margin="0,18,0,0">
                                     <Grid.ColumnDefinitions>
@@ -215,10 +244,6 @@
                         </Border>
 
                         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="RegionAction" Style="{StaticResource SecondaryButton}" Content="Region" Margin="0,0,8,0" Click="Region_Click" Visibility="Collapsed"
-                                    ToolTip="The region to request a game server in. Click to change."/>
-                            <Button x:Name="RequestServerAction" Style="{StaticResource SecondaryButton}" Content="Request server" Margin="0,0,12,0" Click="RequestServer_Click" Visibility="Collapsed"
-                                    ToolTip="Ask the server to start a game server of this version for you, in the region shown (if it allows it)"/>
                             <Button x:Name="SecondaryAction" Style="{StaticResource SecondaryButton}" Content="Reinstall" Margin="0,0,12,0" Click="SecondaryAction_Click" Visibility="Collapsed"/>
                             <Button x:Name="PrimaryAction" Style="{StaticResource PrimaryButton}" Content="Install" MinWidth="170" Click="PrimaryAction_Click"/>
                         </StackPanel>

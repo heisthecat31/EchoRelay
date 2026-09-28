@@ -220,8 +220,7 @@ namespace SummerInstaller
             {
                 PrimaryAction.Content = partial ? "Resume download" : "Install";
                 SecondaryAction.Visibility = Visibility.Collapsed;
-                RequestServerAction.Visibility = Visibility.Collapsed;
-                RegionAction.Visibility = Visibility.Collapsed;
+                GameServerRow.Visibility = Visibility.Collapsed;
             }
             PrimaryAction.IsEnabled = validPath;
             UpdateSpaceText(folder);
@@ -698,8 +697,7 @@ namespace SummerInstaller
             _regions = regions;
             _regionIndex = Math.Max(0, previous != null ? regions.FindIndex(r => string.Equals(r, previous, StringComparison.OrdinalIgnoreCase)) : 0);
             Visibility visibility = regions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            RequestServerAction.Visibility = visibility;
-            RegionAction.Visibility = visibility;
+            GameServerRow.Visibility = visibility;
             ShowRegion();
         }
 
@@ -707,7 +705,7 @@ namespace SummerInstaller
         {
             if (_regions.Count == 0)
                 return;
-            RegionAction.Content = "Region: " + _regions[_regionIndex];
+            RegionText.Text = _regions[_regionIndex];
             RegionAction.ToolTip = _regions.Count > 1
                 ? $"Request a game server in {_regions[_regionIndex]}. Click for another region ({string.Join(", ", _regions)})."
                 : $"This server hosts {_build.ShortName} game servers in {_regions[0]}.";
