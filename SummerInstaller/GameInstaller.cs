@@ -868,6 +868,10 @@ namespace SummerInstaller
         /// <summary>The desktop shortcut's name (EchoClassicLobbies.exe, not a game).</summary>
         public const string AppShortcutName = "Echo VR Classic Lobbies";
 
+        /// <summary>Whether the desktop shortcut to this app exists.</summary>
+        public static bool HasDesktopShortcut() =>
+            File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppShortcutName + ".lnk"));
+
         /// <summary>
         /// Creates a desktop shortcut to this app (not the game), so players start through it and get their game file
         /// updates and the request buttons. The app is copied to %LOCALAPPDATA%\EchoClassicLobbies first, so the shortcut
@@ -885,7 +889,8 @@ namespace SummerInstaller
             string running = Process.GetCurrentProcess().MainModule!.FileName;
             string home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EchoClassicLobbies");
             string app = Path.Combine(home, "EchoClassicLobbies.exe");
-            if (!string.Equals(Path.GetFullPath(running), Path.GetFullPath(app), StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(Path.GetFullPath(running), Path.GetFullPath(app), StringComparison.OrdinalIgnoreCase)
+                && (!File.Exists(app) || File.GetLastWriteTimeUtc(running) > File.GetLastWriteTimeUtc(app)))
             {
                 Directory.CreateDirectory(home);
                 File.Copy(running, app, true);

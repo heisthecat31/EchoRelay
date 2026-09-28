@@ -687,6 +687,11 @@ namespace SummerInstaller
                 InstallMemory.Remember(_build, InstallFolder);
                 await UpdateAllInstallsAsync(announce: true);
                 GameInstaller.Launch(InstallFolder, _build);
+                // Players who installed before the app had its own shortcut get it here (they never reinstall).
+                if (ShortcutCheck.IsChecked == true && !GameInstaller.HasDesktopShortcut())
+                {
+                    try { _installer.CreateDesktopShortcut(InstallFolder, _build); } catch { }
+                }
                 // Stay open (back on the main page), so players can still request game servers while they play.
                 IsEnabled = true;
                 ShowView(SetupView);
