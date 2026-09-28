@@ -114,6 +114,11 @@ namespace EchoRelay.Core.Server.Services
 
         #region Functions
         /// <summary>
+        /// The largest message a peer may send (the receive buffer grows up to this).
+        /// </summary>
+        public const int MaxReceiveSize = 4 * 1024 * 1024;
+
+        /// <summary>
         /// Enters a communication loop with the accepted websocket connection.
         /// </summary>
         /// <param name="webSocket">The websocket to process messages for.</param>
@@ -136,7 +141,8 @@ namespace EchoRelay.Core.Server.Services
             peer.OnPacketSent += Peer_OnPacketSent;
             peer.OnPacketReceived += Peer_OnPacketReceived;
 
-            // Create a buffer to receive our packet data in.
+            // Create a buffer to receive our packet data in. It grows for bigger messages (a game server's end of match
+            // profile update, with every stat, is well over 32 KB), up to MaxReceiveSize.
             byte[] receiveBuffer = new byte[Packet.MAX_SIZE];
 
             // While the connection is open, continuously try to receive messages.
@@ -145,22 +151,23 @@ namespace EchoRelay.Core.Server.Services
                 while (webSocket.State == WebSocketState.Open)
                 {
                     // Receive data from the web socket until we hit our end of message.
-                    Memory<byte> receiveBufferAtPosition = receiveBuffer;
                     int totalSize = 0;
                     WebSocketMessageType messageType = WebSocketMessageType.Close;
                     while(true)
                     {
-                        // A message bigger than the buffer would have left this receiving into no space forever (a whole CPU
-                        // core, and a connection that never recovers). Drop the connection instead.
-                        if (receiveBufferAtPosition.Length == 0)
+                        if (totalSize == receiveBuffer.Length)
                         {
-                            TrafficCapture.Log($"{GetType().Name} peer {peer.Address}:{peer.Port} ({peer.UserId?.ToString() ?? "?"}) sent a message over {Packet.MAX_SIZE} bytes; dropping the connection");
-                            await webSocket.CloseAsync(WebSocketCloseStatus.MessageTooBig, "", CancellationToken.None);
-                            return;
+                            // A message bigger than any real one: drop the connection rather than buffer without limit.
+                            if (receiveBuffer.Length >= MaxReceiveSize)
+                            {
+                                TrafficCapture.Log($"{GetType().Name} peer {peer.Address}:{peer.Port} ({peer.UserId?.ToString() ?? "?"}) sent a message over {MaxReceiveSize} bytes; dropping the connection");
+                                await webSocket.CloseOutputAsync(WebSocketCloseStatus.MessageTooBig, "", CancellationToken.None);
+                                return;
+                            }
+                            Array.Resize(ref receiveBuffer, Math.Min(receiveBuffer.Length * 2, MaxReceiveSize));
                         }
-                        var receiveResult = await webSocket.ReceiveAsync(receiveBufferAtPosition, CancellationToken.None);
+                        var receiveResult = await webSocket.ReceiveAsync(receiveBuffer.AsMemory(totalSize), CancellationToken.None);
                         messageType = receiveResult.MessageType;
-                        receiveBufferAtPosition = receiveBufferAtPosition.Slice(receiveResult.Count);
                         totalSize += receiveResult.Count;
                         if (receiveResult.EndOfMessage)
                             break;

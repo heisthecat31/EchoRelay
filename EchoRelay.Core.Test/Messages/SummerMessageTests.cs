@@ -401,6 +401,36 @@ namespace EchoRelay.Core.Test.Messages
             Assert.False(EchoRelay.Core.Game.SummerBuild.RepairCombatChoices(new JObject { ["weapon"] = "assault" }));
         }
 
+        [Fact]
+        public void MatchStatsCombineWithStoredTotals()
+        {
+            JObject stored = JObject.Parse(@"{""loadout"": {""emote"": ""a""}, ""stats"": {""arena"": {
+                ""Goals"": {""op"": ""add"", ""val"": 3, ""cnt"": 2},
+                ""TopSpeed"": {""op"": ""max"", ""val"": 20.5, ""cnt"": 2},
+                ""AveragePoints"": {""op"": ""avg"", ""val"": 4, ""cnt"": 2},
+                ""Level"": {""op"": ""rep"", ""val"": 5, ""cnt"": 1}}}}");
+            JObject update = JObject.Parse(@"{""stats"": {""arena"": {
+                ""Goals"": {""op"": ""add"", ""val"": 2, ""cnt"": 1},
+                ""TopSpeed"": {""op"": ""max"", ""val"": 18.0, ""cnt"": 1},
+                ""AveragePoints"": {""op"": ""avg"", ""val"": 10, ""cnt"": 1},
+                ""Level"": {""op"": ""rep"", ""val"": 6, ""cnt"": 1},
+                ""Saves"": {""op"": ""add"", ""val"": 1, ""cnt"": 1}},
+                ""combat"": {""Kills"": {""op"": ""add"", ""val"": 4, ""cnt"": 1}}}}");
+
+            SummerStats.Merge(stored, update);
+
+            JObject arena = (JObject)stored["stats"]!["arena"]!;
+            Assert.Equal(5, arena["Goals"]!.Value<long>("val"));
+            Assert.Equal(3, arena["Goals"]!.Value<long>("cnt"));
+            Assert.Equal(JTokenType.Integer, arena["Goals"]!["val"]!.Type);
+            Assert.Equal(20.5, arena["TopSpeed"]!.Value<double>("val"));
+            Assert.Equal(6.0, arena["AveragePoints"]!.Value<double>("val"), 5);
+            Assert.Equal(6, arena["Level"]!.Value<long>("val"));
+            Assert.Equal(1, arena["Saves"]!.Value<long>("val"));
+            Assert.Equal(4, stored["stats"]!["combat"]!["Kills"]!.Value<long>("val"));
+            Assert.Equal("a", stored["loadout"]!.Value<string>("emote"));
+        }
+
         private enum ERGameServerStartSessionLobbyType { Public = 0, Private = 1, Unassigned = 2 }
     }
 }

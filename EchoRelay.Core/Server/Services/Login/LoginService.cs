@@ -615,7 +615,12 @@ namespace EchoRelay.Core.Server.Services.Login
             // The halloween build has no combat unlock list, and a second copy of the unlocks would push the profile past
             // the halloween client's message size limit (it disconnects on a larger message).
             if (halloween)
+            {
                 server.Remove("unlocks_combat");
+                // For the same reason, leave out the stats if they'd take it too close to that limit.
+                if (server["stats"] != null && server.ToString(Formatting.None).Length > SummerBuild.HalloweenMaxMessageSize - 2048)
+                    server.Remove("stats");
+            }
             return (client, server);
         }
 
@@ -760,7 +765,11 @@ namespace EchoRelay.Core.Server.Services.Login
             // The game server runs the same build as the player it saves for.
             string? publisherLock = GetSessionPublisherLock(request.Session);
             JObject data = GetSummerServerData(account, publisherLock);
-            data.Merge(request.Update, new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
+            // Stats (sent at the end of a match) are combined with the stored totals rather than replacing them.
+            SummerStats.Merge(data, request.Update);
+            int stats = request.Update.Descendants().OfType<JObject>().Count(o => o["op"] != null && o["val"] != null);
+            if (stats > 0)
+                TrafficCapture.Log($"Stats: {stats} stat(s) saved for {account.Profile.Server.DisplayName ?? request.UserId.ToString()} ({string.Join(", ", request.Update.Properties().Select(p => p.Name))})");
             account.Profile.Server.AdditionalData[GetServerDataKey(publisherLock)] = data;
             account.Profile.Server.ModifyTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             Storage.Accounts.Set(account);
