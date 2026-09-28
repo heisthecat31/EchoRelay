@@ -86,10 +86,25 @@ namespace EchoRelay.App.Forms.Dialogs
             UpdateEnabled();
             box.Controls.AddRange(new Control[] { chkGameServerRequests, lblPerPlayer, numRequestsPerPlayer, lblMax, numRequestsMax, lblRegion, txtRequestsRegion });
             Controls.Add(box);
-            btnSaveSettings.Top += boxHeight + 6;
-            Height += boxHeight + 6;
         }
         #endregion
+
+        /// <summary>
+        /// Puts the Save button under the last settings box and sizes the dialog to fit, once the added rows and boxes are in
+        /// and the dialog is scaled. (Growing the dialog while the button was anchored to its bottom moved the button twice,
+        /// out of sight.) Scrolls if the screen is too short.
+        /// </summary>
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            btnSaveSettings.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            int bottom = Controls.OfType<GroupBox>().Max(box => box.Bottom);
+            btnSaveSettings.Top = bottom + 6;
+            int wanted = btnSaveSettings.Bottom + 10;
+            int available = Screen.FromControl(this).WorkingArea.Height - (Height - ClientSize.Height);
+            AutoScroll = wanted > available;
+            ClientSize = new Size(ClientSize.Width, Math.Min(wanted, available));
+        }
 
         #region Game version quick switch
         private ComboBox cmbGameVersion = null!;
@@ -112,7 +127,6 @@ namespace EchoRelay.App.Forms.Dialogs
                 if (control != groupBoxGame && control.Top > groupBoxGame.Top)
                     control.Top += rowHeight;
             groupBoxGame.Height += rowHeight;
-            Height += rowHeight;
 
             Label lblVersion = new Label { AutoSize = true, Location = new Point(6, 25), Text = "Version:" };
             cmbGameVersion = new ComboBox
