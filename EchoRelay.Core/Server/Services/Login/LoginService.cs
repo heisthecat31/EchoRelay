@@ -79,6 +79,46 @@ namespace EchoRelay.Core.Server.Services.Login
         /// save loadouts with symbol hashes (like christmas 2017), so their server profile data is kept apart.
         /// </summary>
         private readonly ConcurrentDictionary<Peer, bool> _winterClientPeers = new ConcurrentDictionary<Peer, bool>();
+
+        /// <summary>
+        /// When each login connection logged in, for the App's list of online players.
+        /// </summary>
+        private readonly ConcurrentDictionary<Peer, DateTime> _loginTimes = new ConcurrentDictionary<Peer, DateTime>();
+
+        /// <summary>
+        /// A player logged in right now: their display name, the game version they play and when they logged in.
+        /// </summary>
+        public record OnlinePlayer(string Name, string Version, DateTime Since);
+
+        /// <summary>
+        /// Everyone logged in right now (game servers that log in, like christmas ones, are listed under their name), by name.
+        /// </summary>
+        public List<OnlinePlayer> GetOnlinePlayers()
+        {
+            Peer[] peers;
+            lock (PeersLock)
+                peers = Peers.ToArray();
+            return peers.Where(peer => peer.UserId != null)
+                .Select(peer => new OnlinePlayer(peer.UserDisplayName ?? peer.UserId!.ToString(), GetVersionName(peer),
+                    _loginTimes.TryGetValue(peer, out DateTime since) ? since : DateTime.UtcNow))
+                .OrderBy(player => player.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        /// <summary>
+        /// The game version a login connection plays, from its login.
+        /// </summary>
+        private string GetVersionName(Peer peer)
+        {
+            if (_halloweenClientPeers.ContainsKey(peer))
+                return "Halloween 2018";
+            if (_christmasClientPeers.ContainsKey(peer))
+                return "Christmas 2017";
+            if (_winterClientPeers.ContainsKey(peer))
+                return "Christmas 2018";
+            if (_summerClientPeers.ContainsKey(peer))
+                return "Summer 2019";
+            return "Latest";
+        }
         #endregion
 
         #region Constructor
@@ -191,6 +231,7 @@ namespace EchoRelay.Core.Server.Services.Login
             _halloweenClientPeers.TryRemove(peer, out _);
             _christmasClientPeers.TryRemove(peer, out _);
             _winterClientPeers.TryRemove(peer, out _);
+            _loginTimes.TryRemove(peer, out _);
 
             // If the peer had a session token, update its expiry time.
             Guid? session = peer.GetSessionData<Guid?>();
@@ -286,6 +327,7 @@ namespace EchoRelay.Core.Server.Services.Login
 
             // Set the authenticated user identifier
             sender.UpdateUserAuthentication(request.UserId, account.Profile.Server.DisplayName);
+            _loginTimes[sender] = DateTime.UtcNow;
 
             // Send login success response.
             await sender.Send(new LoginSuccess(request.UserId, session));
@@ -486,6 +528,7 @@ namespace EchoRelay.Core.Server.Services.Login
 
             // Set the authenticated user identifier
             sender.UpdateUserAuthentication(request.UserId, account.Profile.Server.DisplayName);
+            _loginTimes[sender] = DateTime.UtcNow;
 
             // Send login success, settings, then the profile result.
             await sender.Send(new LoginSuccess(request.UserId, session));

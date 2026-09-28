@@ -47,6 +47,12 @@ namespace EchoRelay
         /// </summary>
         private readonly PartiesControl partiesControl = new PartiesControl { Dock = DockStyle.Fill };
         private readonly TabPage tabParties = new TabPage("Parties") { Padding = new Padding(3), UseVisualStyleBackColor = true };
+
+        /// <summary>
+        /// The Players tab: everyone logged in, with the game version they play.
+        /// </summary>
+        private readonly PlayersControl playersControl = new PlayersControl { Dock = DockStyle.Fill };
+        private readonly TabPage tabPlayers = new TabPage("Players") { Padding = new Padding(3), UseVisualStyleBackColor = true };
         #endregion
 
         #region Constructor
@@ -58,6 +64,11 @@ namespace EchoRelay
             tabParties.Controls.Add(partiesControl);
             tabControlMain.TabPages.Insert(tabControlMain.TabPages.IndexOf(tabGameServers) + 1, tabParties);
             partiesControl.OnRefreshed += () => tabParties.Text = partiesControl.PartyCount > 0 ? $"Parties ({partiesControl.PartyCount})" : "Parties";
+
+            // The Players tab goes before Parties.
+            tabPlayers.Controls.Add(playersControl);
+            tabControlMain.TabPages.Insert(tabControlMain.TabPages.IndexOf(tabParties), tabPlayers);
+            playersControl.OnRefreshed += () => tabPlayers.Text = playersControl.PlayerCount > 0 ? $"Players ({playersControl.PlayerCount})" : "Players";
 
             // Append the assembly version to the window title.
             Version? assemblyVersion = this.GetType().Assembly.GetName().Version;
@@ -195,6 +206,7 @@ namespace EchoRelay
                 progressBarStatus.Style = ProgressBarStyle.Marquee;
                 serverInfoControl.UpdateServerInfo(Server, true, SummerBuild.IsSummerExecutable(Settings.GameExecutableFilePath));
                 partiesControl.SetServer(Server);
+                playersControl.SetServer(Server);
             });
         }
         private void Server_OnServerStopped(Server server)
@@ -210,6 +222,7 @@ namespace EchoRelay
                 progressBarStatus.Style = ProgressBarStyle.Continuous;
                 serverInfoControl.UpdateServerInfo(null, true);
                 partiesControl.SetServer(null);
+                playersControl.SetServer(null);
             });
         }
 
