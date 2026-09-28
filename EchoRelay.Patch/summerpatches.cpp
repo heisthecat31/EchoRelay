@@ -1,6 +1,7 @@
 ﻿#include "summerpatches.h"
 #include "summersocial.h"
 #include "xmaspatches.h"
+#include "voiplog.h"
 #include <winternl.h>
 #include <cstdio>
 #include <cstdarg>
@@ -557,6 +558,8 @@ namespace SummerPatches
 		g_build = DetectBuild();
 		if (g_build == NULL)
 			return;
+		// Voice chat diagnostics (see voiplog.h).
+		VoipLog::Install(Log);
 
 		// Remember -headless, then hide it from builds that would exit on it (they get it emulated, where located).
 		BOOL headless = HasFlag(GetCommandLineW(), L"-headless");

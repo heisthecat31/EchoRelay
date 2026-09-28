@@ -3,6 +3,7 @@
 // First: it brings in winsock2.h, which must precede xmaspatches.h's windows.h (and its winsock.h).
 #include "summersocial.h"
 #include "xmaspatches.h"
+#include "voiplog.h"
 #include <winternl.h>
 #include <dxgi.h>
 #include <cstdio>
@@ -846,6 +847,8 @@ namespace XmasPatches
 	VOID Initialize()
 	{
 		Log("EchoRelay.Patch: christmas 2017 build (EchoArena.exe) detected");
+		// Voice chat diagnostics (see voiplog.h).
+		VoipLog::Install(Log);
 
 		// -server: EchoArena.exe doesn't know it; it becomes -mpmnu (whose parser branch we patch into server mode).
 		BOOL server = ReplaceFlag(GetCommandLineW(), L"-server", L"-mpmnu");

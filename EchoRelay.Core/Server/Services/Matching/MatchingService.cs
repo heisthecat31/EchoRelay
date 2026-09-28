@@ -400,7 +400,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 foreach (var gameServer in gameServers)
                 {
                     pingEndpoints[current++] = new LobbyPingRequestv3.EndpointData(
-                        gameServer.InternalAddress,
+                        gameServer.InternalAddressFor(sender),
                         gameServer.ExternalAddress,
                         gameServer.Port
                         );
@@ -490,7 +490,7 @@ namespace EchoRelay.Core.Server.Services.Matching
                 {
                     // Sort the game servers with preference of filters: session started, lowest ping, highest player count.
                     var sortedGameServers = gameServers.Select(gameServer => {
-                        uint? pingMilliseconds = pingResultLookup.TryGetValue((gameServer.InternalAddress.ToUInt32(), gameServer.ExternalAddress.ToUInt32()), out uint p) ? p : uint.MaxValue;
+                        uint? pingMilliseconds = pingResultLookup.TryGetValue((gameServer.InternalAddressFor(sender).ToUInt32(), gameServer.ExternalAddress.ToUInt32()), out uint p) ? p : uint.MaxValue;
                         return (gameServer, pingMilliseconds);
                     }).OrderBy(x => x.gameServer.SessionStarted ? 0 : 1).ThenBy(x => x.pingMilliseconds).ThenBy(x => (float)x.gameServer.SessionPlayerCount / x.gameServer.SessionPlayerLimits.TotalPlayerLimit);
 

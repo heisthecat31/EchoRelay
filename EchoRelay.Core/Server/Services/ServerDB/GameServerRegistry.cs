@@ -92,7 +92,9 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 // Filter for each field supplied, skip to the next game server if any filter doesn't match.
                 if (serverId != null && gameServer.ServerId != serverId)
                     continue;
-                else if (addresses != null && !addresses.Contains((gameServer.InternalAddress.ToUInt32(), gameServer.ExternalAddress.ToUInt32())))
+                // A server on EchoRelay's PC is given to remote players with its external address as the internal one too.
+                else if (addresses != null && !addresses.Contains((gameServer.InternalAddress.ToUInt32(), gameServer.ExternalAddress.ToUInt32()))
+                    && !(System.Net.IPAddress.IsLoopback(gameServer.InternalAddress) && addresses.Contains((gameServer.ExternalAddress.ToUInt32(), gameServer.ExternalAddress.ToUInt32()))))
                     continue;
                 else if (port != null && gameServer.Peer.Port != port)
                     continue;

@@ -49,6 +49,24 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             get { return _registrationRequest.ServerId; }
         }
         /// <summary>
+        /// The internal address to give a player for this game server. A game server running on the same PC as EchoRelay
+        /// registers with a loopback address (127.0.0.1); a player on another PC would try that on their own PC first (and
+        /// could reach a game server of their own there, or get connection resets), so they get the external address.
+        /// </summary>
+        public IPAddress InternalAddressFor(Peer player)
+        {
+            return ChooseInternalAddress(InternalAddress, ExternalAddress, player.Address);
+        }
+
+        /// <summary>
+        /// See <see cref="InternalAddressFor(Peer)"/>.
+        /// </summary>
+        public static IPAddress ChooseInternalAddress(IPAddress internalAddress, IPAddress externalAddress, IPAddress playerAddress)
+        {
+            return IPAddress.IsLoopback(internalAddress) && !IPAddress.IsLoopback(playerAddress) ? externalAddress : internalAddress;
+        }
+
+        /// <summary>
         /// The internal/private IP address of the game server.
         /// </summary>
         public IPAddress InternalAddress
@@ -427,7 +445,7 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     gameTypeSymbol: SessionGameTypeSymbol ?? -1,
                     matchingSession: matchingSession.MatchedSessionId!.Value,
                     channelUUID: SessionChannel ?? new Guid(),
-                    endpoint: new LobbyPingRequestv3.EndpointData(InternalAddress, ExternalAddress, Port),
+                    endpoint: new LobbyPingRequestv3.EndpointData(InternalAddressFor(matchingPeer), ExternalAddress, Port),
                     teamIndex: IsLobbyBuild ? (short)(matchingSession.AssignedTeam = _pendingTeams[matchingPeer] = AssignSummerTeam(matchingPeer, matchingSession.TeamIndex)).Value : (short)matchingSession.TeamIndex,
                     unk1: 0,
                     serverEncoderFlags: (ulong)serverEncoderSettings,
