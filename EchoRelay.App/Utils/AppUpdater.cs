@@ -53,7 +53,8 @@ namespace EchoRelay.App.Utils
         /// Checks for a newer release and, if the person agrees, updates and restarts. Quietly does nothing when offline or
         /// up to date, unless <paramref name="reportUpToDate"/> (a manual check).
         /// </summary>
-        public static async Task CheckAsync(Form owner, bool reportUpToDate = false)
+        /// <returns>True if the app is closing to update.</returns>
+        public static async Task<bool> CheckAsync(Form owner, bool reportUpToDate = false)
         {
             string tag;
             Version? latest;
@@ -75,19 +76,19 @@ namespace EchoRelay.App.Utils
             {
                 if (reportUpToDate)
                     MessageBox.Show(owner, "Couldn't check for updates: " + ex.Message, "Echo Relay: Updates");
-                return;
+                return false;
             }
             if (latest == null || latest <= CurrentVersion || asset == null)
             {
                 if (reportUpToDate)
                     MessageBox.Show(owner, $"EchoRelay v{CurrentVersion.ToString(3)} is the latest version.", "Echo Relay: Updates");
-                return;
+                return false;
             }
 
             if (MessageBox.Show(owner, $"EchoRelay {tag} is out (this is v{CurrentVersion.ToString(3)}).\n\n" +
                 "Update now? EchoRelay closes (stopping the server), updates, and starts again as administrator.",
                 "Echo Relay: Update available", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
-                return;
+                return false;
 
             try
             {
@@ -144,7 +145,7 @@ namespace EchoRelay.App.Utils
                 {
                     MessageBox.Show(owner, $"The {tag} release's EchoRelay.App.exe is version {downloadedVersion ?? "unknown"}, not newer than this one " +
                         $"(v{CurrentVersion.ToString(3)}), so it wasn't installed.", "Echo Relay: Update");
-                    return;
+                    return false;
                 }
 
                 // A script waits for this process to exit, replaces the exe (keeping the old one as .old), and starts the new
@@ -166,11 +167,13 @@ namespace EchoRelay.App.Utils
                     CreateNoWindow = true,
                 });
                 Application.Exit();
+                return true;
             }
             catch (Exception ex)
             {
                 MessageBox.Show(owner, "The update failed: " + ex.Message + "\n\nDownload it from https://github.com/" + Repository + "/releases instead.",
                     "Echo Relay: Update");
+                return false;
             }
         }
     }

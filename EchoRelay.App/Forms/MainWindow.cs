@@ -189,17 +189,31 @@ namespace EchoRelay
         #region Event Handlers
         private async void Form1_Load(object sender, EventArgs e)
         {
-            // Offer a newer release from GitHub, if there is one (in the background).
-            _ = AppUpdater.CheckAsync(this);
+            // Offer a newer release from GitHub, if there is one, then newer game files (EchoRelay DLLs) for the game folders
+            // in the Version list, so the game servers this PC starts get fixes too (in the background; both ask first).
+            _ = CheckForUpdatesAsync();
 
             // A "Check for updates" item in the File menu.
             ToolStripMenuItem checkForUpdates = new ToolStripMenuItem("Check for updates");
-            checkForUpdates.Click += async (_, _) => await AppUpdater.CheckAsync(this, reportUpToDate: true);
+            checkForUpdates.Click += async (_, _) =>
+            {
+                if (!await AppUpdater.CheckAsync(this, reportUpToDate: true))
+                    await GameFilesUpdater.CheckAsync(this, Settings.GameExecutables.Values.Append(Settings.GameExecutableFilePath));
+            };
             fileToolStripMenuItem.DropDownItems.Insert(fileToolStripMenuItem.DropDownItems.IndexOf(exitToolStripMenuItem), checkForUpdates);
 
             // Start the server if it is configured to start on startup.
             if (Settings.StartServerOnStartup)
                 await Server.Start();
+        }
+
+        private async Task CheckForUpdatesAsync()
+        {
+            if (await AppUpdater.CheckAsync(this))
+                return; // closing to update; the new version checks the game files
+            List<string> executables = Settings.GameExecutables.Values.ToList();
+            executables.Add(Settings.GameExecutableFilePath);
+            await GameFilesUpdater.CheckAsync(this, executables);
         }
 
         private void Server_OnServerStarted(Server server)
