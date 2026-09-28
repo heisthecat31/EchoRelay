@@ -53,6 +53,19 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void DecodesCapturedTelemetryEvent()
+        {
+            // A christmas 2018 client's failed "unlock Echo Combat" purchase, as logged by a live server.
+            byte[] data = Convert.FromHexString("04000000000000009FF205E200000000BDF8D9A67C18913E7B2266726F6D223A226D61696E5F6D656E75222C226170706964223A2231333639303738343039383733343032222C22736B75223A22756E6C6F636B5F6563686F5F636F6D626174222C2274696D655F7370656E745F6D73223A31327D00");
+            SummerTelemetryEvent telemetry = new SummerTelemetryEvent();
+            telemetry.Decode(data);
+            Assert.Equal(new XPlatformId(PlatformCode.OVR_ORG, 3792040607), telemetry.UserId);
+            Assert.Equal("iap_failure", telemetry.EventName);
+            Assert.Equal("unlock_echo_combat", JObject.Parse(telemetry.Details).Value<string>("sku"));
+            Assert.Equal(unchecked((long)0xF9BC2A364E230214), Symbol.Hash("SNSTelemetryEvent"));
+        }
+
+        [Fact]
         public void DecodesCapturedFindSessionRequest()
         {
             byte[] data = Convert.FromHexString("22784f9c9593ad5a76cfddcff99c2d04fffffffffffffffff8f49fa8b1d0e8c80102000000000000000000000000000000000000000000007b2267616d6574797065223a3330313036393334363835313930313330322c226170706964223a2231333639303738343039383733343032227d000400000000000000c9b000b400000000");

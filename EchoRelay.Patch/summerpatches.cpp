@@ -56,6 +56,7 @@ namespace SummerPatches
 		BOOL serverSkipsOvr;       // -server implies -noovr. Not on builds whose renderer needs an OVR swap chain.
 		DWORD pnsOvrOrgScopedId;   // builds played without Revive: pnsovr.dll's org-scoped id, set to this install's own id (0: not used)
 		UINT64 frameTimerVtable;   // the frame timer's vtable, whose per-frame method servers are rate-limited through (see framelimit.h)
+		BytePatch ownPurchases;    // builds where Echo Combat is an in-app purchase: the "owns this item" check says yes
 	};
 
 	static const BuildProfile BUILDS[] = {
@@ -217,6 +218,12 @@ namespace SummerPatches
 			FALSE,
 			0x10B6B8,                     // no Revive: the player's own id (from their display name)
 			0x141038870,                  // frame timer vtable
+			// Echo Combat was a paid unlock (sku unlock_echo_combat) in this build. The "owns item" check asks the Oculus
+			// store (not available) unless the client settings say isdev; players got a purchase prompt that fails
+			// ("iap_failure") and no Combat. Combat, the only in-app purchase, is owned by everyone instead.
+			{ "treat in-app purchases (Echo Combat) as owned", 0x1408FE6B0,
+				{ 0x48, 0x89, 0x54, 0x24, 0x10, 0x53 },
+				{ 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }, 6 }, // mov eax, 1; ret
 		},
 	};
 
@@ -615,6 +622,8 @@ namespace SummerPatches
 		if (isServer && g_build->frameTimerVtable != 0)
 			FrameLimit::Install((VOID**)((BYTE*)GetModuleHandleA(NULL) + (g_build->frameTimerVtable - 0x140000000)), Log);
 		RedirectStatusHost();
+		if (g_build->ownPurchases.size != 0)
+			ApplyGamePatch(g_build->ownPurchases, "own the Echo Combat unlock");
 
 		// Parties and friends through EchoRelay instead of Oculus (unless -oculussocial). Not needed on dedicated servers.
 		g_echoRelaySocial = g_build->socialSupported && !isServer && !HasFlag(commandLine, L"-oculussocial");
