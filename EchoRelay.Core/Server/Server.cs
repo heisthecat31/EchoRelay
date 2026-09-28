@@ -398,6 +398,13 @@ namespace EchoRelay.Core.Server
                 response = new JObject { ["available"] = true, ["message"] = Settings.SummerServiceStatus };
             else if (path == api + "/status/news")
                 response = new JObject { ["message"] = Settings.SummerNews };
+            else if (path == api + "/players")
+            {
+                // Who's online, for the installer: display names and game versions only (no ids or addresses).
+                JArray players = new JArray(LoginService.GetOnlinePlayers()
+                    .Select(player => new JObject { ["name"] = player.Name, ["version"] = player.Version }));
+                response = new JObject { ["players"] = players };
+            }
             else if (path == api + "/servers/regions")
             {
                 // The regions that can start a game server of a build (?build=summer), for the installer's region picker.

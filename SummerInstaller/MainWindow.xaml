@@ -169,6 +169,8 @@
                                             </Border>
                                             <TextBlock x:Name="ConfigServerText" Margin="10,0,0,0" FontSize="13.5" VerticalAlignment="Center"/>
                                         </StackPanel>
+                                        <TextBlock x:Name="OnlineText" Margin="0,6,0,0" FontSize="12.5" Foreground="{StaticResource TextFaint}" TextWrapping="Wrap"
+                                                   Visibility="Collapsed" AutomationProperties.Name="Players online now"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Height="40" Padding="16,0" Click="ChangeConfig_Click" AutomationProperties.Name="Change server config">
                                         <StackPanel Orientation="Horizontal">

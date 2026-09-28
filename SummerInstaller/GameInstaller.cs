@@ -120,6 +120,42 @@ namespace SummerInstaller
             progress.Report(new InstallProgress { Stage = InstallStage.Done, Fraction = 1 });
         }
 
+        #region Online players
+        /// <summary>
+        /// Who's online on the server a config points at ({api}/players): each player's display name and game version, or
+        /// null if the server can't say (offline, or an older EchoRelay).
+        /// </summary>
+        public static async Task<System.Collections.Generic.List<(string name, string version)>?> GetOnlinePlayersAsync(string config)
+        {
+            string? api = GetConfigValue(config, "apiservice_host");
+            if (string.IsNullOrWhiteSpace(api))
+                return null;
+            try
+            {
+                using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                using HttpResponseMessage response = await Http.GetAsync(api!.TrimEnd('/') + "/players", timeout.Token);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+                string json = await response.Content.ReadAsStringAsync();
+                if (!json.Contains("\"players\""))
+                    return null;
+                System.Collections.Generic.List<(string, string)> players = new System.Collections.Generic.List<(string, string)>();
+                foreach (Match item in Regex.Matches(json, "\\{[^{}]*\\}"))
+                {
+                    Match name = Regex.Match(item.Value, "\"name\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+                    Match version = Regex.Match(item.Value, "\"version\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+                    if (name.Success)
+                        players.Add((Regex.Unescape(name.Groups[1].Value), version.Success ? Regex.Unescape(version.Groups[1].Value) : ""));
+                }
+                return players;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        #endregion
+
         #region Game server requests
         /// <summary>
         /// Asks the server a config points at to start a game server of a version for this player ({api}/servers/request).

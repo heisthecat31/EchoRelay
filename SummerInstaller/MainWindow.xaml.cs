@@ -80,6 +80,10 @@ namespace SummerInstaller
             FolderBox.Text = folderOverride ?? InstallMemory.FolderFor(_build) ?? _build.ExpandedDefaultInstallFolder;
             BuildSteps();
             StartLogoSpin();
+            // Who's online on the server, kept current while the window is open.
+            System.Windows.Threading.DispatcherTimer onlineTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+            onlineTimer.Tick += (_, _) => _ = RefreshOnlineAsync();
+            onlineTimer.Start();
             RefreshSetupState();
 
             // Bring every downloaded game version's EchoRelay game files up to date in the background.
@@ -191,6 +195,39 @@ namespace SummerInstaller
                 ShowBanner($"This folder has the {_build.Name} installed. Choose another folder to install the {build.Name}.", info: true);
         }
         #endregion
+
+        /// <summary>
+        /// Shows who's online on the server the config points at, by game version (names only; the server shares no ids).
+        /// Hidden if the server can't say (offline, or an older EchoRelay).
+        /// </summary>
+        private async Task RefreshOnlineAsync()
+        {
+            string config = _config;
+            var players = await GameInstaller.GetOnlinePlayersAsync(config);
+            if (config != _config)
+                return;
+            if (players == null)
+            {
+                OnlineText.Visibility = Visibility.Collapsed;
+                return;
+            }
+            OnlineText.Visibility = Visibility.Visible;
+            if (players.Count == 0)
+            {
+                OnlineText.Text = "Nobody is online right now.";
+                return;
+            }
+            // This version's players first, then the other versions by size.
+            var groups = players.GroupBy(p => p.version)
+                .OrderByDescending(g => g.Key == _build.ShortName).ThenByDescending(g => g.Count())
+                .Select(g =>
+                {
+                    var names = g.Select(p => p.name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+                    string list = string.Join(", ", names.Take(8)) + (names.Count > 8 ? $" +{names.Count - 8} more" : "");
+                    return $"{(string.IsNullOrEmpty(g.Key) ? "Other" : g.Key)} ({names.Count}): {list}";
+                });
+            OnlineText.Text = $"{players.Count} online  ·  " + string.Join("  ·  ", groups);
+        }
 
         private void RefreshSetupState()
         {
@@ -412,6 +449,7 @@ namespace SummerInstaller
             ConfigBadge.Background = new SolidColorBrush(isDefault ? Color.FromArgb(0x22, 0x3F, 0xD0, 0xFF) : Color.FromArgb(0x26, 0xFF, 0x8A, 0x3D));
             ConfigBadgeText.Foreground = (Brush)FindResource(isDefault ? "Blue" : "Orange");
             ConfigServerText.Text = GameInstaller.DescribeServer(config);
+            _ = RefreshOnlineAsync();
             _ = RefreshRegionsAsync();
         }
 
