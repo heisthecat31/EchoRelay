@@ -220,7 +220,8 @@ namespace SummerInstaller
             {
                 PrimaryAction.Content = partial ? "Resume download" : "Install";
                 SecondaryAction.Visibility = Visibility.Collapsed;
-                GameServerRow.Visibility = Visibility.Collapsed;
+                // A game server can be requested before the game is downloaded (e.g. for friends, or while it downloads).
+                _ = RefreshRegionsAsync();
             }
             PrimaryAction.IsEnabled = validPath;
             UpdateSpaceText(folder);
@@ -401,6 +402,7 @@ namespace SummerInstaller
             ConfigBadge.Background = new SolidColorBrush(isDefault ? Color.FromArgb(0x22, 0x3F, 0xD0, 0xFF) : Color.FromArgb(0x26, 0xFF, 0x8A, 0x3D));
             ConfigBadgeText.Foreground = (Brush)FindResource(isDefault ? "Blue" : "Orange");
             ConfigServerText.Text = GameInstaller.DescribeServer(config);
+            _ = RefreshRegionsAsync();
         }
 
         private static string Normalize(string json) => System.Text.RegularExpressions.Regex.Replace(json, @"\s+", "");
@@ -703,13 +705,14 @@ namespace SummerInstaller
             GameBuild build = _build;
             string config = _config;
             System.Collections.Generic.List<string> regions = await GameInstaller.GetGameServerRegionsAsync(config, build);
-            if (build != _build || !GameInstaller.IsInstalled(InstallFolder))
+            if (build != _build || config != _config)
                 return;
             string? previous = _regions.Count > 0 ? _regions[_regionIndex] : null;
             _regions = regions;
             _regionIndex = Math.Max(0, previous != null ? regions.FindIndex(r => string.Equals(r, previous, StringComparison.OrdinalIgnoreCase)) : 0);
             Visibility visibility = regions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            GameServerRow.Visibility = visibility;
+            // Request stays available without regions: the server answers why it can't start one (e.g. requests are off).
+            RegionAction.Visibility = visibility;
             ShowRegion();
         }
 

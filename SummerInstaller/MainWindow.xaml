@@ -178,8 +178,8 @@
                                     </Button>
                                 </Grid>
 
-                                <!-- Game server requests (only when the server can start game servers of this version) -->
-                                <Grid x:Name="GameServerRow" Margin="0,18,0,0" Visibility="Collapsed">
+                                <!-- Game server requests (the region picker only when the server hosts this version somewhere) -->
+                                <Grid x:Name="GameServerRow" Margin="0,18,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -190,7 +190,7 @@
                                                    Text="Have the server start one for you in a region, then press Play."/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button x:Name="RegionAction" Style="{StaticResource SecondaryButton}" Height="40" Padding="14,0" Margin="0,0,8,0" Click="Region_Click"
+                                        <Button x:Name="RegionAction" Style="{StaticResource SecondaryButton}" Height="40" Padding="14,0" Margin="0,0,8,0" Click="Region_Click" Visibility="Collapsed"
                                                 AutomationProperties.Name="Game server region" ToolTip="The region to request a game server in. Click to change.">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="&#xE909;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center"/>
