@@ -73,6 +73,12 @@ namespace EchoRelay.Core.Server.Services.Login
         /// need the smaller (halloween sized) profiles.
         /// </summary>
         private readonly ConcurrentDictionary<Peer, bool> _christmasClientPeers = new ConcurrentDictionary<Peer, bool>();
+
+        /// <summary>
+        /// Login connections of christmas 2018 ("winter") build clients and game servers. They speak the summer messages but
+        /// save loadouts with symbol hashes (like christmas 2017), so their server profile data is kept apart.
+        /// </summary>
+        private readonly ConcurrentDictionary<Peer, bool> _winterClientPeers = new ConcurrentDictionary<Peer, bool>();
         #endregion
 
         #region Constructor
@@ -184,6 +190,7 @@ namespace EchoRelay.Core.Server.Services.Login
             _summerClientPeers.TryRemove(peer, out _);
             _halloweenClientPeers.TryRemove(peer, out _);
             _christmasClientPeers.TryRemove(peer, out _);
+            _winterClientPeers.TryRemove(peer, out _);
 
             // If the peer had a session token, update its expiry time.
             Guid? session = peer.GetSessionData<Guid?>();
@@ -463,6 +470,10 @@ namespace EchoRelay.Core.Server.Services.Login
                 _christmasClientPeers[sender] = true;
             else
                 _christmasClientPeers.TryRemove(sender, out _);
+            if (request.AccountInfo.PublisherLock == SummerBuild.WinterPublisherLock)
+                _winterClientPeers[sender] = true;
+            else
+                _winterClientPeers.TryRemove(sender, out _);
 
             // If we have existing session data for this peer's connection, invalidate it.
             InvalidatePeerUserSession(sender);
@@ -583,7 +594,18 @@ namespace EchoRelay.Core.Server.Services.Login
         /// </summary>
         private const string ChristmasClientDataKey = "christmas_client";
 
-        private static string GetServerDataKey(string? publisherLock) => publisherLock == SummerBuild.ChristmasPublisherLock ? ChristmasServerDataKey : SummerServerDataKey;
+        /// <summary>
+        /// The christmas 2018 ("winter") build's server profile updates are kept apart too: it also saves loadouts with symbol
+        /// hashes, and each build's item hashes only mean something to that build.
+        /// </summary>
+        private const string WinterServerDataKey = "winter_server";
+
+        private static string GetServerDataKey(string? publisherLock) => publisherLock switch
+        {
+            SummerBuild.ChristmasPublisherLock => ChristmasServerDataKey,
+            SummerBuild.WinterPublisherLock => WinterServerDataKey,
+            _ => SummerServerDataKey,
+        };
 
         /// <summary>
         /// Obtains the lobby build server profile data stored for an account.
@@ -595,14 +617,14 @@ namespace EchoRelay.Core.Server.Services.Login
         {
             var stored = account.Profile.Server.AdditionalData;
             JObject shared = stored.TryGetValue(SummerServerDataKey, out JToken? sharedData) && sharedData is JObject sharedObj ? sharedObj : new JObject();
-            if (publisherLock == SummerBuild.ChristmasPublisherLock)
+            if (publisherLock == SummerBuild.ChristmasPublisherLock || publisherLock == SummerBuild.WinterPublisherLock)
             {
-                if (stored.TryGetValue(ChristmasServerDataKey, out JToken? christmasData) && christmasData is JObject christmasObj)
-                    return christmasObj;
-                // Christmas saves made before it had its own data went to the shared data; take them from there.
+                if (stored.TryGetValue(GetServerDataKey(publisherLock), out JToken? ownData) && ownData is JObject ownObj)
+                    return ownObj;
+                // Saves made before the build had its own data went to the shared data; take them from there.
                 return HasSymbolLoadout(shared) ? shared : new JObject();
             }
-            // The summer and halloween builds can't read a christmas loadout.
+            // The summer and halloween builds can't read a christmas (2017 or 2018) loadout.
             if (HasSymbolLoadout(shared))
             {
                 shared = (JObject)shared.DeepClone();
@@ -662,6 +684,8 @@ namespace EchoRelay.Core.Server.Services.Login
                 return SummerBuild.HalloweenPublisherLock;
             if (_christmasClientPeers.Keys.Any(peer => peer.GetSessionData<Guid?>() == session))
                 return SummerBuild.ChristmasPublisherLock;
+            if (_winterClientPeers.Keys.Any(peer => peer.GetSessionData<Guid?>() == session))
+                return SummerBuild.WinterPublisherLock;
             return null;
         }
 
@@ -674,6 +698,8 @@ namespace EchoRelay.Core.Server.Services.Login
                 return SummerBuild.HalloweenPublisherLock;
             if (_christmasClientPeers.ContainsKey(peer))
                 return SummerBuild.ChristmasPublisherLock;
+            if (_winterClientPeers.ContainsKey(peer))
+                return SummerBuild.WinterPublisherLock;
             return null;
         }
 
@@ -724,6 +750,8 @@ namespace EchoRelay.Core.Server.Services.Login
                     else if (_christmasClientPeers.ContainsKey(otherPeer))
                         await otherPeer.Send(new ChristmasProfileResponse(0, request.UserId,
                             BuildSummerProfiles(account, account.Profile.Server.LobbyVersion, request.UserId, SummerBuild.ChristmasPublisherLock).server));
+                    else if (_winterClientPeers.ContainsKey(otherPeer))
+                        continue; // The winter build has no profile response message (it gets others' loadouts from the game server).
                     else
                         await otherPeer.Send(new SummerProfileResponsev2(request.UserId, serverProfile));
                 }
