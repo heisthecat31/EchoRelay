@@ -402,7 +402,7 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
-        public void MatchStatsCombineWithStoredTotals()
+        public void LiveStatsCombineWithStoredTotals()
         {
             JObject stored = JObject.Parse(@"{""loadout"": {""emote"": ""a""}, ""stats"": {""arena"": {
                 ""Goals"": {""op"": ""add"", ""val"": 3, ""cnt"": 2},
@@ -417,7 +417,7 @@ namespace EchoRelay.Core.Test.Messages
                 ""Saves"": {""op"": ""add"", ""val"": 1, ""cnt"": 1}},
                 ""combat"": {""Kills"": {""op"": ""add"", ""val"": 4, ""cnt"": 1}}}}");
 
-            SummerStats.Merge(stored, update);
+            stored.Merge(LiveStats.CombineStats(stored, update));
 
             JObject arena = (JObject)stored["stats"]!["arena"]!;
             Assert.Equal(5, arena["Goals"]!.Value<long>("val"));

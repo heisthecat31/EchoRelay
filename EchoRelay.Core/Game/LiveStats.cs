@@ -3,35 +3,40 @@ using Newtonsoft.Json.Linq;
 namespace EchoRelay.Core.Game
 {
     /// <summary>
-    /// Merges the lobby builds' server profile updates. A game server reports a player's stats at the end of a match as
-    /// {"op", "val", "cnt"} objects, where "op" (add, rep, min, max or avg) says how the value combines with the stored
-    /// one, e.g. {"Goals": {"op": "add", "val": 2, "cnt": 1}} adds two goals to the player's total.
+    /// Stats for the Echo VR live build only (the lobby builds don't report any). A server profile update carries
+    /// stats as {"op", "val", "cnt"} objects, where "op" (add, rep, min, max or avg) says how the value combines with the
+    /// stored one, e.g. {"Goals": {"op": "add", "val": 2, "cnt": 1}} adds two goals to the player's total.
     /// </summary>
-    public static class SummerStats
+    public static class LiveStats
     {
         /// <summary>
-        /// Merges an update into a stored server profile: stats are combined by their op, other objects are merged
-        /// recursively, and anything else (arrays, plain values) replaces the stored value.
+        /// Returns a copy of an update with each stat already combined with the stored one (by its op), so a plain
+        /// merge into the stored profile then keeps totals instead of overwriting them with one match's values.
         /// </summary>
-        /// <param name="stored">The stored profile data, updated in place.</param>
-        /// <param name="update">The update from the game server.</param>
-        public static void Merge(JObject stored, JObject update)
+        /// <param name="stored">The stored profile data.</param>
+        /// <param name="update">The profile update.</param>
+        /// <returns>The update, with its stats combined.</returns>
+        public static JObject CombineStats(JObject stored, JObject update)
+        {
+            JObject result = (JObject)update.DeepClone();
+            CombineInto(stored, result);
+            return result;
+        }
+
+        private static void CombineInto(JObject stored, JObject update)
         {
             foreach (JProperty property in update.Properties())
             {
-                JToken? current = stored[property.Name];
-                if (property.Value is JObject incoming)
+                if (property.Value is not JObject incoming || stored[property.Name] is not JObject existing)
+                    continue;
+                if (IsStat(incoming))
                 {
-                    if (IsStat(incoming))
-                        stored[property.Name] = current is JObject existing && IsStat(existing) ? Combine(existing, incoming) : incoming.DeepClone();
-                    else if (current is JObject existing)
-                        Merge(existing, incoming);
-                    else
-                        stored[property.Name] = incoming.DeepClone();
+                    if (IsStat(existing))
+                        property.Value = Combine(existing, incoming);
                 }
                 else
                 {
-                    stored[property.Name] = property.Value.DeepClone();
+                    CombineInto(existing, incoming);
                 }
             }
         }

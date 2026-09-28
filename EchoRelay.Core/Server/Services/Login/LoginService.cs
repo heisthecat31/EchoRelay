@@ -615,12 +615,7 @@ namespace EchoRelay.Core.Server.Services.Login
             // The halloween build has no combat unlock list, and a second copy of the unlocks would push the profile past
             // the halloween client's message size limit (it disconnects on a larger message).
             if (halloween)
-            {
                 server.Remove("unlocks_combat");
-                // For the same reason, leave out the stats if they'd take it too close to that limit.
-                if (server["stats"] != null && server.ToString(Formatting.None).Length > SummerBuild.HalloweenMaxMessageSize - 2048)
-                    server.Remove("stats");
-            }
             return (client, server);
         }
 
@@ -765,11 +760,7 @@ namespace EchoRelay.Core.Server.Services.Login
             // The game server runs the same build as the player it saves for.
             string? publisherLock = GetSessionPublisherLock(request.Session);
             JObject data = GetSummerServerData(account, publisherLock);
-            // Stats (sent at the end of a match) are combined with the stored totals rather than replacing them.
-            SummerStats.Merge(data, request.Update);
-            int stats = request.Update.Descendants().OfType<JObject>().Count(o => o["op"] != null && o["val"] != null);
-            if (stats > 0)
-                TrafficCapture.Log($"Stats: {stats} stat(s) saved for {account.Profile.Server.DisplayName ?? request.UserId.ToString()} ({string.Join(", ", request.Update.Properties().Select(p => p.Name))})");
+            data.Merge(request.Update, new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
             account.Profile.Server.AdditionalData[GetServerDataKey(publisherLock)] = data;
             account.Profile.Server.ModifyTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             Storage.Accounts.Set(account);
@@ -994,8 +985,9 @@ namespace EchoRelay.Core.Server.Services.Login
             // Merge the update information with the user.
             if (request.UpdateInfo.Update != null)
             {
-                // Obtain the merged profile
-                AccountResource.AccountServerProfile? mergedProfile = JsonUtils.MergeObjects(account.Profile.Server, request.UpdateInfo.Update);
+                // Obtain the merged profile. Stats are combined with the stored totals (by their op) rather than replaced.
+                JObject update = LiveStats.CombineStats(JObject.FromObject(account.Profile.Server), request.UpdateInfo.Update);
+                AccountResource.AccountServerProfile? mergedProfile = JsonUtils.MergeObjects(account.Profile.Server, update);
 
                 // Verify we have an account and the identifier didn't change (avoids overwriting another profile in storage, as it is the storage key).
                 if (mergedProfile == null || mergedProfile.XPlatformId != request.UserId.ToString())
