@@ -60,6 +60,11 @@ namespace EchoRelay
         {
             InitializeComponent();
 
+            // The server log is written in batches (see AppendLogText).
+            _logTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            _logTimer.Tick += (_, _) => FlushLog();
+            _logTimer.Start();
+
             // The Parties tab goes after Game Servers.
             tabParties.Controls.Add(partiesControl);
             tabControlMain.TabPages.Insert(tabControlMain.TabPages.IndexOf(tabGameServers) + 1, tabParties);
@@ -361,50 +366,86 @@ namespace EchoRelay
             });
         }
 
+        // Packets are logged straight from the network threads: formatting and queueing them doesn't wait for the window.
         private void Server_OnServicePacketReceived(EchoRelay.Core.Server.Services.Service service, EchoRelay.Core.Server.Services.Peer sender, EchoRelay.Core.Server.Messages.Packet packet)
         {
-            // Invoke the UI thread to perform updates.
-            this.InvokeUIThread(() =>
-            {
-                // Add to our log
-                AppendLogText($"[{service.Name}] client({sender.Address}:{sender.Port})->server:\n" + getPacketDisplayString(packet));
-            });
+            AppendLogText($"[{service.Name}] client({sender.Address}:{sender.Port})->server:\n" + getPacketDisplayString(packet));
         }
 
         private void Server_OnServicePacketSent(EchoRelay.Core.Server.Services.Service service, EchoRelay.Core.Server.Services.Peer sender, EchoRelay.Core.Server.Messages.Packet packet)
         {
-            // Invoke the UI thread to perform updates.
-            this.InvokeUIThread(() =>
-            {
-                // Add to our log
-                AppendLogText($"[{service.Name}] server->client({sender.Address}:{sender.Port}\n" + getPacketDisplayString(packet));
-            });
+            AppendLogText($"[{service.Name}] server->client({sender.Address}:{sender.Port}\n" + getPacketDisplayString(packet));
         }
+
+        #region Server log
+        /// <summary>
+        /// Log text waiting to be shown. The server's threads only queue text here (they used to wait for the window to
+        /// add each message, so a busy log stalled the whole server); the window adds it in batches (<see cref="FlushLog"/>).
+        /// </summary>
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _pendingLog = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        private readonly System.Windows.Forms.Timer _logTimer;
+        private int _pendingLogCount;
+        private int _skippedLogCount;
+
+        /// <summary>Queued messages beyond this are skipped (and counted) until the window catches up.</summary>
+        private const int MaxPendingLogMessages = 5000;
+        /// <summary>The log box keeps about this many characters, dropping the oldest lines.</summary>
+        private const int MaxLogCharacters = 300_000;
+
+        /// <summary>
+        /// Adds text to the server log. Safe from any thread and never waits.
+        /// </summary>
         private void AppendLogText(string text)
         {
-            // Check if the cursor is at the end of the textbox
-            bool endSelected = rtbLog.SelectionStart >= text.Length - 1;
-
-            // Ensure the log buffer does not exceed the given number of lines.
-            int maxLineCount = 200;
-            if (rtbLog.Lines.Length > maxLineCount)
+            if (Interlocked.Increment(ref _pendingLogCount) > MaxPendingLogMessages)
             {
-                // Obtain the line start and length.
-                int startLineCharIndex = rtbLog.GetFirstCharIndexFromLine(0);
-                int endLineCharIndex = rtbLog.GetFirstCharIndexFromLine(rtbLog.Lines.Length - maxLineCount);
-                rtbLog.Text = rtbLog.Text.Remove(startLineCharIndex, endLineCharIndex - startLineCharIndex);
+                Interlocked.Decrement(ref _pendingLogCount);
+                Interlocked.Increment(ref _skippedLogCount);
+                return;
             }
+            _pendingLog.Enqueue(text);
+        }
 
-            // Append our log text
-            rtbLog.AppendText(text);
-
-            // Scroll to the end again if the end was previously selected
-            if (endSelected)
+        /// <summary>
+        /// Adds the queued log text to the log box in one go, trims the oldest text, and keeps it scrolled to the end if it was.
+        /// </summary>
+        private void FlushLog()
+        {
+            if (_pendingLog.IsEmpty && _skippedLogCount == 0)
+                return;
+            System.Text.StringBuilder batch = new System.Text.StringBuilder();
+            while (batch.Length < MaxLogCharacters && _pendingLog.TryDequeue(out string? text))
             {
-                rtbLog.SelectionStart = rtbLog.Text.Length;
+                Interlocked.Decrement(ref _pendingLogCount);
+                batch.Append(text);
+            }
+            int skipped = Interlocked.Exchange(ref _skippedLogCount, 0);
+            if (skipped > 0)
+                batch.Append($"[LOG] {skipped} messages not shown (too many to display)\n");
+
+            bool atEnd = rtbLog.SelectionStart >= rtbLog.TextLength - 1;
+            rtbLog.AppendText(batch.ToString());
+            if (rtbLog.TextLength > MaxLogCharacters)
+            {
+                // Drop whole lines from the start, down to about three quarters of the limit.
+                int line = rtbLog.GetLineFromCharIndex(rtbLog.TextLength - MaxLogCharacters * 3 / 4);
+                int cut = rtbLog.GetFirstCharIndexFromLine(line);
+                if (cut > 0)
+                {
+                    bool readOnly = rtbLog.ReadOnly;
+                    rtbLog.ReadOnly = false;
+                    rtbLog.Select(0, cut);
+                    rtbLog.SelectedText = "";
+                    rtbLog.ReadOnly = readOnly;
+                }
+            }
+            if (atEnd)
+            {
+                rtbLog.SelectionStart = rtbLog.TextLength;
                 rtbLog.ScrollToCaret();
             }
         }
+        #endregion
 
         private void Registry_OnGameServerRegistered(EchoRelay.Core.Server.Services.ServerDB.RegisteredGameServer gameServer)
         {
