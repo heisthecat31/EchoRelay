@@ -367,6 +367,8 @@ namespace SummerPatches
 		if (name->Length == wcslen(L"pnsovr.dll") * sizeof(WCHAR) && _wcsnicmp(name->Buffer, L"pnsovr.dll", name->Length / sizeof(WCHAR)) == 0)
 		{
 			Log("pnsovr.dll loaded at %p", data->DllBase);
+			// Always, even with -oculusauth: no EchoRelay server should ever get a player's Oculus access token.
+			XmasPatches::ProtectAccessToken((BYTE*)data->DllBase);
 			if (g_patchPnsOvr)
 				PatchPnsOvr((BYTE*)data->DllBase);
 			if (g_echoRelaySocial)
@@ -649,10 +651,11 @@ namespace SummerPatches
 				SummerSocial::HookPlatformModule(platform, L"LibOVRPlatform64_1.dll");
 		}
 
-		if (g_patchPnsOvr || g_echoRelaySocial)
 		{
-			// Patch pnsovr.dll now if it is already loaded, and whenever it gets loaded.
+			// Patch pnsovr.dll now if it is already loaded, and whenever it gets loaded (its access token protection always).
 			HMODULE pnsovr = GetModuleHandleA("pnsovr.dll");
+			if (pnsovr != NULL)
+				XmasPatches::ProtectAccessToken((BYTE*)pnsovr);
 			if (pnsovr != NULL && g_patchPnsOvr)
 				PatchPnsOvr((BYTE*)pnsovr);
 			LdrRegisterDllNotificationFunc registerNotification = (LdrRegisterDllNotificationFunc)GetProcAddress(GetModuleHandleA("ntdll.dll"), "LdrRegisterDllNotification");

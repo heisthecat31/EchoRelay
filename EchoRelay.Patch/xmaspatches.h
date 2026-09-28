@@ -40,4 +40,13 @@ namespace XmasPatches
 	/// servers keep an install id of their own).
 	/// </summary>
 	UINT64 PlayerUserId(BOOL server);
+
+	/// <summary>
+	/// Stops pnsovr.dll reading the player's Oculus access token, which it sends with every login (the original servers
+	/// checked it with Oculus). An EchoRelay server has no use for it, and whoever runs one could take over the player's
+	/// Oculus account with it. The token callback's success path copies "?" (what a signed-out Oculus app gives) instead.
+	/// Found by pattern, so it works on each build's pnsovr.dll that asks for the token.
+	/// </summary>
+	/// <returns>Whether the token is protected (or this pnsovr.dll never asks for it).</returns>
+	BOOL ProtectAccessToken(BYTE* pnsOvr);
 }

@@ -56,7 +56,7 @@ namespace EchoRelay.Core.Server.Messages.Summer
 
         public override string ToString()
         {
-            return $"{GetType().Name}(session={Session}, user_id={UserId}, locale={Locale}, account_data={JObject.FromObject(AccountInfo).ToString(Newtonsoft.Json.Formatting.None)})";
+            return $"{GetType().Name}(session={Session}, user_id={UserId}, locale={Locale}, account_data={AccountInfo.ToLogString()})";
         }
         #endregion
     }

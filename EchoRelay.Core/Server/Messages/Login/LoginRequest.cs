@@ -70,7 +70,7 @@ namespace EchoRelay.Core.Server.Messages.Login
 
         public override string ToString()
         {
-            return $"{GetType().Name}(session={Session}, user_id={UserId}, account_data={JObject.FromObject(AccountInfo).ToString(Newtonsoft.Json.Formatting.None)})";
+            return $"{GetType().Name}(session={Session}, user_id={UserId}, account_data={AccountInfo.ToLogString()})";
         }
         #endregion
 
@@ -80,6 +80,18 @@ namespace EchoRelay.Core.Server.Messages.Login
         /// </summary>
         public class LoginAccountInfo
         {
+            /// <summary>
+            /// The account data for logs, without secrets: a client signed in to the Oculus app sends its real Oculus access
+            /// token (the original servers checked it with Oculus; EchoRelay never uses it), which must not end up in a log.
+            /// </summary>
+            public string ToLogString()
+            {
+                JObject json = JObject.FromObject(this);
+                if (json["access_token"] is JValue token && token.Type == JTokenType.String && token.Value<string>() is string value && value.Length > 1)
+                    json["access_token"] = "(hidden)";
+                return json.ToString(Newtonsoft.Json.Formatting.None);
+            }
+
             /// <summary>
             /// The account identifier.
             /// </summary>

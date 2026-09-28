@@ -53,6 +53,20 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void LoginLogTextHidesTheOculusAccessToken()
+        {
+            SummerLoginRequest request = new SummerLoginRequest();
+            request.AccountInfo.AccessToken = "FRLAsecretTokenValue123";
+            string text = request.ToString();
+            Assert.DoesNotContain("FRLAsecretTokenValue123", text);
+            Assert.Contains("\"access_token\":\"(hidden)\"", text);
+
+            // Clients signed out of the Oculus app send "?", which is harmless and shows as is.
+            request.AccountInfo.AccessToken = "?";
+            Assert.Contains("\"access_token\":\"?\"", request.ToString());
+        }
+
+        [Fact]
         public void DecodesCapturedTelemetryEvent()
         {
             // A christmas 2018 client's failed "unlock Echo Combat" purchase, as logged by a live server.

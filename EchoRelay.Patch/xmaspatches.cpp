@@ -942,6 +942,75 @@ namespace XmasPatches
 		return GetInstallUserId(server);
 	}
 
+	BOOL ProtectAccessToken(BYTE* pnsOvr)
+	{
+		IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(pnsOvr + ((IMAGE_DOS_HEADER*)pnsOvr)->e_lfanew);
+		SIZE_T imageSize = nt->OptionalHeader.SizeOfImage;
+		static const CHAR failed[] = "[OVR] ovr_User_GetAccessToken failed";
+		BYTE* message = NULL;
+		for (SIZE_T i = 0; i + sizeof(failed) < imageSize && message == NULL; i++)
+			if (pnsOvr[i] == '[' && memcmp(pnsOvr + i, failed, sizeof(failed) - 1) == 0)
+				message = pnsOvr + i;
+		if (message == NULL)
+			return TRUE; // this build never asks for the access token
+
+		// The token callback: lea r8/rdx, [message] in its failure path.
+		IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+		BYTE* reference = NULL;
+		for (WORD s = 0; s < nt->FileHeader.NumberOfSections && reference == NULL; s++, section++)
+		{
+			if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
+				continue;
+			BYTE* start = pnsOvr + section->VirtualAddress;
+			BYTE* end = start + section->Misc.VirtualSize - 7;
+			for (BYTE* p = start; p < end; p++)
+			{
+				if ((p[0] == 0x48 || p[0] == 0x4C) && p[1] == 0x8D && (p[2] & 0xC7) == 0x05 && p + 7 + *(INT32*)(p + 3) == message)
+				{
+					reference = p;
+					break;
+				}
+			}
+		}
+		if (reference == NULL)
+		{
+			Log("FAILED to find pnsovr.dll's access token callback: the player's Oculus access token may be sent to the server");
+			return FALSE;
+		}
+
+		// After it: the failure path's lea rdx, ["?"], then the success path's call [ovr_Message_GetString]; mov rdx, rax;
+		// lea rcx, [token buffer].
+		BYTE* question = NULL;
+		BYTE* success = NULL;
+		for (BYTE* p = reference; p < reference + 0x200; p++)
+		{
+			if (question == NULL && p[0] == 0x48 && p[1] == 0x8D && p[2] == 0x15)
+			{
+				BYTE* target = p + 7 + *(INT32*)(p + 3);
+				if (target >= pnsOvr && target + 2 <= pnsOvr + imageSize && target[0] == '?' && target[1] == 0)
+					question = target;
+			}
+			if (p[0] == 0xFF && p[1] == 0x15 && p[6] == 0x48 && p[7] == 0x8B && p[8] == 0xD0 && p[9] == 0x48 && p[10] == 0x8D && p[11] == 0x0D)
+			{
+				success = p;
+				break;
+			}
+		}
+		if (question == NULL || success == NULL)
+		{
+			Log("FAILED to find where pnsovr.dll stores the access token: the player's Oculus access token may be sent to the server");
+			return FALSE;
+		}
+		// call [GetString] (6 bytes) + mov rdx, rax (3) -> lea rdx, ["?"] (7) + nop nop
+		BYTE patch[9] = { 0x48, 0x8D, 0x15, 0, 0, 0, 0, 0x90, 0x90 };
+		INT32 displacement = (INT32)(question - (success + 7));
+		memcpy(patch + 3, &displacement, 4);
+		if (!WriteCode(success, patch, sizeof(patch)))
+			return FALSE;
+		Log("Patched: never read or send the player's Oculus access token (the server gets \"?\", as with the Oculus app signed out)");
+		return TRUE;
+	}
+
 	UINT64 PlayerUserId(BOOL server)
 	{
 		return GetPlayerUserId(server);
