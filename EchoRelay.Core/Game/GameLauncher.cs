@@ -7,6 +7,18 @@ namespace EchoRelay.Core.Game
     /// </summary>
     public abstract class GameLauncher
     {
+        /// <summary>
+        /// A lobby build server's frame rate cap (EchoRelay.Patch's -tickrate; 0 = uncapped). Without one, the patch uses
+        /// "server_tickrate" from the game's _local\config.json, else 120.
+        /// </summary>
+        private static void AddTickRate(List<string> args, LaunchRole role, uint? tickRate)
+        {
+            if (role != LaunchRole.Server || !tickRate.HasValue)
+                return;
+            args.Add("-tickrate");
+            args.Add(tickRate.Value.ToString());
+        }
+
         public static Process? Launch(string executableFilePath, LaunchRole role = LaunchRole.Client, bool windowed = false, bool spectatorStream = false, bool moderator = false, bool noOVR = false, bool headless = false, uint? timeStep = null, List<string>? additionalArgs = null)
         {
             // Create a list of arguments
@@ -17,6 +29,7 @@ namespace EchoRelay.Core.Game
             // offline mode, moderator flag or timestep option.
             // The christmas 2017 build (EchoArena.exe) only knows -novr; EchoRelay.Patch (dbghelp.dll) adds -server and an
             // emulated -headless (no audio, window hidden). It runs from the game's root folder.
+            // On these builds EchoRelay.Patch caps a server's frame rate: timeStep becomes its -tickrate (frames a second).
             uint? timestamp = SummerBuild.ReadPETimestamp(executableFilePath);
             if (timestamp == SummerBuild.ChristmasExecutableTimestamp)
             {
@@ -26,6 +39,7 @@ namespace EchoRelay.Core.Game
                     args.Add("-novr");
                 if (headless)
                     args.Add("-headless");
+                AddTickRate(args, role, timeStep);
                 ProcessStartInfo startInfo = new ProcessStartInfo(executableFilePath);
                 foreach (string arg in args)
                     startInfo.ArgumentList.Add(arg);
@@ -44,6 +58,7 @@ namespace EchoRelay.Core.Game
                     args.Add("-noovr");
                 if (headless)
                     args.Add("-headless");
+                AddTickRate(args, role, timeStep);
                 return Process.Start(executableFilePath, args);
             }
 

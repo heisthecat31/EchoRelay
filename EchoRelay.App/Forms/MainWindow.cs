@@ -496,8 +496,8 @@ namespace EchoRelay
 
         private void serverHeadlessThrottledToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Launch game as a headless, no OVR server with the default timestep.
-            GameLauncher.Launch(Settings.GameExecutableFilePath, GameLauncher.LaunchRole.Server, noOVR: true, headless: true);
+            // Launch game as a headless, no OVR server at the settings' tick rate.
+            GameLauncher.Launch(Settings.GameExecutableFilePath, GameLauncher.LaunchRole.Server, noOVR: true, headless: true, timeStep: (uint)Math.Max(0, Settings.GameServerTickRate));
         }
 
         private void serverheadlessUnthrottledHighCPUToolStripMenuItem_Click(object sender, EventArgs e)
@@ -509,7 +509,7 @@ namespace EchoRelay
         private void serverToolStripMenuItem_Click(object sender, EventArgs e)
         {
             // Launch game as a no OVR server.
-            GameLauncher.Launch(Settings.GameExecutableFilePath, GameLauncher.LaunchRole.Server, noOVR: true);
+            GameLauncher.Launch(Settings.GameExecutableFilePath, GameLauncher.LaunchRole.Server, noOVR: true, timeStep: (uint)Math.Max(0, Settings.GameServerTickRate));
         }
 
         private void clientWindowedNoOVRToolStripMenuItem_Click(object sender, EventArgs e)

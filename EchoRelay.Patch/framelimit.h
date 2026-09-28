@@ -10,7 +10,7 @@
 namespace FrameLimit
 {
 	/// <summary>
-	/// The server frame rate when the command line doesn't give one (-tickrate N).
+	/// The server frame rate when neither the command line (-tickrate N) nor _local\config.json ("server_tickrate": N) gives one.
 	/// </summary>
 	static const UINT DEFAULT_TICK_RATE = 120;
 

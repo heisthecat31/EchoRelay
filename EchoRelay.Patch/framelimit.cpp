@@ -1,6 +1,8 @@
 #include "framelimit.h"
 #include <cwchar>
 #include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #pragma comment(lib, "winmm.lib")
 
 namespace FrameLimit
@@ -89,16 +91,63 @@ namespace FrameLimit
 		return -1;
 	}
 
+	/// <summary>
+	/// "server_tickrate" from the game's _local\config.json (the exe is in bin\win7), or -1 if it isn't set.
+	/// </summary>
+	static INT ConfigTickRate()
+	{
+		CHAR path[MAX_PATH];
+		DWORD length = GetModuleFileNameA(NULL, path, MAX_PATH);
+		if (length == 0 || length >= MAX_PATH)
+			return -1;
+		for (INT up = 0; up < 3; up++) // strip the file name, then win7 and bin
+		{
+			CHAR* slash = strrchr(path, '\\');
+			if (slash == NULL)
+				return -1;
+			*slash = 0;
+		}
+		strcat_s(path, "\\_local\\config.json");
+		FILE* file = NULL;
+		if (fopen_s(&file, path, "rb") != 0 || file == NULL)
+			return -1;
+		CHAR buffer[16384];
+		SIZE_T read = fread(buffer, 1, sizeof(buffer) - 1, file);
+		fclose(file);
+		buffer[read] = 0;
+		const CHAR* key = strstr(buffer, "\"server_tickrate\"");
+		if (key == NULL)
+			return -1;
+		const CHAR* colon = strchr(key, ':');
+		if (colon == NULL)
+			return -1;
+		colon++;
+		while (*colon == ' ' || *colon == '\t' || *colon == '"')
+			colon++;
+		if (*colon < '0' || *colon > '9')
+			return -1;
+		return atoi(colon);
+	}
+
 	VOID Install(VOID** frameTimerVtable, VOID(*log)(const CHAR* format, ...))
 	{
 		g_log = log;
 		INT rate = TakeTickRate(GetCommandLineW(), L"-tickrate", wcslen(L"-tickrate"));
 		TakeTickRate(GetCommandLineA(), "-tickrate", strlen("-tickrate"));
+		const CHAR* source = "-tickrate";
 		if (rate < 0)
+		{
+			rate = ConfigTickRate();
+			source = "\"server_tickrate\" in _local\\config.json";
+		}
+		if (rate < 0)
+		{
 			rate = DEFAULT_TICK_RATE;
+			source = "the default";
+		}
 		if (rate == 0)
 		{
-			log("Server frame rate: uncapped (-tickrate 0)");
+			log("Server frame rate: uncapped (0 from %s)", source);
 			return;
 		}
 		LARGE_INTEGER frequency;
@@ -117,6 +166,6 @@ namespace FrameLimit
 		g_tick = (TickFunc)*slot;
 		*slot = (VOID*)&LimitedTick;
 		VirtualProtect(slot, sizeof(VOID*), protect, &protect);
-		log("Patched: cap the server at %d frames a second (-tickrate N to change; 0 = uncapped), sleeping between frames", rate);
+		log("Patched: cap the server at %d frames a second (from %s; -tickrate N or \"server_tickrate\" in _local\\config.json to change, 0 = uncapped), sleeping between frames", rate, source);
 	}
 }

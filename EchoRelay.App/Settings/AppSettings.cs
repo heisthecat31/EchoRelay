@@ -47,6 +47,13 @@ namespace EchoRelay.App.Settings
         public string GameServerRequestsRegion { get; set; } = "Main";
 
         /// <summary>
+        /// The frame rate (ticks a second) of the game servers this PC starts; 0 = uncapped (a whole CPU core each). Lobby builds
+        /// get it as EchoRelay.Patch's -tickrate, the final build as -timestep.
+        /// </summary>
+        [JsonProperty("game_server_tick_rate")]
+        public int GameServerTickRate { get; set; } = 120;
+
+        /// <summary>
         /// The directory containing the game executable, derived from <see cref="GameExecutableFilePath"/>.
         /// </summary>
         [JsonIgnore]

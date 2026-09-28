@@ -383,6 +383,9 @@ namespace EchoRelay.Core.Server
         /// <summary>How many requested game servers can run at once, from all players.</summary>
         public int Max { get; set; } = 6;
 
+        /// <summary>The game servers' frame rate (ticks a second; 0 = uncapped), or null for the game's default (120 on lobby builds).</summary>
+        public uint? TickRate { get; set; }
+
         /// <summary>
         /// The builds this PC can start (whose executable exists).
         /// </summary>
@@ -404,7 +407,7 @@ namespace EchoRelay.Core.Server
                         $"Empty ones close after {GameServerHosts.IdleTimeout.TotalMinutes:0} minutes.");
                 if (_started.Count >= Math.Max(1, Max))
                     return new GameServerRequestResult(false, "This PC is running as many requested game servers as it allows. Try again later, or another region.");
-                Process? process = GameLauncher.Launch(executable, GameLauncher.LaunchRole.Server, noOVR: true, headless: true);
+                Process? process = GameLauncher.Launch(executable, GameLauncher.LaunchRole.Server, noOVR: true, headless: true, timeStep: TickRate);
                 if (process == null)
                     return new GameServerRequestResult(false, "The game server didn't start.");
                 _started.Add((requester, request.Build, process));

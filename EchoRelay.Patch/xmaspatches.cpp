@@ -723,7 +723,7 @@ namespace XmasPatches
 		INT32 rel = (INT32)((INT64)stub - (INT64)(thunk + 5));
 		memcpy(jump + 1, &rel, 4);
 		if (WriteCode(thunk, jump, sizeof(jump)))
-			Log("Patched: %s Direct3D 11 device", g_forceWarp ? "use WARP (software rendering; -gpu to use the GPU) for the" : "fall back to WARP (software rendering) if the GPU can't create the");
+			Log("Patched: %s Direct3D 11 device", g_forceWarp ? "use WARP (software rendering, -warp) for the" : "fall back to WARP (software rendering) if the GPU can't create the");
 	}
 
 	/// <summary>
@@ -989,12 +989,9 @@ namespace XmasPatches
 			ApplyPatch(exe, SERVER_NETGAME_RAD);
 			ApplyPatch(exe, SERVER_NO_VR);
 			ApplyPatch(exe, SERVER_PACKAGE);
-			// A server draws nothing, yet on a GPU the renderer still kept it busy (a quarter of a small GPU). So servers use
-			// WARP, Windows' software renderer, which with drawing skipped costs next to nothing. -gpu: use the GPU anyway.
-			// (-warp, which forced WARP before it was the default, is still accepted.)
-			g_forceWarp = !ReplaceFlag(GetCommandLineW(), L"-gpu", L"    ");
-			ReplaceFlag(GetCommandLineA(), "-gpu", "    ");
-			ReplaceFlag(GetCommandLineW(), L"-warp", L"     ");
+			// Servers use the GPU when there is one, and WARP (Windows' software renderer) only when no GPU renderer can be
+			// created, e.g. a server with no GPU. -warp: always use WARP.
+			g_forceWarp = ReplaceFlag(GetCommandLineW(), L"-warp", L"     ");
 			ReplaceFlag(GetCommandLineA(), "-warp", "     ");
 			ApplyPatch(exe, SERVER_BASIC_RENDER_ADAPTER);
 			HookCreateDevice(exe);

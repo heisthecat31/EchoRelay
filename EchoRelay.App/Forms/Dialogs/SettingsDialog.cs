@@ -51,6 +51,7 @@ namespace EchoRelay.App.Forms.Dialogs
         private NumericUpDown numRequestsPerPlayer = null!;
         private NumericUpDown numRequestsMax = null!;
         private TextBox txtRequestsRegion = null!;
+        private NumericUpDown numTickRate = null!;
 
         /// <summary>
         /// Adds a "Game Server Requests" box above the Save button: whether players may request game servers from the installer,
@@ -58,10 +59,10 @@ namespace EchoRelay.App.Forms.Dialogs
         /// </summary>
         private void AddGameServerRequestSettings()
         {
-            const int boxHeight = 80;
+            const int boxHeight = 109;
             GroupBox box = new GroupBox
             {
-                Text = "Game Server Requests",
+                Text = "Game Servers",
                 Location = new Point(btnSaveSettings.Left, btnSaveSettings.Top),
                 Size = new Size(btnSaveSettings.Width, boxHeight),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -79,12 +80,16 @@ namespace EchoRelay.App.Forms.Dialogs
             numRequestsMax = new NumericUpDown { Minimum = 1, Maximum = 50, Value = Math.Clamp(Settings.GameServerRequestsMax, 1, 50), Location = new Point(300, 48), Size = new Size(60, 23) };
             Label lblRegion = new Label { Text = "Region:", AutoSize = true, Location = new Point(378, 51) };
             txtRequestsRegion = new TextBox { Text = Settings.GameServerRequestsRegion, Location = new Point(430, 48), Size = new Size(60, 23), MaxLength = 24 };
+            Label lblTickRate = new Label { Text = "Server tick rate:", AutoSize = true, Location = new Point(6, 80) };
+            numTickRate = new NumericUpDown { Minimum = 0, Maximum = 1000, Value = Math.Clamp(Settings.GameServerTickRate, 0, 1000), Location = new Point(106, 77), Size = new Size(60, 23) };
+            Label lblTickRateHelp = new Label { Text = "frames a second, for all game servers this PC starts (0 = uncapped)", AutoSize = true, Location = new Point(172, 80), ForeColor = SystemColors.GrayText };
+            new ToolTip().SetToolTip(numTickRate, "A fixed tick rate for game servers started by this app (requests and the Launch menu). 120 is plenty; lower uses less CPU.");
             new ToolTip().SetToolTip(txtRequestsRegion, "The region players pick in the installer for this PC's game servers (e.g. EU, US).");
             new ToolTip().SetToolTip(numRequestsPerPlayer, "How many requested game servers of each game version a player can have at once. Requested servers close after 5 minutes without players.");
             void UpdateEnabled() => numRequestsPerPlayer.Enabled = numRequestsMax.Enabled = txtRequestsRegion.Enabled = chkGameServerRequests.Checked;
             chkGameServerRequests.CheckedChanged += (_, _) => UpdateEnabled();
             UpdateEnabled();
-            box.Controls.AddRange(new Control[] { chkGameServerRequests, lblPerPlayer, numRequestsPerPlayer, lblMax, numRequestsMax, lblRegion, txtRequestsRegion });
+            box.Controls.AddRange(new Control[] { chkGameServerRequests, lblPerPlayer, numRequestsPerPlayer, lblMax, numRequestsMax, lblRegion, txtRequestsRegion, lblTickRate, numTickRate, lblTickRateHelp });
             Controls.Add(box);
         }
         #endregion
@@ -297,6 +302,7 @@ namespace EchoRelay.App.Forms.Dialogs
             Settings.GameServerRequestsPerPlayer = (int)numRequestsPerPlayer.Value;
             Settings.GameServerRequestsMax = (int)numRequestsMax.Value;
             Settings.GameServerRequestsRegion = string.IsNullOrWhiteSpace(txtRequestsRegion.Text) ? "Main" : txtRequestsRegion.Text.Trim();
+            Settings.GameServerTickRate = (int)numTickRate.Value;
             Settings.FilesystemDatabaseDirectory = txtDbFolder.Text;
             Settings.MongoDBConnectionString = null; // TODO: currently unsupported
             Settings.StartServerOnStartup = chkStartServerOnStartup.Checked;
