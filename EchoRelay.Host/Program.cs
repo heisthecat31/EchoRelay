@@ -22,7 +22,8 @@ Usage:
   --region NAME               The region players pick in the installer for this PC (e.g. EU, US).
   --game BUILD=PATH           A game this PC can start servers of (repeat for each). BUILD is summer, halloween,
                               winter (christmas 2018) or christmas (christmas 2017); PATH its echovr.exe / EchoArena.exe.
-  --perplayer N               Requested game servers each player can have running at once (default 2).
+  --perplayer N               Requested game servers of each game version a player can have running at once (default 2).
+                              Requested game servers are closed once they've been empty for 5 minutes.
   --max N                     Requested game servers that can run at once (default 6).
   --apikey KEY                The server's ServerDB API key, if it uses one.
   --name NAME                 This host's name in the server's log (default: the PC's name).";
@@ -119,6 +120,14 @@ Usage:
                 }
                 catch
                 {
+                    continue;
+                }
+                if (json.Value<string>("t") == "stop")
+                {
+                    ushort[] ports = (json["ports"] as JArray ?? new JArray()).Select(port => (ushort)port.Value<int>()).ToArray();
+                    int stopped = launcher.StopIdle(ports);
+                    if (stopped > 0)
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Closed {stopped} requested game server{(stopped == 1 ? "" : "s")}, empty for {GameServerHosts.IdleTimeout.TotalMinutes:0} minutes");
                     continue;
                 }
                 if (json.Value<string>("t") != "start")

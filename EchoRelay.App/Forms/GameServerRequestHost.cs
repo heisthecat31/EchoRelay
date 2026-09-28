@@ -25,7 +25,7 @@ namespace EchoRelay.App.Forms
             Launcher.PerPlayer = settings.GameServerRequestsPerPlayer;
             Launcher.Max = settings.GameServerRequestsMax;
             server.GameServerHosts.SetLocalHost(settings.GameServerRequestsRegion, Environment.MachineName,
-                settings.GameServerRequestsEnabled ? Launcher.Builds : Array.Empty<string>(), Launcher.Start);
+                settings.GameServerRequestsEnabled ? Launcher.Builds : Array.Empty<string>(), Launcher.Start, Launcher.StopIdle);
         }
     }
 }

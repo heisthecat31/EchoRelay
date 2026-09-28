@@ -224,6 +224,9 @@ namespace EchoRelay.Core.Server
             // Fire our started event
             OnServerStarted?.Invoke(this);
 
+            // Close requested game servers that nobody is playing on.
+            _ = GameServerHosts.RunIdleMonitor(this, _cancellationTokenSource.Token);
+
             // Enter a loop to accept new web socket connections.
             try
             {

@@ -73,13 +73,14 @@ namespace EchoRelay.App.Forms.Dialogs
                 Location = new Point(6, 22),
                 Checked = Settings.GameServerRequestsEnabled,
             };
-            Label lblPerPlayer = new Label { Text = "Per player:", AutoSize = true, Location = new Point(6, 51) };
+            Label lblPerPlayer = new Label { Text = "Per version:", AutoSize = true, Location = new Point(6, 51) };
             numRequestsPerPlayer = new NumericUpDown { Minimum = 1, Maximum = 10, Value = Math.Clamp(Settings.GameServerRequestsPerPlayer, 1, 10), Location = new Point(106, 48), Size = new Size(60, 23) };
             Label lblMax = new Label { Text = "At once, in total:", AutoSize = true, Location = new Point(190, 51) };
             numRequestsMax = new NumericUpDown { Minimum = 1, Maximum = 50, Value = Math.Clamp(Settings.GameServerRequestsMax, 1, 50), Location = new Point(300, 48), Size = new Size(60, 23) };
             Label lblRegion = new Label { Text = "Region:", AutoSize = true, Location = new Point(378, 51) };
             txtRequestsRegion = new TextBox { Text = Settings.GameServerRequestsRegion, Location = new Point(430, 48), Size = new Size(60, 23), MaxLength = 24 };
             new ToolTip().SetToolTip(txtRequestsRegion, "The region players pick in the installer for this PC's game servers (e.g. EU, US).");
+            new ToolTip().SetToolTip(numRequestsPerPlayer, "How many requested game servers of each game version a player can have at once. Requested servers close after 5 minutes without players.");
             void UpdateEnabled() => numRequestsPerPlayer.Enabled = numRequestsMax.Enabled = txtRequestsRegion.Enabled = chkGameServerRequests.Checked;
             chkGameServerRequests.CheckedChanged += (_, _) => UpdateEnabled();
             UpdateEnabled();

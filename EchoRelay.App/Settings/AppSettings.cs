@@ -29,7 +29,7 @@ namespace EchoRelay.App.Settings
         public bool GameServerRequestsEnabled { get; set; } = false;
 
         /// <summary>
-        /// How many requested game servers each player can have running at once.
+        /// How many requested game servers of each game version a player can have running at once.
         /// </summary>
         [JsonProperty("game_server_requests_per_player")]
         public int GameServerRequestsPerPlayer { get; set; } = 2;
