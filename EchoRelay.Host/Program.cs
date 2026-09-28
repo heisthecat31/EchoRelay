@@ -16,6 +16,7 @@ namespace EchoRelay.Host
         private const string Usage = @"EchoRelay.Host: starts requested game servers for an EchoRelay server, in a region.
 
 Usage:
+  EchoRelay.Host                (no options: guided setup, saved in EchoRelayHost.config.json; see EchoRelay-Host.bat)
   EchoRelay.Host --relay ws://ADDRESS:PORT --region EU --game summer=C:\Games\Echo VR Summer\bin\win7\echovr.exe [options]
 
   --relay ws://ADDRESS:PORT   The EchoRelay server (the address players' configs use, with ws://).
@@ -25,6 +26,7 @@ Usage:
   --perplayer N               Requested game servers of each game version a player can have running at once (default 2).
                               Requested game servers are closed once they've been empty for 5 minutes.
   --max N                     Requested game servers that can run at once (default 6).
+  --tickrate N                The game servers' frame rate (default 120; 0 = uncapped, a whole CPU core each).
   --apikey KEY                The server's ServerDB API key, if it uses one.
   --name NAME                 This host's name in the server's log (default: the PC's name).";
 
@@ -33,7 +35,32 @@ Usage:
             string? relay = null, region = null, apiKey = null, name = Environment.MachineName;
             GameServerLauncher launcher = new GameServerLauncher();
             Dictionary<string, string> executables = new Dictionary<string, string>();
-            try
+            if (args.Length == 0)
+            {
+                // Guided setup (EchoRelay-Host.bat): asks for the installs and region, updates the DLLs, then hosts.
+                HostConfig config;
+                try
+                {
+                    config = await HostSetup.RunAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Setup stopped: " + ex.Message);
+                    return 1;
+                }
+                relay = config.Relay;
+                region = config.Region;
+                apiKey = string.IsNullOrEmpty(config.ApiKey) ? null : config.ApiKey;
+                launcher.PerPlayer = config.PerPlayer;
+                launcher.Max = config.Max;
+                launcher.TickRate = (uint)Math.Max(0, config.TickRate);
+                launcher.ExtraArguments = config.GameServerArguments();
+                name = string.IsNullOrWhiteSpace(config.Name) ? Environment.MachineName : config.Name;
+                foreach (var install in config.Installs)
+                    executables[install.Key] = HostSetup.ExecutablePath(install.Key, install.Value);
+            }
+            else try
             {
                 for (int i = 0; i < args.Length; i++)
                 {
@@ -46,6 +73,7 @@ Usage:
                         case "--name": name = Next(); break;
                         case "--perplayer": launcher.PerPlayer = int.Parse(Next()); break;
                         case "--max": launcher.Max = int.Parse(Next()); break;
+                        case "--tickrate": launcher.TickRate = uint.Parse(Next()); break;
                         case "--game":
                         {
                             string value = Next();
@@ -73,7 +101,10 @@ Usage:
                 Console.WriteLine(Usage);
                 return 1;
             }
+            if (relay == null || region == null)
+                return 1;
             launcher.Executables = executables;
+            launcher.TickRate ??= 120;
 
             Uri uri = new Uri(relay.TrimEnd('/') + "/hosts" + (apiKey != null ? "?api_key=" + Uri.EscapeDataString(apiKey) : ""));
             Console.WriteLine($"Hosting {string.Join(", ", executables.Keys)} game servers in region {region} for {relay}");

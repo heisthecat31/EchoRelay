@@ -386,6 +386,9 @@ namespace EchoRelay.Core.Server
         /// <summary>The game servers' frame rate (ticks a second; 0 = uncapped), or null for the game's default (120 on lobby builds).</summary>
         public uint? TickRate { get; set; }
 
+        /// <summary>Extra command line arguments for each build's game servers ("christmas" -> ["-warp"]).</summary>
+        public IReadOnlyDictionary<string, string[]> ExtraArguments { get; set; } = new Dictionary<string, string[]>();
+
         /// <summary>
         /// The builds this PC can start (whose executable exists).
         /// </summary>
@@ -407,7 +410,8 @@ namespace EchoRelay.Core.Server
                         $"Empty ones close after {GameServerHosts.IdleTimeout.TotalMinutes:0} minutes.");
                 if (_started.Count >= Math.Max(1, Max))
                     return new GameServerRequestResult(false, "This PC is running as many requested game servers as it allows. Try again later, or another region.");
-                Process? process = GameLauncher.Launch(executable, GameLauncher.LaunchRole.Server, noOVR: true, headless: true, timeStep: TickRate);
+                Process? process = GameLauncher.Launch(executable, GameLauncher.LaunchRole.Server, noOVR: true, headless: true, timeStep: TickRate,
+                    additionalArgs: ExtraArguments.TryGetValue(request.Build, out string[]? extra) ? new List<string>(extra) : null);
                 if (process == null)
                     return new GameServerRequestResult(false, "The game server didn't start.");
                 _started.Add((requester, request.Build, process));
