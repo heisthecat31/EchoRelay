@@ -202,14 +202,38 @@ namespace EchoRelay.Core.Server.Services
         /// <returns>A task representing the send operation state.</returns>
         public async Task Send(Packet packet)
         {
-            // Send the provided packet through the client websocket connection.
-            await _sendLock.ExecuteLocked(async() => {
-                await Connection.SendAsync(new ArraySegment<byte>(packet.Encode()), WebSocketMessageType.Binary, true, CancellationToken.None);
-            });
+            // A peer whose connection stalled (a PC that went to sleep, a dead network) could hold a send forever, and with it
+            // whatever is sending: another peer's message loop (a game server's, when it tells players their session), or
+            // a loop over a party. A send that doesn't finish in time drops the connection instead; its receive loop then
+            // ends and the peer is cleaned up. Failures to a dead peer don't throw into the sender's handling.
+            byte[] data = packet.Encode();
+            bool sent = false;
+            try
+            {
+                await _sendLock.ExecuteLocked(async () =>
+                {
+                    if (Connection.State != WebSocketState.Open)
+                        return;
+                    using CancellationTokenSource timeout = new CancellationTokenSource(SendTimeout);
+                    await Connection.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Binary, true, timeout.Token);
+                    sent = true;
+                });
+            }
+            catch (Exception ex)
+            {
+                TrafficCapture.Log($"SEND FAILED to {Service.Name} peer {Address}:{Port} ({UserId?.ToString() ?? "?"}): {ex.GetType().Name} {ex.Message}; dropping the connection");
+                try { Connection.Abort(); } catch { }
+            }
 
             // Fire the packet sent event.
-            OnPacketSent?.Invoke(Service, this, packet);
+            if (sent)
+                OnPacketSent?.Invoke(Service, this, packet);
         }
+
+        /// <summary>
+        /// How long a send may take before the peer's connection is considered dead and dropped.
+        /// </summary>
+        public static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
         /// <summary>
         /// Receives a provided packet and fires relevant event handlers.
         /// </summary>

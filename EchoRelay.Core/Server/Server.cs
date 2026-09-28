@@ -216,7 +216,9 @@ namespace EchoRelay.Core.Server
 
             // Create an HTTP listener that hosts over the provided port.
             HttpListener listener = new HttpListener();
-            listener.Prefixes.Add($"http://*:{Settings.Port}/");
+            // All addresses (needs administrator); ECHORELAY_LISTEN_HOST=localhost listens locally only, e.g. to test without it.
+            string listenHost = Environment.GetEnvironmentVariable("ECHORELAY_LISTEN_HOST") is string host && host.Length > 0 ? host : "*";
+            listener.Prefixes.Add($"http://{listenHost}:{Settings.Port}/");
 
             // Start the listener
             listener.Start();
@@ -232,81 +234,20 @@ namespace EchoRelay.Core.Server
             {
                 while (!_cancellationTokenSource.IsCancellationRequested)
                 {
-                    // Upon receipt of a connection request, obtain the context and verify it is a web socket request.
-                    HttpListenerContext listenerContext = await listener.GetContextAsync().WaitAsync(_cancellationTokenSource.Token);
-
-                    // Verify the request is a web socket request
-                    if (!listenerContext.Request.IsWebSocketRequest && TryHandleApiRequest(listenerContext))
-                        continue;
-                    if (!listenerContext.Request.IsWebSocketRequest)
-                    {
-                        TrafficCapture.Log($"HTTP {listenerContext.Request.HttpMethod} {listenerContext.Request.Url} from {listenerContext.Request.RemoteEndPoint} (not a websocket request, returning 400)");
-
-                        // Return a bad request HTTP status code.
-                        listenerContext.Response.StatusCode = (int)HttpStatusCode.BadRequest;
-                        listenerContext.Response.Close();
-
-                        // TODO: Log the interaction.
-
-                        // Do not accept this client.
-                        continue;
-                    }
-
-                    // Verify the IP is authorized against the ACL (if we have no ACL, we accept no connections).
-                    AccessControlListResource? acl = Storage.AccessControlList.Get();
-                    bool authorized = acl?.CheckAuthorized(listenerContext.Request.RemoteEndPoint.Address) ?? false;
-                    OnAuthorizationResult?.Invoke(this, listenerContext.Request.RemoteEndPoint, authorized);
-                    if (!authorized)
-                    {
-                        // TODO: Log the interaction.
-
-                        // Do not accept this client.
-                        continue;
-                    }
-
-                    // Attempt to accept the web socket connection.
-                    WebSocketContext webSocketContext;
+                    // Only accept here: each connection is handled on its own task, so a slow client (a websocket handshake or an
+                    // API reply over a bad connection) doesn't hold up everyone else's, and an error with one connection
+                    // doesn't stop the server from accepting new ones (it used to end this loop, and with it all new logins).
+                    HttpListenerContext listenerContext;
                     try
                     {
-                        webSocketContext = await listenerContext.AcceptWebSocketAsync(subProtocol: null);
+                        listenerContext = await listener.GetContextAsync().WaitAsync(_cancellationTokenSource.Token);
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException && e is not TimeoutException && listener.IsListening)
                     {
-                        // Return an internal server error HTTP status code.
-                        listenerContext.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                        listenerContext.Response.Close();
-
-                        // TODO: Log the exception.
+                        TrafficCapture.Log($"Accepting a connection failed: {e.GetType().Name} {e.Message}");
                         continue;
                     }
-
-                    // Game server hosts (EchoRelay.Host) connect to /hosts, with the ServerDB API key if one is set.
-                    if (listenerContext.Request.Url?.LocalPath.ToLower().TrimEnd('/') == "/hosts")
-                    {
-                        string? key = listenerContext.Request.QueryString["api_key"];
-                        if (Settings.ServerDBApiKey != null && key != Settings.ServerDBApiKey)
-                        {
-                            await webSocketContext.WebSocket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Invalid API key", CancellationToken.None);
-                            continue;
-                        }
-                        string address = listenerContext.Request.RemoteEndPoint?.ToString() ?? "?";
-                        _ = Task.Run(() => GameServerHosts.HandleConnection(webSocketContext.WebSocket, address));
-                        continue;
-                    }
-
-                    // Try to obtain a service for this request path. If we could not, return an error to the client.
-                    if (listenerContext.Request.Url == null || !_serviceMap.TryGetValue(listenerContext.Request.Url.LocalPath.ToLower() ?? "", out var service))
-                    {
-                        // Return a not found HTTP status code.
-                        listenerContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-                        listenerContext.Response.Close();
-
-                        // TODO: Log the interaction.
-                        continue;
-                    }
-
-                    // Create a task to handle the new connection asynchronously (we do not await, so we can continue accepting connections).
-                    var handleConnectionTask = Task.Run(() => service.HandleConnection(listenerContext, webSocketContext.WebSocket));
+                    _ = Task.Run(() => HandleContext(listenerContext));
                 }
             }
             catch (TimeoutException)
@@ -337,6 +278,11 @@ namespace EchoRelay.Core.Server
         /// EchoRelay.Host instances connected to {server}/hosts.
         /// </summary>
         public GameServerHosts GameServerHosts { get; } = new GameServerHosts();
+
+        /// <summary>
+        /// Fired with the address of a game server host (EchoRelay.Host) turned away for a missing or wrong API key.
+        /// </summary>
+        public event Action<string>? OnHostRejected;
 
         /// <summary>
         /// Handles POST {api}/servers/request: {"build", "region", "displayname", "password"}. The player is identified like a
@@ -424,6 +370,98 @@ namespace EchoRelay.Core.Server
         }
 
         /// <summary>
+        /// Handles one accepted HTTP request: an API call, a game server host, or a websocket connection to a service (for as
+        /// long as it stays connected). Errors only affect this connection.
+        /// </summary>
+        private async Task HandleContext(HttpListenerContext listenerContext)
+        {
+            try
+            {
+                // Verify the request is a web socket request
+                if (!listenerContext.Request.IsWebSocketRequest && TryHandleApiRequest(listenerContext))
+                    return;
+                if (!listenerContext.Request.IsWebSocketRequest)
+                {
+                    TrafficCapture.Log($"HTTP {listenerContext.Request.HttpMethod} {listenerContext.Request.Url} from {listenerContext.Request.RemoteEndPoint} (not a websocket request, returning 400)");
+
+                    // Return a bad request HTTP status code.
+                    listenerContext.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    listenerContext.Response.Close();
+
+                    // TODO: Log the interaction.
+
+                    // Do not accept this client.
+                    return;
+                }
+
+                // Verify the IP is authorized against the ACL (if we have no ACL, we accept no connections).
+                AccessControlListResource? acl = Storage.AccessControlList.Get();
+                bool authorized = acl?.CheckAuthorized(listenerContext.Request.RemoteEndPoint.Address) ?? false;
+                OnAuthorizationResult?.Invoke(this, listenerContext.Request.RemoteEndPoint, authorized);
+                if (!authorized)
+                {
+                    // TODO: Log the interaction.
+
+                    // Do not accept this client.
+                    return;
+                }
+
+                // Attempt to accept the web socket connection.
+                WebSocketContext webSocketContext;
+                try
+                {
+                    webSocketContext = await listenerContext.AcceptWebSocketAsync(subProtocol: null);
+                }
+                catch (Exception e)
+                {
+                    // Return an internal server error HTTP status code.
+                    listenerContext.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                    listenerContext.Response.Close();
+
+                    // TODO: Log the exception.
+                    return;
+                }
+
+                // Game server hosts (EchoRelay.Host) connect to /hosts, with the ServerDB API key if one is set.
+                if (listenerContext.Request.Url?.LocalPath.ToLower().TrimEnd('/') == "/hosts")
+                {
+                    string? key = listenerContext.Request.QueryString["api_key"];
+                    if (Settings.ServerDBApiKey != null && key != Settings.ServerDBApiKey)
+                    {
+                        // CloseOutputAsync: the host has usually sent its hello already, which CloseAsync (waiting for the
+                        // close reply) choked on; that exception used to crash the App and stop the server accepting anyone.
+                        OnHostRejected?.Invoke(listenerContext.Request.RemoteEndPoint?.ToString() ?? "?");
+                        await webSocketContext.WebSocket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, "Invalid API key", CancellationToken.None);
+                        webSocketContext.WebSocket.Abort();
+                        return;
+                    }
+                    string address = listenerContext.Request.RemoteEndPoint?.ToString() ?? "?";
+                    await GameServerHosts.HandleConnection(webSocketContext.WebSocket, address);
+                    return;
+                }
+
+                // Try to obtain a service for this request path. If we could not, return an error to the client.
+                if (listenerContext.Request.Url == null || !_serviceMap.TryGetValue(listenerContext.Request.Url.LocalPath.ToLower() ?? "", out var service))
+                {
+                    // Return a not found HTTP status code.
+                    listenerContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                    listenerContext.Response.Close();
+
+                    // TODO: Log the interaction.
+                    return;
+                }
+
+                // Handle the connection for as long as it stays open.
+                await service.HandleConnection(listenerContext, webSocketContext.WebSocket);
+            }
+            catch (Exception e)
+            {
+                TrafficCapture.Log($"Connection from {listenerContext.Request.RemoteEndPoint} failed: {e.GetType().Name} {e.Message}");
+                try { listenerContext.Response.Abort(); } catch { }
+            }
+        }
+
+        /// <summary>
         /// Writes an API request's JSON response and closes it.
         /// </summary>
         private static void WriteApiResponse(HttpListenerContext context, JObject response)
@@ -440,7 +478,7 @@ namespace EchoRelay.Core.Server
                 context.Response.ContentLength64 = body.Length;
                 context.Response.OutputStream.Write(body, 0, body.Length);
                 context.Response.Close();
-                TrafficCapture.Log($"{request} -> {json}");
+                TrafficCapture.LogAll($"{request} -> {json}");
             }
             catch (Exception e)
             {

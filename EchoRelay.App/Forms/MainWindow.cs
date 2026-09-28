@@ -174,7 +174,9 @@ namespace EchoRelay
 
             // Game servers players request from the installer: this PC hosts them if allowed in Settings, and other PCs can
             // connect as hosts (EchoRelay.Host). Hosts and requests are logged.
-            Server.GameServerHosts.OnLog += text => this.InvokeUIThread(() => AppendLogText(text));
+            Server.GameServerHosts.OnLog += text => AppendLogText(text);
+            Server.OnHostRejected += address => AppendLogText($"[HOSTS] A game server host at {address} was turned away: missing or wrong API key " +
+                "(it needs this server's ServerDB API key, in its api_key setting)\n");
             EchoRelay.App.Forms.GameServerRequestHost.Apply(Server, Settings);
         }
         #endregion
@@ -209,7 +211,7 @@ namespace EchoRelay
 
             // Start the server if it is configured to start on startup.
             if (Settings.StartServerOnStartup)
-                await Server.Start();
+                await StartServer();
         }
 
         private async Task CheckForUpdatesAsync()
@@ -270,8 +272,14 @@ namespace EchoRelay
             if (Server.Running)
                 Server.Stop();
             else
-                await Server.Start();
+                await StartServer();
         }
+
+        /// <summary>
+        /// Runs the server on the thread pool: awaited here, its accept loop resumed on the window's thread, so a busy window
+        /// slowed new connections and an error in it showed as an App crash.
+        /// </summary>
+        private Task StartServer() => Task.Run(() => Server.Start());
 
         private void StorageEditor_OnUnsavedChangesStateChange(StorageEditorBase storageEditor, bool hasUnsavedChanges)
         {

@@ -150,6 +150,14 @@ namespace EchoRelay.Core.Server.Services
                     WebSocketMessageType messageType = WebSocketMessageType.Close;
                     while(true)
                     {
+                        // A message bigger than the buffer would have left this receiving into no space forever (a whole CPU
+                        // core, and a connection that never recovers). Drop the connection instead.
+                        if (receiveBufferAtPosition.Length == 0)
+                        {
+                            TrafficCapture.Log($"{GetType().Name} peer {peer.Address}:{peer.Port} ({peer.UserId?.ToString() ?? "?"}) sent a message over {Packet.MAX_SIZE} bytes; dropping the connection");
+                            await webSocket.CloseAsync(WebSocketCloseStatus.MessageTooBig, "", CancellationToken.None);
+                            return;
+                        }
                         var receiveResult = await webSocket.ReceiveAsync(receiveBufferAtPosition, CancellationToken.None);
                         messageType = receiveResult.MessageType;
                         receiveBufferAtPosition = receiveBufferAtPosition.Slice(receiveResult.Count);
@@ -159,7 +167,7 @@ namespace EchoRelay.Core.Server.Services
                     }
 
                     // Obtain the packet buffer without the trailing unused space.
-                    byte[] packetBuffer = receiveBuffer.Take(totalSize).ToArray();
+                    byte[] packetBuffer = receiveBuffer.AsSpan(0, totalSize).ToArray();
                     switch (messageType)
                     {
                         case WebSocketMessageType.Binary:
@@ -174,10 +182,10 @@ namespace EchoRelay.Core.Server.Services
                                     string name = Server.SymbolCache?.GetName(unimplemented.MessageTypeSymbol) ?? "?";
                                     TrafficCapture.Log($"UNIMPLEMENTED {GetType().Name} {name} (0x{unimplemented.MessageTypeSymbol:x16}, {unimplemented.Data.Length} bytes) from {peer.UserId?.ToString() ?? "?"} data={Convert.ToHexString(unimplemented.Data)}");
                                 }
-                                else
+                                else if (TrafficCapture.CaptureAll)
                                 {
                                     string text = message.ToString() ?? "";
-                                    TrafficCapture.Log($"RECV {GetType().Name} {(text.Length > 2000 ? text.Substring(0, 2000) + "..." : text)}");
+                                    TrafficCapture.LogAll($"RECV {GetType().Name} {(text.Length > 2000 ? text.Substring(0, 2000) + "..." : text)}");
                                 }
                             }
 

@@ -141,7 +141,12 @@ Usage:
                 {
                     received = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
                     if (received.MessageType == WebSocketMessageType.Close)
+                    {
+                        if (socket.CloseStatus == WebSocketCloseStatus.PolicyViolation)
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] The EchoRelay server refused this host: {socket.CloseStatusDescription}. " +
+                                "Set its ServerDB API key (\"api_key\" in EchoRelayHost.config.json, or run the setup again and answer n).");
                         return;
+                    }
                     message.Write(buffer, 0, received.Count);
                 } while (!received.EndOfMessage);
 

@@ -303,17 +303,22 @@ namespace EchoRelay.Core.Server.Services.Social
                     }
                 }
             }
-            foreach (var (peer, data) in outgoing)
+            // Each peer gets its messages in order, but peers are sent to at the same time: one slow member doesn't hold up
+            // the rest of the party.
+            await Task.WhenAll(outgoing.GroupBy(item => item.peer).Select(async group =>
             {
-                try
+                foreach (var (peer, data) in group)
                 {
-                    await peer.Send(new SocialMessage(data));
+                    try
+                    {
+                        await peer.Send(new SocialMessage(data));
+                    }
+                    catch
+                    {
+                        // The peer disconnected; its disconnect handler cleans up.
+                    }
                 }
-                catch
-                {
-                    // The peer disconnected; its disconnect handler cleans up.
-                }
-            }
+            }));
         }
 
         private void HandleSocialMessage(Peer sender, JObject data, List<(Peer, JObject)> outgoing)
