@@ -726,6 +726,116 @@ namespace XmasPatches
 	}
 
 	/// <summary>
+	/// The renderer's "outputs[displayIndex]->GetDesc(&desc)" (mov rax, [rcx]; call [rax+38h]) when it sizes the window.
+	/// With no display at all (a server whose RDP session is disconnected) the output is null and the game crashed; every
+	/// other use of the outputs checks for null.
+	/// </summary>
+	static const DWORD OUTPUT_GET_DESC = 0xE4FB9;
+
+	/// <summary>
+	/// Sends OUTPUT_GET_DESC to a stub that gives a missing display a 1280x720 desktop instead of crashing.
+	/// </summary>
+	static VOID PatchNoDisplay(BYTE* exe)
+	{
+		BYTE* site = exe + OUTPUT_GET_DESC;
+		static const BYTE original[] = { 0x48, 0x8B, 0x01, 0xFF, 0x50, 0x38 };
+		if (memcmp(site, original, sizeof(original)) != 0)
+		{
+			Log("SKIPPED (unexpected bytes at %p): run without a display", site);
+			return;
+		}
+		static const BYTE stubCode[] = {
+			0x48, 0x85, 0xC9,                                     // test rcx, rcx
+			0x74, 0x06,                                           // jz none
+			0x48, 0x8B, 0x01,                                     // mov rax, [rcx]
+			0xFF, 0x60, 0x38,                                     // jmp [rax+38h]  (GetDesc; returns to the game)
+			0xC7, 0x42, 0x40, 0x00, 0x00, 0x00, 0x00,             // none: DesktopCoordinates = { 0, 0, 1280, 720 }
+			0xC7, 0x42, 0x44, 0x00, 0x00, 0x00, 0x00,
+			0xC7, 0x42, 0x48, 0x00, 0x05, 0x00, 0x00,
+			0xC7, 0x42, 0x4C, 0xD0, 0x02, 0x00, 0x00,
+			0x31, 0xC0,                                           // xor eax, eax  (S_OK)
+			0xC3,                                                 // ret
+		};
+		BYTE* stub = AllocateNear(exe, sizeof(stubCode));
+		if (stub == NULL)
+		{
+			Log("FAILED (no memory near the exe): run without a display");
+			return;
+		}
+		memcpy(stub, stubCode, sizeof(stubCode));
+		BYTE call[6] = { 0xE8, 0, 0, 0, 0, 0x90 };
+		INT32 rel = (INT32)((INT64)stub - (INT64)(site + 5));
+		memcpy(call + 1, &rel, 4);
+		if (WriteCode(site, call, sizeof(call)))
+			Log("Patched: run without a display (a server whose remote desktop session is disconnected) instead of crashing");
+	}
+
+	/// <summary>
+	/// Test only (ECHORELAY_TEST_NO_DISPLAY=1): no adapter has a display, as on a server whose RDP session is disconnected.
+	/// </summary>
+	static HRESULT STDMETHODCALLTYPE EnumOutputsNone(IDXGIAdapter*, UINT, IDXGIOutput** output)
+	{
+		if (output != NULL)
+			*output = NULL;
+		return DXGI_ERROR_NOT_FOUND;
+	}
+
+	typedef HRESULT(WINAPI* CreateFactoryFunc)(REFIID, VOID**);
+	static CreateFactoryFunc g_createFactory = NULL;
+
+	/// <summary>
+	/// The game's CreateDXGIFactory1 (test only): its adapters report no displays.
+	/// </summary>
+	static HRESULT WINAPI CreateFactoryNoDisplay(REFIID riid, VOID** factory)
+	{
+		HRESULT result = g_createFactory(riid, factory);
+		IDXGIAdapter1* adapter = NULL;
+		if (SUCCEEDED(result) && SUCCEEDED(((IDXGIFactory1*)*factory)->EnumAdapters1(0, &adapter)))
+		{
+			VOID** slot = &(*(VOID***)adapter)[7]; // IUnknown (3), IDXGIObject (4), then EnumOutputs
+			DWORD protect;
+			VirtualProtect(slot, sizeof(VOID*), PAGE_READWRITE, &protect);
+			*slot = (VOID*)&EnumOutputsNone;
+			VirtualProtect(slot, sizeof(VOID*), protect, &protect);
+			adapter->Release();
+			Log("TEST: adapters now report no displays");
+		}
+		return result;
+	}
+
+	static VOID HookCreateFactory(BYTE* exe)
+	{
+		BYTE* slot = FindImportSlot(exe, "dxgi.dll", "CreateDXGIFactory1");
+		if (slot == NULL)
+		{
+			Log("FAILED to find the CreateDXGIFactory1 import");
+			return;
+		}
+		g_createFactory = (CreateFactoryFunc)GetProcAddress(LoadLibraryA("dxgi.dll"), "CreateDXGIFactory1");
+		VOID* hook = (VOID*)&CreateFactoryNoDisplay;
+		DWORD protect;
+		VirtualProtect(slot, sizeof(VOID*), PAGE_READWRITE, &protect);
+		memcpy(slot, &hook, sizeof(hook));
+		VirtualProtect(slot, sizeof(VOID*), protect, &protect);
+	}
+
+	/// <summary>
+	/// Logs where access violations happen in EchoArena.exe (the game's crash handler only says it crashed).
+	/// </summary>
+	static LONG CALLBACK LogCrash(EXCEPTION_POINTERS* info)
+	{
+		static LONG logged = 0;
+		BYTE* exe = (BYTE*)GetModuleHandleA(NULL);
+		BYTE* at = (BYTE*)info->ExceptionRecord->ExceptionAddress;
+		if (info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && at >= exe && at < exe + 0x2000000
+			&& InterlockedIncrement(&logged) <= 3)
+			Log("Access violation at EchoArena.exe+0x%llX (%s 0x%llX)", (unsigned long long)(at - exe),
+				info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
+				(unsigned long long)info->ExceptionRecord->ExceptionInformation[1]);
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+
+	/// <summary>
 	/// Keeps this process's windows hidden. The christmas build has no -headless (it always creates its renderer and
 	/// window), so -headless runs it as -novr with its window hidden and audio off.
 	/// </summary>
@@ -878,6 +988,14 @@ namespace XmasPatches
 			ReplaceFlag(GetCommandLineA(), "-warp", "     ");
 			ApplyPatch(exe, SERVER_BASIC_RENDER_ADAPTER);
 			HookCreateDevice(exe);
+			PatchNoDisplay(exe);
+			AddVectoredExceptionHandler(1, LogCrash);
+			CHAR test[8] = {};
+			if (GetEnvironmentVariableA("ECHORELAY_TEST_NO_DISPLAY", test, sizeof(test)) > 0 && test[0] == '1')
+			{
+				Log("TEST: pretending there is no display (ECHORELAY_TEST_NO_DISPLAY)");
+				HookCreateFactory(exe);
+			}
 		}
 		RedirectApiHost((BYTE*)GetModuleHandleA(NULL));
 		g_userId = GetPlayerUserId(server);

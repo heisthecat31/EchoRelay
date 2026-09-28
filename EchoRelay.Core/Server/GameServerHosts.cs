@@ -41,8 +41,10 @@ namespace EchoRelay.Core.Server
 
         /// <summary>
         /// How many game servers a player can have started (on any host, of any version) within <see cref="RequestWindow"/>.
+        /// Only against spamming: how many can run at once is each host's per-player limit (2 per version). Servers that
+        /// crashed or were closed empty still count here, so this is higher than that.
         /// </summary>
-        public const int RequestsPerWindow = 2;
+        public const int RequestsPerWindow = 4;
         public static readonly TimeSpan RequestWindow = TimeSpan.FromMinutes(10);
 
         /// <summary>When each player's accepted requests were made, within the last <see cref="RequestWindow"/>.</summary>

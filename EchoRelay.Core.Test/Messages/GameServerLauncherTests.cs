@@ -12,18 +12,18 @@ namespace EchoRelay.Core.Test.Messages
     public class GameServerLauncherTests
     {
         [Fact]
-        public async Task PlayersCanRequestTwoGameServersEveryTenMinutes()
+        public async Task PlayersCanRequestFourGameServersEveryTenMinutes()
         {
             GameServerHosts hosts = new GameServerHosts();
             hosts.SetLocalHost("EU", "test", new[] { "summer", "halloween" }, request => new GameServerRequestResult(true, "started"));
             XPlatformId player = XPlatformId.Parse("OVR-ORG-1")!;
             XPlatformId other = XPlatformId.Parse("OVR-ORG-2")!;
 
-            Assert.True((await hosts.Request(new GameServerRequest("summer", player, "a", null), "EU")).Accepted);
-            Assert.True((await hosts.Request(new GameServerRequest("halloween", player, "a", null), "EU")).Accepted);
-            GameServerRequestResult third = await hosts.Request(new GameServerRequest("summer", player, "a", null), "EU");
-            Assert.False(third.Accepted);
-            Assert.Contains("every 10 minutes", third.Message);
+            for (int i = 0; i < GameServerHosts.RequestsPerWindow; i++)
+                Assert.True((await hosts.Request(new GameServerRequest(i % 2 == 0 ? "summer" : "halloween", player, "a", null), "EU")).Accepted);
+            GameServerRequestResult next = await hosts.Request(new GameServerRequest("summer", player, "a", null), "EU");
+            Assert.False(next.Accepted);
+            Assert.Contains("every 10 minutes", next.Message);
 
             // Other players have their own allowance.
             Assert.True((await hosts.Request(new GameServerRequest("summer", other, "b", null), "EU")).Accepted);
