@@ -35,6 +35,18 @@ namespace VoipLog
 	static VOID(*g_log)(const CHAR* format, ...) = NULL;
 	static FARPROC(WINAPI* Real_GetProcAddress)(HMODULE, LPCSTR) = GetProcAddress;
 	static std::string g_provider;
+	static BOOL g_trace = FALSE;
+	// UseVoiceProvider: voice functions asked of g_voiceFrom come from g_voiceTo instead.
+	static std::string g_voiceFrom, g_voiceTo;
+	static std::atomic<BOOL> g_redirectLogged(FALSE);
+
+	static std::string ModuleName(HMODULE module)
+	{
+		CHAR path[MAX_PATH] = {};
+		GetModuleFileNameA(module, path, MAX_PATH);
+		std::string file = path;
+		return file.substr(file.find_last_of("\\/") + 1);
+	}
 
 	template <int I>
 	static UINT64 Wrapper(UINT64 a, UINT64 b, UINT64 c, UINT64 d, UINT64 e, UINT64 f)
@@ -63,6 +75,23 @@ namespace VoipLog
 	{
 		FARPROC function = Real_GetProcAddress(module, name);
 		if (function == NULL || name == NULL || !HIWORD((ULONG_PTR)name))
+			return function;
+		if (!g_voiceFrom.empty() && (strncmp(name, "Mic", 3) == 0 || strncmp(name, "Voip", 4) == 0)
+			&& _stricmp(ModuleName(module).c_str(), g_voiceFrom.c_str()) == 0)
+		{
+			HMODULE provider = GetModuleHandleA(g_voiceTo.c_str());
+			FARPROC replacement = provider != NULL ? Real_GetProcAddress(provider, name) : NULL;
+			if (replacement != NULL)
+			{
+				module = provider;
+				function = replacement;
+				if (!g_redirectLogged.exchange(TRUE) && g_log)
+					g_log("[VOICE] voice and microphone come from %s instead of %s", g_voiceTo.c_str(), g_voiceFrom.c_str());
+			}
+			else if (!g_redirectLogged.exchange(TRUE) && g_log)
+				g_log("[VOICE] FAILED to take voice from %s (not loaded): using %s", g_voiceTo.c_str(), g_voiceFrom.c_str());
+		}
+		if (!g_trace)
 			return function;
 		for (int i = 0; i < WATCHED; i++)
 		{
@@ -191,13 +220,20 @@ namespace VoipLog
 		return 0;
 	}
 
+	VOID UseVoiceProvider(const CHAR* replaced, const CHAR* provider)
+	{
+		g_voiceFrom = replaced;
+		g_voiceTo = provider;
+	}
+
 	VOID Install(VOID(*log)(const CHAR* format, ...))
 	{
 		g_log = log;
 		CreateThread(NULL, 0, DeviceReportThread, NULL, 0, NULL);
-		if (!TraceEnabled())
+		g_trace = TraceEnabled();
+		if (!g_trace && g_voiceFrom.empty())
 			return;
-		if (g_log)
+		if (g_trace && g_log)
 			g_log("[VOICE] voice_trace is on: counting the game's voice function calls");
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
@@ -209,6 +245,7 @@ namespace VoipLog
 				g_log("[VOICE] couldn't watch the voice functions (error %ld)", error);
 			return;
 		}
-		CreateThread(NULL, 0, ReportThread, NULL, 0, NULL);
+		if (g_trace)
+			CreateThread(NULL, 0, ReportThread, NULL, 0, NULL);
 	}
 }

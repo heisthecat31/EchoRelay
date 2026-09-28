@@ -1038,6 +1038,14 @@ namespace XmasPatches
 	{
 		Log("EchoRelay.Patch: christmas 2017 build (EchoArena.exe) detected");
 		// Voice chat diagnostics (see voiplog.h).
+		// Voice: this build takes voice from its platform provider, pnsovr.dll, i.e. the Oculus Platform SDK's microphone and
+		// voice codec, which without Oculus's backend works for some players and not others (some can't speak, some can't
+		// hear). The lobby builds take it from pnsrad.dll (OpenAL microphone, its own codec) and voice works there, so this
+		// build does too. Voice goes through the game server either way; players on older patches can't hear updated ones.
+		// -oculusvoice: keep the Oculus voice.
+		if (!ReplaceFlag(GetCommandLineW(), L"-oculusvoice", L"            "))
+			VoipLog::UseVoiceProvider("pnsovr.dll", "pnsrad.dll");
+		ReplaceFlag(GetCommandLineA(), "-oculusvoice", "            ");
 		VoipLog::Install(Log);
 
 		// -server: EchoArena.exe doesn't know it; it becomes -mpmnu (whose parser branch we patch into server mode).

@@ -16,4 +16,10 @@ namespace VoipLog
 	/// </summary>
 	/// <param name="log">Writes a line to the patch log.</param>
 	VOID Install(VOID(*log)(const CHAR* format, ...));
+
+	/// <summary>
+	/// Makes the game take its voice and microphone functions (Mic*, Voip*) from another net provider: those it asks of
+	/// <paramref name="replaced"/> (e.g. "pnsovr.dll") come from <paramref name="provider"/> (e.g. "pnsrad.dll"). Call before Install.
+	/// </summary>
+	VOID UseVoiceProvider(const CHAR* replaced, const CHAR* provider);
 }
