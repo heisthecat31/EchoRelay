@@ -512,10 +512,12 @@ namespace SummerSocial
 	/// <summary>
 	/// Revive's Oculus platform emulation gives every player the same user (0x4C01DB400B0C9, seen by the game as 0xB400B0C9).
 	/// The game identifies players by that id, so shared-id players got each other's names, teams, profiles and party slots.
+	/// Without Revive, a game started outside the Oculus store has no Oculus user at all (id 0), which every such player
+	/// shares just the same (each saw everyone else under their own name), so 0 counts as shared too.
 	/// </summary>
 	static bool IsSharedReviveId(UINT64 id)
 	{
-		return id == 0xB400B0C9ULL || id == 0x4C01DB400B0C9ULL;
+		return id == 0 || id == 0xB400B0C9ULL || id == 0x4C01DB400B0C9ULL;
 	}
 
 	static UINT64 g_uniqueUserId = 0;

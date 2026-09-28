@@ -12,7 +12,7 @@ namespace SummerInstaller
     /// </summary>
     public class GameBuild
     {
-        /// <summary>"summer", "halloween" or "christmas".</summary>
+        /// <summary>"summer", "halloween", "winter" (christmas 2018) or "christmas" (christmas 2017).</summary>
         public string Id { get; set; } = "";
         /// <summary>Shown on the build switch and as the window subtitle, e.g. "Summer Lobby".</summary>
         public string Name { get; set; } = "";
@@ -167,6 +167,25 @@ namespace SummerInstaller
             if (all.TryGetValue("christmasDownloadSizeBytes", out object? christmasSize) && christmasSize != null)
                 christmas.DownloadSizeBytes = Convert.ToInt64(christmasSize);
             settings.Builds.Add(christmas);
+            // The 2018 christmas lobby build: echovr.exe with the summer/halloween config keys and game files (dbgcore.dll).
+            GameBuild winter = new GameBuild
+            {
+                Id = "winter",
+                Name = Get(all, "winterSubtitle", "Christmas 2018 Lobby"),
+                ShortName = "Christmas 2018",
+                Tagline = Get(all, "winterTagline", "The 2018 christmas build, running on community servers."),
+                DownloadUrl = Get(all, "winterDownloadUrl", ""),
+                DownloadMirrors = GetList(all, "winterDownloadMirrors"),
+                Sha256 = Get(all, "winterSha256", ""),
+                DefaultInstallFolder = Get(all, "winterDefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Christmas 2018"),
+                ShortcutName = Get(all, "winterShortcutName", "Echo VR Christmas 2018"),
+                PublisherLock = "rad15_winter",
+                ExecutableTimestamp = 0x5C17F6B9,
+                LobbyName = "christmas lobby",
+            };
+            if (all.TryGetValue("winterDownloadSizeBytes", out object? winterSize) && winterSize != null)
+                winter.DownloadSizeBytes = Convert.ToInt64(winterSize);
+            settings.Builds.Add(winter);
             return settings;
         }
 

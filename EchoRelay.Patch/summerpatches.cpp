@@ -127,7 +127,7 @@ namespace SummerPatches
 			},
 			0x1411027F8,                  // "https://api.readyatdawn.com"
 			{ 0x1408E553A, 0x1408E561A }, // lea rdx, [host] for status/services and status/news
-			FALSE,
+			TRUE,  // parties, friends and unique player ids (shared Revive id / no Oculus user) through EchoRelay, as on summer
 			// No -headless in this build, and its renderer (even under -spectatorstream) creates an OVR swap chain, which
 			// fails fatally ("Failed to create OVR D3D swap chain (-1004)") if Oculus initialization was skipped.
 			FALSE,

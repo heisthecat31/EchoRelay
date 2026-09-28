@@ -93,7 +93,13 @@ namespace SummerInstaller
             TaglineText.Visibility = string.IsNullOrEmpty(_build.Tagline) ? Visibility.Collapsed : Visibility.Visible;
             Title = $"{_settings.Title} {_settings.AppName}";
             DoneHint.Text = $"Start the Oculus app and connect your headset before pressing Play. In the game, press Play on the menu to join the {_build.LobbyName}.";
-            RadioButton option = _build.Id == "halloween" ? HalloweenBuildOption : _build.Id == "christmas" ? ChristmasBuildOption : SummerBuildOption;
+            RadioButton option = _build.Id switch
+            {
+                "halloween" => HalloweenBuildOption,
+                "christmas" => ChristmasBuildOption,
+                "winter" => WinterBuildOption,
+                _ => SummerBuildOption,
+            };
             if (option.IsChecked != true)
                 option.IsChecked = true;
             // A new game version brings its own publisher lock.
@@ -107,7 +113,7 @@ namespace SummerInstaller
         private void ShowPublisherLock()
         {
             _showingPublisherLock = true;
-            foreach (RadioButton option in new[] { SummerLockOption, HalloweenLockOption, ChristmasLockOption })
+            foreach (RadioButton option in new[] { SummerLockOption, HalloweenLockOption, WinterLockOption, ChristmasLockOption })
                 option.IsChecked = (string)option.Tag == PublisherLock;
             _showingPublisherLock = false;
             PublisherLockText.Text = _publisherLockOverride == null
