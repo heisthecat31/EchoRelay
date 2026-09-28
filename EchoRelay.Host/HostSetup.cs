@@ -387,7 +387,7 @@ namespace EchoRelay.Host
             string? answer = Console.ReadLine();
             if (answer == null)
                 throw new InvalidOperationException("No input (run it in a console window).");
-            answer = answer.Trim();
+            answer = answer.Trim().Trim('﻿').Trim(); // a pasted or piped byte order mark
             return answer.Length > 0 ? answer : current;
         }
 
