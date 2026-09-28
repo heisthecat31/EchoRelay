@@ -7,7 +7,7 @@ namespace EchoRelay.Core.Game
     /// </summary>
     public abstract class GameLauncher
     {
-        public static void Launch(string executableFilePath, LaunchRole role = LaunchRole.Client, bool windowed = false, bool spectatorStream = false, bool moderator = false, bool noOVR = false, bool headless = false, uint? timeStep = null, List<string>? additionalArgs = null)
+        public static Process? Launch(string executableFilePath, LaunchRole role = LaunchRole.Client, bool windowed = false, bool spectatorStream = false, bool moderator = false, bool noOVR = false, bool headless = false, uint? timeStep = null, List<string>? additionalArgs = null)
         {
             // Create a list of arguments
             List<string> args = additionalArgs ?? new List<string>();
@@ -30,8 +30,7 @@ namespace EchoRelay.Core.Game
                 foreach (string arg in args)
                     startInfo.ArgumentList.Add(arg);
                 startInfo.WorkingDirectory = Directory.GetParent(executableFilePath)?.Parent?.Parent?.FullName ?? "";
-                Process.Start(startInfo);
-                return;
+                return Process.Start(startInfo);
             }
 
             // The halloween and christmas 2018 lobby builds take the same flags as summer (EchoRelay.Patch emulates the ones they lack).
@@ -45,8 +44,7 @@ namespace EchoRelay.Core.Game
                     args.Add("-noovr");
                 if (headless)
                     args.Add("-headless");
-                Process.Start(executableFilePath, args);
-                return;
+                return Process.Start(executableFilePath, args);
             }
 
             // Add any role related arguments (client role = no CLI argument here)
@@ -79,7 +77,7 @@ namespace EchoRelay.Core.Game
             }
 
             // Start the process with our provided arguments.
-            Process.Start(executableFilePath, args);
+            return Process.Start(executableFilePath, args);
         }
 
         /// <summary>

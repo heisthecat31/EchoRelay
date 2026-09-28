@@ -10,6 +10,8 @@
 #include <cwchar>
 #include <share.h>
 #include <string>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
 
 namespace XmasPatches
 {
@@ -743,9 +745,89 @@ namespace XmasPatches
 		return 0;
 	}
 
+	/// <summary>
+	/// The player's id derived from the display name in _local\config.json (loginservice_host, or christmas 2017's
+	/// login_host), exactly as EchoRelay derives the account of a player without their own Oculus id
+	/// (LoginService.GetSummerAccountId): SHA-256 of "echorelay-summer-account:" + the trimmed, lower-cased name. 0 if the
+	/// config has no display name.
+	/// </summary>
+	static UINT64 GetDisplayNameUserId()
+	{
+		std::string path = GetGameRoot() + "\\_local\\config.json";
+		FILE* f = NULL;
+		if (fopen_s(&f, path.c_str(), "rb") != 0 || f == NULL)
+			return 0;
+		std::string json;
+		CHAR buffer[4096];
+		SIZE_T read;
+		while ((read = fread(buffer, 1, sizeof(buffer), f)) > 0)
+			json.append(buffer, read);
+		fclose(f);
+
+		std::string name;
+		for (const CHAR* key : { "\"loginservice_host\"", "\"login_host\"" })
+		{
+			size_t at = json.find(key);
+			if (at == std::string::npos)
+				continue;
+			size_t open = json.find('"', json.find(':', at));
+			size_t close = open == std::string::npos ? std::string::npos : json.find('"', open + 1);
+			if (close == std::string::npos)
+				continue;
+			std::string url = json.substr(open + 1, close - open - 1);
+			size_t param = url.find("displayname=");
+			if (param == std::string::npos)
+				continue;
+			std::string encoded = url.substr(param + 12, url.find('&', param) == std::string::npos ? std::string::npos : url.find('&', param) - param - 12);
+			for (size_t i = 0; i < encoded.size(); i++)
+			{
+				if (encoded[i] == '%' && i + 2 < encoded.size())
+				{
+					name += (CHAR)strtol(encoded.substr(i + 1, 2).c_str(), NULL, 16);
+					i += 2;
+				}
+				else
+					name += encoded[i] == '+' ? ' ' : encoded[i];
+			}
+			break;
+		}
+		size_t first = name.find_first_not_of(" \t\r\n"), last = name.find_last_not_of(" \t\r\n");
+		name = first == std::string::npos ? "" : name.substr(first, last - first + 1);
+		if (name.empty())
+			return 0;
+		std::string keyText = "echorelay-summer-account:";
+		for (CHAR c : name)
+			keyText += (c >= 'A' && c <= 'Z') ? (CHAR)(c - 'A' + 'a') : c;
+
+		BYTE hash[32] = {};
+		BCRYPT_ALG_HANDLE algorithm = NULL;
+		if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, NULL, 0) != 0)
+			return 0;
+		BCryptHash(algorithm, NULL, 0, (PUCHAR)keyText.data(), (ULONG)keyText.size(), hash, sizeof(hash));
+		BCryptCloseAlgorithmProvider(algorithm, 0);
+		UINT64 id;
+		memcpy(&id, hash, 8);
+		return (id & 0x3FFFFFFFFFFFFFFFULL) | 0x4000000000000000ULL;
+	}
+
+	/// <summary>
+	/// The player's own id: from their display name (one account across every build), else this install's own id. Game
+	/// servers keep an install id of their own.
+	/// </summary>
+	static UINT64 GetPlayerUserId(BOOL server)
+	{
+		UINT64 id = server ? 0 : GetDisplayNameUserId();
+		if (id != 0)
+		{
+			Log("This player's id %llu (from their display name)", (unsigned long long)id);
+			return id;
+		}
+		return GetInstallUserId(server);
+	}
+
 	VOID GiveInstallIdentity(BYTE* pnsOvr, DWORD orgScopedIdRva, BOOL server)
 	{
-		UINT64 userId = GetInstallUserId(server);
+		UINT64 userId = GetPlayerUserId(server);
 		BYTE* stub = AllocateNear(pnsOvr, 16);
 		if (stub == NULL)
 		{
@@ -795,7 +877,7 @@ namespace XmasPatches
 			HookCreateDevice(exe);
 		}
 		RedirectApiHost((BYTE*)GetModuleHandleA(NULL));
-		g_userId = GetInstallUserId(server);
+		g_userId = GetPlayerUserId(server);
 		Log("This install's user id: %llu", (unsigned long long)g_userId);
 
 		// Parties through EchoRelay instead of Oculus rooms (unless -oculussocial). Every player starts in a party of one

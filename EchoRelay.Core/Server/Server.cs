@@ -315,6 +315,62 @@ namespace EchoRelay.Core.Server
         /// </summary>
         /// <param name="context">The HTTP request context.</param>
         /// <returns>True if the request was answered.</returns>
+        /// <summary>
+        /// Decides a player's game server request (the installer's "Request game server"), if the host takes them: see
+        /// {api}/servers/request. Null (the default, e.g. the CLI) turns requests down.
+        /// </summary>
+        public Func<GameServerRequest, GameServerRequestResult>? GameServerRequestHandler { get; set; }
+
+        /// <summary>
+        /// Handles POST {api}/servers/request: {"build", "displayname", "password"}. The player is identified like a lobby build
+        /// login (their display name's account, with its password), then the host's <see cref="GameServerRequestHandler"/> decides.
+        /// </summary>
+        /// <returns>The reply: {"ok", "message"}.</returns>
+        private JObject HandleGameServerRequest(HttpListenerContext context)
+        {
+            static JObject Reply(bool ok, string message) => new JObject { ["ok"] = ok, ["message"] = message };
+            JObject body;
+            try
+            {
+                using StreamReader reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+                body = JObject.Parse(reader.ReadToEnd());
+            }
+            catch
+            {
+                return Reply(false, "The request wasn't understood.");
+            }
+            string build = body.Value<string>("build")?.Trim().ToLowerInvariant() ?? "";
+            string displayName = body.Value<string>("displayname")?.Trim() ?? "";
+            string password = body.Value<string>("password") ?? "";
+            if (!GameServerBuilds.Names.ContainsKey(build))
+                return Reply(false, "Unknown game version.");
+            if (displayName.Length == 0)
+                return Reply(false, "Enter your display name first.");
+
+            // The same account a lobby build login with this display name uses; it must exist and have this password.
+            XPlatformId accountId = LoginService.GetSummerAccountId(displayName);
+            AccountResource? account = Storage.Accounts.Get(accountId);
+            if (account == null || account.AccountLockHash == null)
+                return Reply(false, "Log in to the game on this server once first, then request a game server.");
+            if (!account.Authenticate(password))
+                return Reply(false, "Wrong password for this display name.");
+            if (account.Banned)
+                return Reply(false, "This account is banned.");
+
+            Func<GameServerRequest, GameServerRequestResult>? handler = GameServerRequestHandler;
+            if (handler == null)
+                return Reply(false, "This server doesn't take game server requests.");
+            try
+            {
+                GameServerRequestResult result = handler(new GameServerRequest(build, accountId, displayName, context.Request.RemoteEndPoint?.Address));
+                return Reply(result.Accepted, result.Message);
+            }
+            catch (Exception ex)
+            {
+                return Reply(false, "The server couldn't start a game server: " + ex.Message);
+            }
+        }
+
         private bool TryHandleApiRequest(HttpListenerContext context)
         {
             string path = context.Request.Url?.AbsolutePath.TrimEnd('/').ToLowerInvariant() ?? "";
@@ -325,6 +381,8 @@ namespace EchoRelay.Core.Server
                 response = new JObject { ["available"] = true, ["message"] = Settings.SummerServiceStatus };
             else if (path == api + "/status/news")
                 response = new JObject { ["message"] = Settings.SummerNews };
+            else if (path == api + "/servers/request")
+                response = HandleGameServerRequest(context);
             if (response == null)
                 return false;
 

@@ -22,6 +22,25 @@ namespace EchoRelay.App.Settings
         public Dictionary<string, string> GameExecutables { get; set; } = new Dictionary<string, string>();
 
         /// <summary>
+        /// Whether players may request game servers from the installer ("Request game server"). This PC then starts a headless
+        /// server of the requested build, from its executable in <see cref="GameExecutables"/>.
+        /// </summary>
+        [JsonProperty("game_server_requests")]
+        public bool GameServerRequestsEnabled { get; set; } = false;
+
+        /// <summary>
+        /// How many requested game servers each player can have running at once.
+        /// </summary>
+        [JsonProperty("game_server_requests_per_player")]
+        public int GameServerRequestsPerPlayer { get; set; } = 2;
+
+        /// <summary>
+        /// How many requested game servers can run at once, from all players.
+        /// </summary>
+        [JsonProperty("game_server_requests_max")]
+        public int GameServerRequestsMax { get; set; } = 6;
+
+        /// <summary>
         /// The directory containing the game executable, derived from <see cref="GameExecutableFilePath"/>.
         /// </summary>
         [JsonIgnore]

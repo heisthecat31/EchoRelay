@@ -114,6 +114,39 @@ namespace SummerInstaller
             progress.Report(new InstallProgress { Stage = InstallStage.Done, Fraction = 1 });
         }
 
+        #region Game server requests
+        /// <summary>
+        /// Asks the server a config points at to start a game server of a version for this player ({api}/servers/request).
+        /// The server decides; its answer is shown to the player.
+        /// </summary>
+        /// <returns>Whether a game server is starting, and the server's message.</returns>
+        public static async Task<(bool ok, string message)> RequestGameServerAsync(string config, GameBuild build, string displayName, string password)
+        {
+            string? api = GetConfigValue(config, "apiservice_host");
+            if (string.IsNullOrWhiteSpace(api))
+                return (false, "The server config has no \"apiservice_host\", so there's nowhere to send the request.");
+            string url = api!.TrimEnd('/') + "/servers/request";
+            string body = "{\"build\":\"" + build.Id + "\",\"displayname\":\"" + JsonEscape(displayName.Trim()) + "\",\"password\":\"" + JsonEscape(password) + "\"}";
+            try
+            {
+                using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                using HttpResponseMessage response = await Http.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"), timeout.Token);
+                string json = await response.Content.ReadAsStringAsync();
+                Match ok = Regex.Match(json, "\"ok\"\\s*:\\s*(true|false)");
+                Match message = Regex.Match(json, "\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+                if (!ok.Success)
+                    return (false, response.IsSuccessStatusCode ? "The server doesn't know about game server requests (it needs a newer EchoRelay)." : $"The server answered {(int)response.StatusCode} {response.ReasonPhrase}.");
+                return (ok.Groups[1].Value == "true", message.Success ? Regex.Unescape(message.Groups[1].Value) : "");
+            }
+            catch (Exception ex)
+            {
+                return (false, "Couldn't reach the server: " + ex.Message);
+            }
+        }
+
+        private static string JsonEscape(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        #endregion
+
         #region Game file updates
         /// <summary>
         /// The EchoRelay DLLs a release's GameFiles zip carries for a build: (path in the zip, path in the install).

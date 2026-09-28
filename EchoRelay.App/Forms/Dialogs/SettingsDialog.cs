@@ -28,6 +28,7 @@ namespace EchoRelay.App.Forms.Dialogs
 
             txtExecutablePath.Text = Settings.GameExecutableFilePath;
             AddGameVersionSelector();
+            AddGameServerRequestSettings();
             numericTCPPort.Value = Settings.Port;
             if (Settings.FilesystemDatabaseDirectory != null)
                 txtDbFolder.Text = Settings.FilesystemDatabaseDirectory;
@@ -44,6 +45,46 @@ namespace EchoRelay.App.Forms.Dialogs
             // Set the dialog result to cancelled, this way only if we successfully save settings, do we return OK.
             DialogResult = DialogResult.Cancel;
         }
+
+        #region Game server requests
+        private CheckBox chkGameServerRequests = null!;
+        private NumericUpDown numRequestsPerPlayer = null!;
+        private NumericUpDown numRequestsMax = null!;
+
+        /// <summary>
+        /// Adds a "Game Server Requests" box above the Save button: whether players may request game servers from the installer,
+        /// and how many. Built here rather than in the designer, like the version row.
+        /// </summary>
+        private void AddGameServerRequestSettings()
+        {
+            const int boxHeight = 80;
+            GroupBox box = new GroupBox
+            {
+                Text = "Game Server Requests",
+                Location = new Point(btnSaveSettings.Left, btnSaveSettings.Top),
+                Size = new Size(btnSaveSettings.Width, boxHeight),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            };
+            chkGameServerRequests = new CheckBox
+            {
+                Text = "Let players request game servers from the installer (started on this PC from the Version list)",
+                AutoSize = true,
+                Location = new Point(6, 22),
+                Checked = Settings.GameServerRequestsEnabled,
+            };
+            Label lblPerPlayer = new Label { Text = "Per player:", AutoSize = true, Location = new Point(6, 51) };
+            numRequestsPerPlayer = new NumericUpDown { Minimum = 1, Maximum = 10, Value = Math.Clamp(Settings.GameServerRequestsPerPlayer, 1, 10), Location = new Point(106, 48), Size = new Size(60, 23) };
+            Label lblMax = new Label { Text = "At once, in total:", AutoSize = true, Location = new Point(190, 51) };
+            numRequestsMax = new NumericUpDown { Minimum = 1, Maximum = 50, Value = Math.Clamp(Settings.GameServerRequestsMax, 1, 50), Location = new Point(300, 48), Size = new Size(60, 23) };
+            void UpdateEnabled() => numRequestsPerPlayer.Enabled = numRequestsMax.Enabled = chkGameServerRequests.Checked;
+            chkGameServerRequests.CheckedChanged += (_, _) => UpdateEnabled();
+            UpdateEnabled();
+            box.Controls.AddRange(new Control[] { chkGameServerRequests, lblPerPlayer, numRequestsPerPlayer, lblMax, numRequestsMax });
+            Controls.Add(box);
+            btnSaveSettings.Top += boxHeight + 6;
+            Height += boxHeight + 6;
+        }
+        #endregion
 
         #region Game version quick switch
         private ComboBox cmbGameVersion = null!;
@@ -233,6 +274,9 @@ namespace EchoRelay.App.Forms.Dialogs
             Settings.GameExecutableFilePath = txtExecutablePath.Text;
             RememberGameExecutable(txtExecutablePath.Text);
             Settings.GameExecutables = new Dictionary<string, string>(_gameExecutables);
+            Settings.GameServerRequestsEnabled = chkGameServerRequests.Checked;
+            Settings.GameServerRequestsPerPlayer = (int)numRequestsPerPlayer.Value;
+            Settings.GameServerRequestsMax = (int)numRequestsMax.Value;
             Settings.FilesystemDatabaseDirectory = txtDbFolder.Text;
             Settings.MongoDBConnectionString = null; // TODO: currently unsupported
             Settings.StartServerOnStartup = chkStartServerOnStartup.Checked;

@@ -155,6 +155,10 @@ namespace EchoRelay
             Server.ServerDBService.Registry.OnGameServerRegistered += Registry_OnGameServerRegistered;
             Server.ServerDBService.Registry.OnGameServerUnregistered += Registry_OnGameServerUnregistered;
             Server.ServerDBService.OnGameServerRegistrationFailure += ServerDBService_OnGameServerRegistrationFailure; ;
+
+            // Game servers players request from the installer (allowed in Settings).
+            EchoRelay.App.Forms.GameServerRequestHost requestHost = new EchoRelay.App.Forms.GameServerRequestHost(Settings, text => this.InvokeUIThread(() => AppendLogText(text)));
+            Server.GameServerRequestHandler = requestHost.Handle;
         }
         #endregion
 

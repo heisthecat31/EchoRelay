@@ -192,7 +192,7 @@ namespace SummerInstaller
         /// <summary>
         /// Parses a flat JSON object of string / number / bool values (all installer.json needs).
         /// </summary>
-        private static Dictionary<string, object> ParseFlatJson(string json)
+        internal static Dictionary<string, object> ParseFlatJson(string json)
         {
             Dictionary<string, object> values = new Dictionary<string, object>();
             foreach (Match m in Regex.Matches(json, @"""((?:[^""\\]|\\.)*)""\s*:\s*(""((?:[^""\\]|\\.)*)""|-?\d+(?:\.\d+)?|true|false|null)"))

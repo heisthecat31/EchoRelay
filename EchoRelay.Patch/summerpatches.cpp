@@ -77,12 +77,24 @@ namespace SummerPatches
 				{ "send SNSLoginRequest without an Oculus access token", 0x1050D, { 0x74, 0x5B }, { 0x90, 0x90 }, 2 },
 				{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x131E2, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
 				{ "skip the Oculus entitlement check", 0x13AD4, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+				// Played without Revive: the Oculus user proof fails and the provider posts a login failure without connecting;
+				// take the success path with an empty nonce, and keep the org-scoped id (set to the player's own id) when
+				// ovr_User_GetOrgScopedID fails.
+				{ "log in even though ovr_User_GetUserProof failed", 0xB9C3,
+					{ 0x0F, 0x84, 0xB3, 0x00, 0x00, 0x00 }, { 0xE9, 0xB4, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				{ "log in with an empty nonce (lea rax, [\"\"] in place of ovr_UserProof_GetNonce(ovr_Message_GetUserProof(msg)))", 0xBBA2,
+					{ 0x48, 0x8B, 0xCB, 0xFF, 0x15, 0xB5, 0x1A, 0x07, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0x14, 0x18, 0x07, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0x2F, 0x60, 0x07, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 18 },
+				{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails", 0xA533,
+					{ 0x48, 0xC7, 0x05, 0xBA, 0xA5, 0x14, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
+					{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
 			},
 			0x141248C28,                  // "https://api.readyatdawn.com"
 			{ 0x1405F0E4A, 0x1405F0F2B }, // lea rdx, [host] for status/services and status/news
 			TRUE,
 			TRUE,
 			TRUE,
+			0x154AF8,                     // no Revive: the player's own id (from their display name)
 		},
 		{
 			// The 2018 halloween lobby build. Sites were located against the summer build by their anchors (strings,
@@ -124,6 +136,17 @@ namespace SummerPatches
 				{ "send SNSLoginRequest without an Oculus access token", 0xDC22, { 0x74, 0x5E }, { 0x90, 0x90 }, 2 },
 				{ "send SNSLoginRequest without an Oculus access token (retry path)", 0x1031F, { 0x0F, 0x84, 0x15, 0x01, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 6 },
 				{ "skip the Oculus entitlement check", 0x10AC4, { 0x75, 0x21 }, { 0xEB, 0x21 }, 2 },
+				// Played without Revive: the Oculus user proof fails and the provider posts a login failure without connecting;
+				// take the success path with an empty nonce, and keep the org-scoped id (set to the player's own id) when
+				// ovr_User_GetOrgScopedID fails.
+				{ "log in even though ovr_User_GetUserProof failed", 0xA201,
+					{ 0x0F, 0x84, 0xB1, 0x00, 0x00, 0x00 }, { 0xE9, 0xB2, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				{ "log in with an empty nonce (lea rax, [\"\"] in place of ovr_UserProof_GetNonce(ovr_Message_GetUserProof(msg)))", 0xA3BE,
+					{ 0x48, 0x8B, 0xCB, 0xFF, 0x15, 0x81, 0x51, 0x04, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0xD0, 0x51, 0x04, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0x53, 0x94, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 18 },
+				{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails", 0x92FC,
+					{ 0x48, 0xC7, 0x05, 0xB9, 0xEA, 0x0E, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
+					{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
 			},
 			0x1411027F8,                  // "https://api.readyatdawn.com"
 			{ 0x1408E553A, 0x1408E561A }, // lea rdx, [host] for status/services and status/news
@@ -132,6 +155,7 @@ namespace SummerPatches
 			// fails fatally ("Failed to create OVR D3D swap chain (-1004)") if Oculus initialization was skipped.
 			FALSE,
 			FALSE,
+			0xF7DC0,                      // no Revive: the player's own id (from their display name)
 		},
 		{
 			// The 2018 christmas ("winter") lobby build, two months after halloween and the same generation. Sites were
@@ -186,7 +210,7 @@ namespace SummerPatches
 			FALSE,
 			FALSE,
 			FALSE,
-			0x10B6B8,                     // played without Revive: each install gets its own Oculus user id
+			0x10B6B8,                     // no Revive: the player's own id (from their display name)
 		},
 	};
 

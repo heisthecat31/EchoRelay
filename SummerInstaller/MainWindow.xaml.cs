@@ -62,6 +62,9 @@ namespace SummerInstaller
                 else if (args[i] == "--build")
                     _build = _settings.FindBuild(args[i + 1].ToLowerInvariant()) ?? _build;
             }
+            InstallMemory.Load();
+            if (!Array.Exists(args, a => a == "--build") && InstallMemory.LastBuild != null && _settings.FindBuild(InstallMemory.LastBuild) is GameBuild last)
+                _build = last;
             if (urlOverride != null)
                 _build.DownloadUrl = urlOverride;
             _installer = new GameInstaller(_settings);
@@ -73,7 +76,7 @@ namespace SummerInstaller
             if (string.IsNullOrEmpty(NameBox.Text))
                 NameBox.Text = Environment.UserName.Length > 20 ? Environment.UserName.Substring(0, 20) : Environment.UserName;
 
-            FolderBox.Text = folderOverride ?? _build.ExpandedDefaultInstallFolder;
+            FolderBox.Text = folderOverride ?? InstallMemory.FolderFor(_build) ?? _build.ExpandedDefaultInstallFolder;
             BuildSteps();
             StartLogoSpin();
             RefreshSetupState();
@@ -138,7 +141,11 @@ namespace SummerInstaller
             bool defaultFolder = folder.Length == 0 || _settings.Builds.Exists(b => string.Equals(folder, b.ExpandedDefaultInstallFolder, StringComparison.OrdinalIgnoreCase));
             _build = build;
             ShowBuild();
-            if (defaultFolder)
+            // A version installed before goes straight to its install, ready to Play.
+            string? remembered = InstallMemory.FolderFor(build);
+            if (remembered != null)
+                FolderBox.Text = remembered; // refreshes the setup state
+            else if (defaultFolder)
                 FolderBox.Text = build.ExpandedDefaultInstallFolder; // refreshes the setup state
             else
                 RefreshSetupState();
@@ -177,12 +184,16 @@ namespace SummerInstaller
                 PrimaryAction.Content = "Play";
                 SecondaryAction.Content = "Reinstall";
                 SecondaryAction.Visibility = Visibility.Visible;
+                RequestServerAction.Visibility = Visibility.Visible;
+                if (installedBuild != null)
+                    InstallMemory.Remember(installedBuild, folder);
                 ShowBanner($"The {(installedBuild ?? _build).Name} is already installed here. Play it, or reinstall to download it again.", info: true);
             }
             else
             {
                 PrimaryAction.Content = partial ? "Resume download" : "Install";
                 SecondaryAction.Visibility = Visibility.Collapsed;
+                RequestServerAction.Visibility = Visibility.Collapsed;
             }
             PrimaryAction.IsEnabled = validPath;
             UpdateSpaceText(folder);
@@ -449,6 +460,7 @@ namespace SummerInstaller
             try
             {
                 await _installer.InstallAsync(build, folder, config, name, password, PublisherLock, progress, _cancel.Token);
+                InstallMemory.Remember(build, folder);
                 if (ShortcutCheck.IsChecked == true)
                 {
                     try { _installer.CreateDesktopShortcut(folder, build); } catch { }
@@ -625,6 +637,7 @@ namespace SummerInstaller
                 string? updated = await _installer.UpdateGameFilesAsync(_build, InstallFolder, CancellationToken.None);
                 if (updated != null)
                     ShowBanner($"Updated the EchoRelay game files to {updated}.", info: true);
+                InstallMemory.Remember(_build, InstallFolder);
                 GameInstaller.Launch(InstallFolder, _build);
                 Close();
             }
@@ -636,6 +649,27 @@ namespace SummerInstaller
         }
 
         private void Play_Click(object sender, RoutedEventArgs e) => LaunchGame();
+
+        /// <summary>
+        /// Asks the server (the config's apiservice_host) to start a game server of this version for the player. The server
+        /// decides whether it does (and how many each player can have); its answer is shown in the banner.
+        /// </summary>
+        private async void RequestServer_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ValidateAccount())
+                return;
+            RequestServerAction.IsEnabled = false;
+            ShowBanner($"Asking {GameInstaller.DescribeServer(_config)} for a {_build.ShortName} game server…", info: true);
+            try
+            {
+                var (ok, message) = await GameInstaller.RequestGameServerAsync(_config, _build, DisplayName, Password);
+                ShowBanner(string.IsNullOrEmpty(message) ? (ok ? "The server is starting a game server." : "The server turned the request down.") : message, info: ok);
+            }
+            finally
+            {
+                RequestServerAction.IsEnabled = true;
+            }
+        }
 
         private void OpenFolder_Click(object sender, RoutedEventArgs e)
         {
