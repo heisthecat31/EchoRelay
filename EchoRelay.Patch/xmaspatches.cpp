@@ -831,13 +831,17 @@ namespace XmasPatches
 	static LONG CALLBACK LogCrash(EXCEPTION_POINTERS* info)
 	{
 		static LONG logged = 0;
-		BYTE* exe = (BYTE*)GetModuleHandleA(NULL);
+		if (info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || InterlockedIncrement(&logged) > 3)
+			return EXCEPTION_CONTINUE_SEARCH;
 		BYTE* at = (BYTE*)info->ExceptionRecord->ExceptionAddress;
-		if (info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && at >= exe && at < exe + 0x2000000
-			&& InterlockedIncrement(&logged) <= 3)
-			Log("Access violation at EchoArena.exe+0x%llX (%s 0x%llX)", (unsigned long long)(at - exe),
-				info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
-				(unsigned long long)info->ExceptionRecord->ExceptionInformation[1]);
+		HMODULE module = NULL;
+		CHAR path[MAX_PATH] = "?";
+		if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)at, &module))
+			GetModuleFileNameA(module, path, MAX_PATH);
+		const CHAR* name = strrchr(path, '\\') != NULL ? strrchr(path, '\\') + 1 : path;
+		Log("Access violation at %s+0x%llX (%s 0x%llX, thread %lu)", name, (unsigned long long)(at - (BYTE*)module),
+			info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
+			(unsigned long long)info->ExceptionRecord->ExceptionInformation[1], GetCurrentThreadId());
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
 
@@ -1045,10 +1049,14 @@ namespace XmasPatches
 		// voice codec, which without Oculus's backend works for some players and not others (some can't speak, some can't
 		// hear). The lobby builds take it from pnsrad.dll (OpenAL microphone, its own codec) and voice works there, so this
 		// build does too. Voice goes through the game server either way; players on older patches can't hear updated ones.
-		// -oculusvoice: keep the Oculus voice.
-		if (!ReplaceFlag(GetCommandLineW(), L"-oculusvoice", L"            "))
+		// Only with -radvoice for now: with it, the game crashed about a second after another player joined (when their
+		// voice decoder is set up), so it stays off until that's understood.
+		if (ReplaceFlag(GetCommandLineW(), L"-radvoice", L"         "))
 			VoipLog::UseVoiceProvider("pnsovr.dll", "pnsrad.dll");
+		ReplaceFlag(GetCommandLineA(), "-radvoice", "         ");
+		ReplaceFlag(GetCommandLineW(), L"-oculusvoice", L"            ");
 		ReplaceFlag(GetCommandLineA(), "-oculusvoice", "            ");
+		AddVectoredExceptionHandler(1, LogCrash);
 		VoipLog::Install(Log);
 
 		// -server: EchoArena.exe doesn't know it; it becomes -mpmnu (whose parser branch we patch into server mode).
@@ -1082,7 +1090,6 @@ namespace XmasPatches
 			HookCreateDevice(exe);
 			PatchNoDisplay(exe);
 			FrameLimit::Install((VOID**)(exe + FRAME_TIMER_VTABLE), Log);
-			AddVectoredExceptionHandler(1, LogCrash);
 			CHAR test[8] = {};
 			if (GetEnvironmentVariableA("ECHORELAY_TEST_NO_DISPLAY", test, sizeof(test)) > 0 && test[0] == '1')
 			{
