@@ -1,5 +1,6 @@
 ﻿using EchoRelay.Core.Game;
 using EchoRelay.Core.Server.Messages;
+using EchoRelay.Core.Server.Messages.Login;
 using EchoRelay.Core.Server.Messages.Summer;
 using Newtonsoft.Json.Linq;
 
@@ -399,6 +400,29 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal("scout", (string?)named["weapon"]);
             Assert.Null(named["grenade"]);
             Assert.False(EchoRelay.Core.Game.SummerBuild.RepairCombatChoices(new JObject { ["weapon"] = "assault" }));
+        }
+
+        [Fact]
+        public void DecodesCapturedClientLogSet()
+        {
+            // Two log lines from a summer client (180 bytes: two lines, padding, then the offsets 0 and 0x3B).
+            byte[] data = Convert.FromHexString("FB2FA6697E2EE6AD722A95BA72B11A900400000000000000C63417E44761D05F08000000000000000200000000000000080000005B4E455447414D455D20556E6B6E6F776E206974656D20307845343345443834423930453341433741206973206265696E67206170706C696564005B4E455447414D455D20556E6B6E6F776E206974656D20307845343345443834423930453341433741206973206265696E67206170706C696564003C3F000000003B000000");
+            ClientLogSet logSet = new ClientLogSet();
+            logSet.Decode(data);
+            Assert.Equal(8UL, logSet.Level);
+            Assert.Equal(2, logSet.Lines.Length);
+            Assert.All(logSet.Lines, line => Assert.Equal("[NETGAME] Unknown item 0xE43ED84B90E3AC7A is being applied", line));
+
+            // One line from a game server (no session or user), with its trailing padding.
+            data = Convert.FromHexString("C09860012FE7CAFA5D04D11567C30E1F04000000000000003500A0E55940C75904000000000000000100000000000000040000004D65737361676520686973746F72792062756666657220696E73756666696369656E742C2067726F77696E672066726F6D20333930204B4220746F20373831204B42005D00000000");
+            logSet = new ClientLogSet();
+            logSet.Decode(data);
+            Assert.Equal(new[] { "Message history buffer insufficient, growing from 390 KB to 781 KB" }, logSet.Lines);
+
+            // And it encodes back to the same layout.
+            ClientLogSet decoded = new ClientLogSet();
+            decoded.Decode(logSet.Encode());
+            Assert.Equal(logSet.Lines, decoded.Lines);
         }
 
         [Fact]

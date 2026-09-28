@@ -456,9 +456,23 @@ namespace EchoRelay.Core.Server
             }
             catch (Exception e)
             {
-                TrafficCapture.Log($"Connection from {listenerContext.Request.RemoteEndPoint} failed: {e.GetType().Name} {e.Message}");
+                // A game that quits, crashes or loses its network just drops the connection (Echo never completes the
+                // close handshake), so those aren't worth logging; anything else is.
+                if (!IsDroppedConnection(e))
+                    TrafficCapture.Log($"Connection from {listenerContext.Request.RemoteEndPoint} failed: {e.GetType().Name} {e.Message}");
                 try { listenerContext.Response.Abort(); } catch { }
             }
+        }
+
+        /// <summary>
+        /// Whether an exception from a websocket connection is just the other end going away.
+        /// </summary>
+        private static bool IsDroppedConnection(Exception e)
+        {
+            if (e is not WebSocketException webSocketException)
+                return false;
+            return webSocketException.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely
+                || e.InnerException is HttpListenerException || e.InnerException is IOException || e.InnerException is ObjectDisposedException;
         }
 
         /// <summary>
