@@ -132,7 +132,7 @@ namespace EchoRelay.Host
             {
                 Console.WriteLine("Saved setup:");
                 PrintConfig(saved);
-                Console.WriteLine($"(Every option is in {HostConfig.FilePath}; answer n to go through them again.)");
+                Console.WriteLine("(Every option is in EchoRelayHost.config.json, next to this .bat; answer n to go through them again.)");
                 if (AskYesNo("Use it", true))
                 {
                     if (saved.UpdateOnStart)
@@ -207,7 +207,7 @@ namespace EchoRelay.Host
 
             config.Save();
             Console.WriteLine();
-            Console.WriteLine($"Saved to {HostConfig.FilePath}");
+            Console.WriteLine("Saved to EchoRelayHost.config.json, next to this .bat (every option can be changed there too).");
             Done(config);
             return config;
         }
