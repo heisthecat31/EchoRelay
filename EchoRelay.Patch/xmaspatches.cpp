@@ -1001,13 +1001,16 @@ namespace XmasPatches
 			Log("FAILED to find where pnsovr.dll stores the access token: the player's Oculus access token may be sent to the server");
 			return FALSE;
 		}
-		// call [GetString] (6 bytes) + mov rdx, rax (3) -> lea rdx, ["?"] (7) + nop nop
+		// call [GetString] (6 bytes) + mov rdx, rax (3) -> lea rdx, [""] (7) + nop nop. An empty token, not "?": the login
+		// code takes a "?" token for "not signed in to Oculus yet", asks for it again and fails the first login attempt
+		// ("login provider error"); an empty one it sends as it is (the existing patches send the login without a token).
+		// "" is the "?" string's terminator.
 		BYTE patch[9] = { 0x48, 0x8D, 0x15, 0, 0, 0, 0, 0x90, 0x90 };
-		INT32 displacement = (INT32)(question - (success + 7));
+		INT32 displacement = (INT32)(question + 1 - (success + 7));
 		memcpy(patch + 3, &displacement, 4);
 		if (!WriteCode(success, patch, sizeof(patch)))
 			return FALSE;
-		Log("Patched: never read or send the player's Oculus access token (the server gets \"?\", as with the Oculus app signed out)");
+		Log("Patched: never read or send the player's Oculus access token (the server gets an empty one)");
 		return TRUE;
 	}
 
