@@ -209,7 +209,7 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <CheckBox x:Name="ShortcutCheck" Content="Create a desktop shortcut" IsChecked="True" Margin="0,18,0,0"/>
+                                <CheckBox x:Name="ShortcutCheck" Content="Create a desktop shortcut to this app" IsChecked="True" Margin="0,18,0,0"/>
                             </StackPanel>
                         </Border>
                         </ScrollViewer>

@@ -865,23 +865,56 @@ namespace SummerInstaller
         }
         #endregion
 
+        /// <summary>The desktop shortcut's name (EchoClassicLobbies.exe, not a game).</summary>
+        public const string AppShortcutName = "Echo VR Classic Lobbies";
+
         /// <summary>
-        /// Creates a desktop shortcut that starts the game from the install folder.
+        /// Creates a desktop shortcut to this app (not the game), so players start through it and get their game file
+        /// updates and the request buttons. The app is copied to %LOCALAPPDATA%\EchoClassicLobbies first, so the shortcut
+        /// keeps working after the downloaded copy is deleted. Desktop shortcuts older versions made straight to a game are
+        /// removed.
         /// </summary>
         public void CreateDesktopShortcut(string installFolder, GameBuild build)
         {
-            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            string link = Path.Combine(desktop, build.ShortcutName + ".lnk");
             Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
             if (shellType == null)
                 return;
             dynamic shell = Activator.CreateInstance(shellType)!;
-            dynamic shortcut = shell.CreateShortcut(link);
-            shortcut.TargetPath = Path.Combine(installFolder, build.Executable);
-            shortcut.WorkingDirectory = installFolder;
-            shortcut.IconLocation = Path.Combine(installFolder, build.Executable) + ",0";
-            shortcut.Description = _settings.Title + " " + build.Name;
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+
+            string running = Process.GetCurrentProcess().MainModule!.FileName;
+            string home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EchoClassicLobbies");
+            string app = Path.Combine(home, "EchoClassicLobbies.exe");
+            if (!string.Equals(Path.GetFullPath(running), Path.GetFullPath(app), StringComparison.OrdinalIgnoreCase))
+            {
+                Directory.CreateDirectory(home);
+                File.Copy(running, app, true);
+            }
+
+            dynamic shortcut = shell.CreateShortcut(Path.Combine(desktop, AppShortcutName + ".lnk"));
+            shortcut.TargetPath = app;
+            shortcut.WorkingDirectory = home;
+            shortcut.IconLocation = app + ",0";
+            shortcut.Description = "Play the Echo VR classic lobbies (updates, game server requests)";
             shortcut.Save();
+
+            // Old shortcuts straight to a game skip the app (and its updates); remove the ones made by older versions.
+            foreach (string name in _settings.Builds.Select(b => b.ShortcutName).Distinct())
+            {
+                string old = Path.Combine(desktop, name + ".lnk");
+                try
+                {
+                    if (!File.Exists(old))
+                        continue;
+                    string target = (string)shell.CreateShortcut(old).TargetPath;
+                    string file = Path.GetFileName(target);
+                    if (file.Equals("echovr.exe", StringComparison.OrdinalIgnoreCase) || file.Equals("EchoArena.exe", StringComparison.OrdinalIgnoreCase))
+                        File.Delete(old);
+                }
+                catch
+                {
+                }
+            }
         }
 
         /// <summary>

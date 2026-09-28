@@ -189,6 +189,14 @@ namespace EchoRelay
         #region Event Handlers
         private async void Form1_Load(object sender, EventArgs e)
         {
+            // Offer a newer release from GitHub, if there is one (in the background).
+            _ = AppUpdater.CheckAsync(this);
+
+            // A "Check for updates" item in the File menu.
+            ToolStripMenuItem checkForUpdates = new ToolStripMenuItem("Check for updates");
+            checkForUpdates.Click += async (_, _) => await AppUpdater.CheckAsync(this, reportUpToDate: true);
+            fileToolStripMenuItem.DropDownItems.Insert(fileToolStripMenuItem.DropDownItems.IndexOf(exitToolStripMenuItem), checkForUpdates);
+
             // Start the server if it is configured to start on startup.
             if (Settings.StartServerOnStartup)
                 await Server.Start();

@@ -687,7 +687,11 @@ namespace SummerInstaller
                 InstallMemory.Remember(_build, InstallFolder);
                 await UpdateAllInstallsAsync(announce: true);
                 GameInstaller.Launch(InstallFolder, _build);
-                Close();
+                // Stay open (back on the main page), so players can still request game servers while they play.
+                IsEnabled = true;
+                ShowView(SetupView);
+                RefreshSetupState();
+                ShowBanner($"{_build.Name} is starting. Keep this open to request a game server while you play.", info: true);
             }
             catch (Exception ex)
             {
