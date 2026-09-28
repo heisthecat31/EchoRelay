@@ -43,6 +43,7 @@ namespace SummerSocial
 	// ------------------------------------------------------------------------------------------------------------
 	// Oculus Platform SDK constants used by pnsovr.dll
 	// ------------------------------------------------------------------------------------------------------------
+	const UINT32 MSG_USER_GET_LOGGED_IN_USER = 0x436F345D;
 	const UINT32 MSG_USER_GET_LOGGED_IN_USER_FRIENDS = 0x587C2A8D;
 	const UINT32 MSG_NOTIFICATION_ROOM_ROOM_UPDATE = 0x60EC3C2F;
 	const UINT32 MSG_NOTIFICATION_ROOM_INVITE_RECEIVED = 0x6A499D54;
@@ -587,6 +588,37 @@ namespace SummerSocial
 	}
 
 	/// <summary>
+	/// The player's display name from _local/config.json's loginservice_host (or christmas' login_host), as written.
+	/// </summary>
+	static const std::string& ConfigDisplayName()
+	{
+		static std::string name;
+		static bool read = false;
+		if (read)
+			return name;
+		read = true;
+		char path[MAX_PATH];
+		GetModuleFileNameA(NULL, path, MAX_PATH);
+		std::string root = path;
+		for (int i = 0; i < 3; i++)
+			root = root.substr(0, root.find_last_of('\\'));
+		Json config;
+		if (!ParseJson(ReadFileText(root + "\\_local\\config.json"), config))
+			return name;
+		std::string login = config.Str("loginservice_host");
+		if (login.find("displayname=") == std::string::npos)
+			login = config.Str("login_host");
+		size_t at = login.find("displayname=");
+		if (at == std::string::npos)
+			return name;
+		std::string value = login.substr(at + 12);
+		value = UrlDecode(value.substr(0, value.find('&')));
+		size_t first = value.find_first_not_of(" \t\r\n"), last = value.find_last_not_of(" \t\r\n");
+		name = first == std::string::npos ? "" : value.substr(first, last - first + 1);
+		return name;
+	}
+
+	/// <summary>
 	/// Replaces Revive's shared user id with this player's own id.
 	/// </summary>
 	static UINT64 g_forcedUserId = 0;
@@ -913,6 +945,7 @@ namespace SummerSocial
 	REAL(void, ovr_Packet_Free, (void*))
 	// Requests (answered by the social service)
 	REAL(UINT64, ovr_User_GetLoggedInUserFriends, ())
+	REAL(UINT64, ovr_User_GetLoggedInUser, ())
 	REAL(UINT64, ovr_User_GetNextUserArrayPage, (void*))
 	REAL(UINT64, ovr_User_GetOrgScopedID, (UINT64))
 	REAL(UINT64, ovr_Room_CreateAndJoinPrivate2, (INT32, UINT32, void*))
@@ -1000,7 +1033,11 @@ namespace SummerSocial
 		// Revive's shared user has a placeholder name (NO_CONFIG_FOUND); show the player's display name instead.
 		if (h != NULL && IsSharedReviveId(Real_ovr_User_GetID(h)) && MapUserId(Real_ovr_User_GetID(h)) != Real_ovr_User_GetID(h) && !g_uniqueUserName.empty())
 			return g_uniqueUserName.c_str();
-		return Real_ovr_User_GetOculusID(h);
+		// Any other placeholder (or missing) name: the player's display name from the config.
+		const char* name = Real_ovr_User_GetOculusID(h);
+		if ((name == NULL || name[0] == 0 || strcmp(name, "NO_CONFIG_FOUND") == 0) && !ConfigDisplayName().empty())
+			return ConfigDisplayName().c_str();
+		return name;
 	}
 	static const char* Hook_ovr_User_GetPresence(void* h) { User* u = (User*)Ours(h, K_USER); return u ? u->presence.c_str() : Real_ovr_User_GetPresence(h); }
 	static INT32 Hook_ovr_User_GetPresenceStatus(void* h) { User* u = (User*)Ours(h, K_USER); return u ? (u->online ? PRESENCE_ONLINE : PRESENCE_OFFLINE) : Real_ovr_User_GetPresenceStatus(h); }
@@ -1044,6 +1081,30 @@ namespace SummerSocial
 
 	// --- requests
 	static UINT64 Hook_ovr_User_GetLoggedInUserFriends() { return Request("friends"); }
+
+	/// <summary>
+	/// The local player (the party screen's own entry, among others). Without Oculus services the real request fails
+	/// ("Must call get_signature first"), leaving that entry blank, and Revive answers with a placeholder name
+	/// (NO_CONFIG_FOUND). Answered here with the player's own id and their display name from the config.
+	/// </summary>
+	static UINT64 Hook_ovr_User_GetLoggedInUser()
+	{
+		UINT64 id = g_forcedUserId != 0 ? g_forcedUserId : (Real_ovr_GetLoggedInUserID != NULL ? MapUserId(Real_ovr_GetLoggedInUserID()) : 0);
+		if (id == 0 || ConfigDisplayName().empty())
+			return Real_ovr_User_GetLoggedInUser();
+		Message* message = New<Message>(NULL);
+		message->type = MSG_USER_GET_LOGGED_IN_USER;
+		message->requestId = g_nextRequestId++;
+		message->user = New<User>(message);
+		message->user->id = id;
+		message->user->name = ConfigDisplayName();
+		message->user->online = true;
+		message->user->token = std::to_string(id);
+		UINT64 requestId = message->requestId;
+		Log("[SOCIAL] Logged in user: %s (%llu)", message->user->name.c_str(), id);
+		Enqueue(message);
+		return requestId;
+	}
 	static UINT64 Hook_ovr_Room_GetInvitableUsers2(void* options) { return Request("invitable"); }
 	static UINT64 Hook_ovr_User_GetNextUserArrayPage(void* h)
 	{
@@ -1127,7 +1188,7 @@ namespace SummerSocial
 		HOOK(ovr_RoomInviteNotificationArray_GetSize), HOOK(ovr_RoomInviteNotificationArray_GetElement), HOOK(ovr_RoomInviteNotificationArray_HasNextPage),
 		HOOK(ovr_RoomInviteNotification_GetID), HOOK(ovr_RoomInviteNotification_GetRoomID), HOOK(ovr_RoomInviteNotification_GetSentTime),
 		HOOK(ovr_Net_ReadPacket), HOOK(ovr_Packet_GetBytes), HOOK(ovr_Packet_GetSize), HOOK(ovr_Packet_GetSenderID), HOOK(ovr_Packet_Free),
-		HOOK(ovr_User_GetLoggedInUserFriends), HOOK(ovr_User_GetNextUserArrayPage), HOOK(ovr_User_GetOrgScopedID),
+		HOOK(ovr_User_GetLoggedInUserFriends), HOOK(ovr_User_GetNextUserArrayPage), HOOK(ovr_User_GetOrgScopedID), HOOK(ovr_User_GetLoggedInUser),
 		HOOK(ovr_Room_CreateAndJoinPrivate2), HOOK(ovr_Room_Join2), HOOK(ovr_Room_Leave), HOOK(ovr_Room_Get), HOOK(ovr_Room_InviteUser),
 		HOOK(ovr_Room_KickUser), HOOK(ovr_Room_UpdateOwner), HOOK(ovr_Room_UpdateMembershipLockStatus), HOOK(ovr_Room_UpdateDataStore),
 		HOOK(ovr_Room_LaunchInvitableUserFlow), HOOK(ovr_Room_GetInvitableUsers2),
