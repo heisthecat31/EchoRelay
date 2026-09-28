@@ -34,4 +34,10 @@ namespace XmasPatches
 	/// <param name="orgScopedIdRva">The RVA of pnsovr.dll's logged in user org-scoped id (UINT64).</param>
 	/// <param name="server">Whether this is a game server.</param>
 	VOID GiveInstallIdentity(BYTE* pnsOvr, DWORD orgScopedIdRva, BOOL server);
+
+	/// <summary>
+	/// The id GiveInstallIdentity gives this install: the player's display name account, else this install's own id (game
+	/// servers keep an install id of their own).
+	/// </summary>
+	UINT64 PlayerUserId(BOOL server);
 }

@@ -634,6 +634,16 @@ namespace SummerPatches
 			SummerSocial::EnableTracing();
 		if (g_echoRelaySocial)
 		{
+			// Builds played without Revive log in with the player's display name account (see GiveInstallIdentity). Parties
+			// must use that id too: with the Oculus app signed in, the platform's own user id (the real Oculus one) went to
+			// the party service instead, so the game never saw itself as its party's owner and left and re-created its
+			// party forever ("transitioning").
+			if (g_build->pnsOvrOrgScopedId != 0 && g_patchPnsOvr)
+			{
+				UINT64 userId = XmasPatches::PlayerUserId(FALSE);
+				SummerSocial::SetLocalUserId(userId);
+				Log("Parties use this player's id %llu (the same as their login)", (unsigned long long)userId);
+			}
 			HMODULE platform = GetModuleHandleA("LibOVRPlatform64_1.dll");
 			if (platform != NULL)
 				SummerSocial::HookPlatformModule(platform, L"LibOVRPlatform64_1.dll");

@@ -942,6 +942,11 @@ namespace XmasPatches
 		return GetInstallUserId(server);
 	}
 
+	UINT64 PlayerUserId(BOOL server)
+	{
+		return GetPlayerUserId(server);
+	}
+
 	VOID GiveInstallIdentity(BYTE* pnsOvr, DWORD orgScopedIdRva, BOOL server)
 	{
 		UINT64 userId = GetPlayerUserId(server);

@@ -1021,7 +1021,7 @@ namespace SummerSocial
 	static void* Hook_ovr_UserArray_GetElement(void* h, size_t i) { Users* u = (Users*)Ours(h, K_USERS); return u ? (i < u->items.size() ? u->items[i] : NULL) : Real_ovr_UserArray_GetElement(h, i); }
 	static bool Hook_ovr_UserArray_HasNextPage(void* h) { return Ours(h, K_USERS) ? false : Real_ovr_UserArray_HasNextPage(h); }
 	static UINT64 Hook_ovr_User_GetID(void* h) { User* u = (User*)Ours(h, K_USER); if (u) TRACE("[SOCIAL] User_GetID(%p) -> %llu", h, u->id); else TRACE("[SOCIAL] User_GetID(real %p)", h); return u ? u->id : MapUserId(Real_ovr_User_GetID(h)); }
-	static UINT64 Hook_ovr_GetLoggedInUserID() { return MapUserId(Real_ovr_GetLoggedInUserID()); }
+	static UINT64 Hook_ovr_GetLoggedInUserID() { return g_forcedUserId != 0 ? g_forcedUserId : MapUserId(Real_ovr_GetLoggedInUserID()); }
 	static const char* Hook_ovr_User_GetOculusID(void* h)
 	{
 		User* u = (User*)Ours(h, K_USER);
