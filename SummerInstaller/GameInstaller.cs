@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -194,12 +195,36 @@ namespace SummerInstaller
         /// <returns>The release tag installed, or null if nothing changed.</returns>
         public async Task<string?> UpdateGameFilesAsync(GameBuild build, string installFolder, CancellationToken cancel)
         {
-            if (string.IsNullOrWhiteSpace(_settings.GameFilesRepository) || !IsInstalled(installFolder))
-                return null;
+            var updated = await UpdateAllGameFilesAsync(new[] { (build, installFolder) }, cancel);
+            return updated.Count > 0 ? updated[0].tag : null;
+        }
+
+        /// <summary>
+        /// Serializes updates, so two (e.g. the one on opening and the one before Play) don't move the same files at once.
+        /// </summary>
+        private static readonly SemaphoreSlim UpdateLock = new SemaphoreSlim(1, 1);
+
+        /// <summary>
+        /// Installs the latest EchoRelay release's game DLLs into every given install (every downloaded game version) that
+        /// doesn't have them yet. The release is looked up, and its GameFiles zip downloaded, once. Each install gets the files
+        /// its build loads (christmas 2017: dbghelp.dll). One install failing (e.g. files in use) doesn't stop the others.
+        /// </summary>
+        /// <returns>The installs updated, with the release tag they got.</returns>
+        public async Task<List<(GameBuild build, string folder, string tag)>> UpdateAllGameFilesAsync(IEnumerable<(GameBuild build, string folder)> installs, CancellationToken cancel)
+        {
+            List<(GameBuild, string, string)> updated = new List<(GameBuild, string, string)>();
+            List<(GameBuild build, string folder)> targets = installs
+                .Where(install => IsInstalled(install.folder))
+                .GroupBy(install => Path.GetFullPath(install.folder).TrimEnd('\\'), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+            if (string.IsNullOrWhiteSpace(_settings.GameFilesRepository) || targets.Count == 0)
+                return updated;
+            await UpdateLock.WaitAsync(cancel);
             try
             {
                 using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-                timeout.CancelAfter(TimeSpan.FromSeconds(30));
+                timeout.CancelAfter(TimeSpan.FromSeconds(60));
 
                 // Find the latest release and its GameFiles asset.
                 string api = $"https://api.github.com/repos/{_settings.GameFilesRepository.Trim()}/releases/latest";
@@ -207,47 +232,76 @@ namespace SummerInstaller
                 request.Headers.Accept.ParseAdd("application/vnd.github+json");
                 using HttpResponseMessage response = await Http.SendAsync(request, timeout.Token);
                 if (!response.IsSuccessStatusCode)
-                    return null;
+                    return updated;
                 string json = await response.Content.ReadAsStringAsync();
                 string tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"").Groups[1].Value;
                 string asset = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+-GameFiles\\.zip)\"").Groups[1].Value;
                 if (tag.Length == 0 || asset.Length == 0)
-                    return null;
-                string versionPath = GameFilesVersionPath(installFolder);
-                if (File.Exists(versionPath) && File.ReadAllText(versionPath).Trim() == tag)
-                    return null;
+                    return updated;
+                List<(GameBuild build, string folder)> outdated = targets.Where(install =>
+                {
+                    string versionPath = GameFilesVersionPath(install.folder);
+                    return !File.Exists(versionPath) || File.ReadAllText(versionPath).Trim() != tag;
+                }).ToList();
+                if (outdated.Count == 0)
+                    return updated;
 
-                // Download and install the DLLs. A loaded DLL can't be overwritten but can be renamed, so move the old one aside.
+                // Download once, then install the DLLs each build loads.
                 using HttpResponseMessage download = await Http.GetAsync(asset, timeout.Token);
                 download.EnsureSuccessStatusCode();
                 byte[] zip = await download.Content.ReadAsByteArrayAsync();
-                using (ZipArchive archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read))
+                using ZipArchive archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read);
+                foreach (var (build, folder) in outdated)
                 {
-                    foreach (var (entryName, file) in GameFilesFor(build))
+                    try
                     {
-                        ZipArchiveEntry? entry = archive.GetEntry(entryName);
-                        if (entry == null)
-                            continue;
-                        string target = Path.Combine(installFolder, file);
-                        string temp = target + ".new";
-                        using (Stream source = entry.Open())
-                        using (FileStream destination = File.Create(temp))
-                            source.CopyTo(destination);
-                        if (File.Exists(target))
-                        {
-                            string old = target + ".old";
-                            try { File.Delete(old); } catch { }
-                            File.Move(target, old);
-                        }
-                        File.Move(temp, target);
+                        InstallGameFiles(archive, build, folder);
+                        File.WriteAllText(GameFilesVersionPath(folder), tag);
+                        updated.Add((build, folder, tag));
+                    }
+                    catch
+                    {
+                        // This install keeps its files and is tried again next time.
                     }
                 }
-                File.WriteAllText(versionPath, tag);
-                return tag;
             }
             catch
             {
-                return null;
+                // Offline, rate limited, ...: the installed files keep working.
+            }
+            finally
+            {
+                UpdateLock.Release();
+            }
+            return updated;
+        }
+
+        /// <summary>
+        /// Installs a build's game DLLs from a GameFiles zip. A loaded DLL (the game is running) can't be overwritten but can
+        /// be renamed, so the old one is moved aside.
+        /// </summary>
+        private static void InstallGameFiles(ZipArchive archive, GameBuild build, string installFolder)
+        {
+            foreach (var (entryName, file) in GameFilesFor(build))
+            {
+                ZipArchiveEntry? entry = archive.GetEntry(entryName);
+                if (entry == null)
+                    continue;
+                string target = Path.Combine(installFolder, file);
+                string temp = target + ".new";
+                using (Stream source = entry.Open())
+                using (FileStream destination = File.Create(temp))
+                    source.CopyTo(destination);
+                if (File.Exists(target))
+                {
+                    // An older copy still loaded by a running game can't be deleted; keep it under another name.
+                    string old = target + ".old";
+                    try { File.Delete(old); } catch { }
+                    if (File.Exists(old))
+                        old = target + ".old" + DateTime.UtcNow.Ticks;
+                    File.Move(target, old);
+                }
+                File.Move(temp, target);
             }
         }
         #endregion

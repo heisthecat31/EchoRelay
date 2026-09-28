@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -80,6 +81,32 @@ namespace SummerInstaller
             BuildSteps();
             StartLogoSpin();
             RefreshSetupState();
+
+            // Bring every downloaded game version's EchoRelay game files up to date in the background.
+            Loaded += async (_, _) => await UpdateAllInstallsAsync(announce: true);
+        }
+
+        /// <summary>
+        /// Installs the latest release's EchoRelay game files (the patch DLL etc.) into every downloaded game version: the
+        /// remembered installs and the selected folder. Quietly skipped if offline.
+        /// </summary>
+        /// <returns>How many installs were updated.</returns>
+        private async Task<int> UpdateAllInstallsAsync(bool announce)
+        {
+            var installs = InstallMemory.AllInstalls(_settings.Builds);
+            try
+            {
+                if (GameInstaller.DetectInstalledBuild(InstallFolder, _settings.Builds) is GameBuild selected)
+                    installs.Add((selected, InstallFolder));
+            }
+            catch
+            {
+                // An invalid folder in the box just isn't included.
+            }
+            var updated = await _installer.UpdateAllGameFilesAsync(installs, CancellationToken.None);
+            if (announce && updated.Count > 0)
+                ShowBanner($"Updated the EchoRelay game files to {updated[0].tag} in {string.Join(", ", updated.Select(u => u.build.ShortName))}.", info: true);
+            return updated.Count;
         }
 
         #region Setup view
@@ -632,13 +659,12 @@ namespace SummerInstaller
         {
             try
             {
-                // Pick up newer EchoRelay game files (the patch DLL etc.) before starting; quietly skipped if offline.
+                // Pick up newer EchoRelay game files (the patch DLL etc.) in every downloaded game version before starting;
+                // quietly skipped if offline.
                 IsEnabled = false;
                 ShowBanner("Checking for game file updates…", info: true);
-                string? updated = await _installer.UpdateGameFilesAsync(_build, InstallFolder, CancellationToken.None);
-                if (updated != null)
-                    ShowBanner($"Updated the EchoRelay game files to {updated}.", info: true);
                 InstallMemory.Remember(_build, InstallFolder);
+                await UpdateAllInstallsAsync(announce: true);
                 GameInstaller.Launch(InstallFolder, _build);
                 Close();
             }

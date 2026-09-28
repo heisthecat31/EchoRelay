@@ -50,6 +50,18 @@ namespace SummerInstaller
         }
 
         /// <summary>
+        /// Every remembered install that still has its version installed.
+        /// </summary>
+        public static List<(GameBuild build, string folder)> AllInstalls(IEnumerable<GameBuild> builds)
+        {
+            List<(GameBuild, string)> installs = new List<(GameBuild, string)>();
+            foreach (GameBuild build in builds)
+                if (FolderFor(build) is string folder)
+                    installs.Add((build, folder));
+            return installs;
+        }
+
+        /// <summary>
         /// Remembers a version's install folder, and that it was used last.
         /// </summary>
         public static void Remember(GameBuild build, string folder)
