@@ -68,7 +68,7 @@ namespace SummerInstaller
                 _build = last;
             if (urlOverride != null)
                 _build.DownloadUrl = urlOverride;
-            _installer = new GameInstaller(_settings);
+            _installer = new GameInstaller(_settings) { Owner = this };
 
             TitleText.Text = _settings.Title.ToUpperInvariant();
             ShowBuild();
@@ -170,10 +170,20 @@ namespace SummerInstaller
             ShowBuild();
             // A version installed before goes straight to its install, ready to Play.
             string? remembered = InstallMemory.FolderFor(build);
+            GameBuild? folderHolds = folder.Length > 0 && GameInstaller.IsInstalled(folder) ? GameInstaller.DetectInstalledBuild(folder, _settings.Builds) : null;
             if (remembered != null)
                 FolderBox.Text = remembered; // refreshes the setup state
             else if (defaultFolder)
                 FolderBox.Text = build.ExpandedDefaultInstallFolder; // refreshes the setup state
+            else if (folderHolds != null && folderHolds != build)
+            {
+                // The folder holds another version (which would switch straight back to it): offer a folder for this one next
+                // to it, e.g. ...\Echo VR Christmas -> ...\Echo VR Summer.
+                string? parent = Path.GetDirectoryName(folder.TrimEnd('\\'));
+                FolderBox.Text = parent != null
+                    ? Path.Combine(parent, Path.GetFileName(build.ExpandedDefaultInstallFolder.TrimEnd('\\')))
+                    : build.ExpandedDefaultInstallFolder; // refreshes the setup state
+            }
             else
                 RefreshSetupState();
             // A folder holding the other build switches back to it, so explain why.

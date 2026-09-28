@@ -19,6 +19,20 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- WebView2 (the Edge runtime in Windows 10/11) loads Proton Drive's page, which decrypts shared files. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2592.51" />
+  </ItemGroup>
+
+  <!-- The WebView2 DLLs go inside the exe (loaded in App.xaml.cs / ProtonDownload.cs), so it's still a single file. -->
+  <PropertyGroup>
+    <WebView2PackageFolder>$(NuGetPackageRoot)microsoft.web.webview2\1.0.2592.51\</WebView2PackageFolder>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(WebView2PackageFolder)lib\net462\Microsoft.Web.WebView2.Core.dll" LogicalName="webview2.Microsoft.Web.WebView2.Core.dll" Visible="false" />
+    <EmbeddedResource Include="$(WebView2PackageFolder)lib\net462\Microsoft.Web.WebView2.Wpf.dll" LogicalName="webview2.Microsoft.Web.WebView2.Wpf.dll" Visible="false" />
+    <EmbeddedResource Include="$(WebView2PackageFolder)runtimes\win-x64\native\WebView2Loader.dll" LogicalName="webview2.win-x64.WebView2Loader.dll" Visible="false" />
+    <EmbeddedResource Include="$(WebView2PackageFolder)runtimes\win-x86\native\WebView2Loader.dll" LogicalName="webview2.win-x86.WebView2Loader.dll" Visible="false" />
+    <EmbeddedResource Include="$(WebView2PackageFolder)runtimes\win-arm64\native\WebView2Loader.dll" LogicalName="webview2.win-arm64.WebView2Loader.dll" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

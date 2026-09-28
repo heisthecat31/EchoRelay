@@ -53,6 +53,11 @@ namespace SummerInstaller
             _settings = settings;
         }
 
+        /// <summary>
+        /// The window Proton Drive downloads belong to (their page runs in a window of its own, normally off screen).
+        /// </summary>
+        public System.Windows.Window? Owner { get; set; }
+
         public static bool IsInstalled(string folder) => GameExecutables.Any(exe => File.Exists(Path.Combine(folder, exe)));
 
         /// <summary>
@@ -339,26 +344,81 @@ namespace SummerInstaller
             // The main link, then any mirrors. All serve the same archive, so a partial download resumes on the next one
             // (the checksum is verified afterwards either way).
             string[] sources = new[] { build.DownloadUrl }.Concat(build.DownloadMirrors).Select(u => u.Trim()).Where(u => u.Length > 0).Distinct().ToArray();
+            // Proton Drive links download through their web page (see ProtonDownload), which can't resume: resuming a partial
+            // download (from another link) tries the other links first, and without WebView2 Proton links are skipped.
+            bool resuming = File.Exists(partial) && new FileInfo(partial).Length > 0;
+            bool proton = Owner != null && sources.Any(ProtonDownload.IsProtonLink) && ProtonDownload.IsAvailable();
+            sources = sources.Where(u => proton || !ProtonDownload.IsProtonLink(u))
+                .OrderBy(u => resuming && ProtonDownload.IsProtonLink(u) ? 1 : 0).ToArray();
+            if (sources.Length == 0)
+                throw new InvalidOperationException("The game is only on Proton Drive, which needs Microsoft Edge WebView2 (part of Windows 10/11). Install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and try again.");
+            // Every link's failure is kept for the final message (the last one alone hid why the others failed), and the
+            // Proton Drive page's steps go to %LOCALAPPDATA%\EchoClassicLobbies\download.log.
+            System.Collections.Generic.List<string> failures = new System.Collections.Generic.List<string>();
+            string logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EchoClassicLobbies", "download.log");
+            void Log(string message)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                    File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}" + Environment.NewLine);
+                }
+                catch { }
+            }
+            Log($"{build.Name}: downloading from {sources.Length} link(s){(resuming ? ", resuming a partial download" : "")}");
             for (int i = 0; ; i++)
             {
                 try
                 {
-                    await DownloadFromAsync(build, ToDirectUrl(sources[i]), partial, progress, cancel);
+                    if (ProtonDownload.IsProtonLink(sources[i]))
+                    {
+                        try
+                        {
+                            await ProtonDownload.DownloadAsync(sources[i], partial, build.DownloadSizeBytes, Owner!, progress, cancel, message => Log("Proton Drive: " + message));
+                        }
+                        catch (ProtonDownloadException ex)
+                        {
+                            throw new DownloadSourceException(ex.Message, ex);
+                        }
+                        catch (Exception ex) when (!(ex is OperationCanceledException))
+                        {
+                            throw new DownloadSourceException("Proton Drive: " + ex.Message, ex);
+                        }
+                    }
+                    else
+                        await DownloadFromAsync(build, ToDirectUrl(sources[i]), partial, progress, cancel);
                     return;
                 }
-                catch (DownloadSourceException) when (i + 1 < sources.Length)
+                catch (DownloadSourceException ex) when (i + 1 < sources.Length)
                 {
                     // Try the next mirror.
+                    failures.Add($"{DescribeSource(sources[i])}: {ex.Message}");
+                    Log($"{DescribeSource(sources[i])} failed: {ex.Message}");
                 }
                 catch (DownloadSourceException ex) when (sources.Length > 1)
                 {
-                    throw new InvalidOperationException($"None of the {sources.Length} download links worked. {ex.Message}", ex);
+                    failures.Add($"{DescribeSource(sources[i])}: {ex.Message}");
+                    Log($"{DescribeSource(sources[i])} failed: {ex.Message}");
+                    throw new InvalidOperationException($"None of the {sources.Length} download links worked." + Environment.NewLine + string.Join(Environment.NewLine, failures), ex);
                 }
                 catch (DownloadSourceException ex)
                 {
+                    Log($"{DescribeSource(sources[i])} failed: {ex.Message}");
                     throw new InvalidOperationException(ex.Message, ex);
                 }
             }
+        }
+
+        /// <summary>
+        /// Names a download link's host for messages ("Proton Drive", "Google Drive", ...).
+        /// </summary>
+        private static string DescribeSource(string url)
+        {
+            if (ProtonDownload.IsProtonLink(url))
+                return "Proton Drive";
+            if (url.Contains("drive.google.com") || url.Contains("drive.usercontent.google.com"))
+                return "Google Drive";
+            return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ? uri.Host : "Download link";
         }
 
         private async Task DownloadFromAsync(GameBuild build, string url, string partial, IProgress<InstallProgress> progress, CancellationToken cancel)
@@ -461,7 +521,7 @@ namespace SummerInstaller
             return absolute + (absolute.Query.Length > 0 ? "&" : "?") + string.Join("&", inputs);
         }
 
-        private static string DescribeDownload(long done, long total, double speed)
+        public static string DescribeDownload(long done, long total, double speed)
         {
             StringBuilder text = new StringBuilder();
             text.Append(FormatBytes(done));
@@ -496,7 +556,9 @@ namespace SummerInstaller
             }
             sha.TransformFinalBlock(buffer, 0, 0);
             string actual = BitConverter.ToString(sha.Hash).Replace("-", "");
-            if (!actual.Equals(build.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            // Links may serve different releases of the download (e.g. an older upload on a mirror); any listed checksum passes.
+            string[] accepted = build.Sha256.Split(new[] { ' ', ',', '|', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            if (!accepted.Any(expected => actual.Equals(expected.Trim(), StringComparison.OrdinalIgnoreCase)))
             {
                 File.Delete(archive);
                 throw new InvalidDataException("The download is corrupted (checksum mismatch). Press Install to download it again.");
