@@ -208,7 +208,7 @@ namespace SummerPatches
 			},
 			0x141156AD0,                  // "https://api.readyatdawn.com"
 			{ 0x1408FFA6A, 0x1408FFB4B }, // lea rdx, [host] for status/services and status/news
-			FALSE,
+			TRUE,  // parties and friends through EchoRelay, as on halloween
 			FALSE,
 			FALSE,
 			0x10B6B8,                     // no Revive: the player's own id (from their display name)
