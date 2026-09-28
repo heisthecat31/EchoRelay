@@ -24,15 +24,9 @@ namespace SummerInstaller
         private GameBuild _build;
 
         /// <summary>
-        /// A publisher lock the player picked in place of the build's own, or null to follow the game version.
+        /// The publisher lock written to the config: always the selected game version's own.
         /// </summary>
-        private string? _publisherLockOverride;
-        private bool _showingPublisherLock;
-
-        /// <summary>
-        /// The publisher lock written to the config: the player's choice, or the build's own.
-        /// </summary>
-        private string PublisherLock => _publisherLockOverride ?? _build.PublisherLock;
+        private string PublisherLock => _build.PublisherLock;
         private double _fraction;
         private bool _installing;
 
@@ -136,31 +130,6 @@ namespace SummerInstaller
             };
             if (option.IsChecked != true)
                 option.IsChecked = true;
-            // A new game version brings its own publisher lock.
-            _publisherLockOverride = null;
-            ShowPublisherLock();
-        }
-
-        /// <summary>
-        /// Shows the publisher lock in use on the lock switch.
-        /// </summary>
-        private void ShowPublisherLock()
-        {
-            _showingPublisherLock = true;
-            foreach (RadioButton option in new[] { SummerLockOption, HalloweenLockOption, WinterLockOption, ChristmasLockOption })
-                option.IsChecked = (string)option.Tag == PublisherLock;
-            _showingPublisherLock = false;
-            PublisherLockText.Text = _publisherLockOverride == null
-                ? "Tells the server which game version you play. Follows the game version."
-                : $"Tells the server which game version you play. Set to {PublisherLock} instead of the {_build.ShortName} default ({_build.PublisherLock}).";
-        }
-
-        private void PublisherLockOption_Checked(object sender, RoutedEventArgs e)
-        {
-            if (_showingPublisherLock || sender is not RadioButton { Tag: string publisherLock })
-                return;
-            _publisherLockOverride = publisherLock == _build.PublisherLock ? null : publisherLock;
-            ShowPublisherLock();
         }
 
         private void BuildOption_Checked(object sender, RoutedEventArgs e)
@@ -197,8 +166,8 @@ namespace SummerInstaller
         #endregion
 
         /// <summary>
-        /// Shows who's online on the server the config points at, by game version (names only; the server shares no ids).
-        /// Hidden if the server can't say (offline, or an older EchoRelay).
+        /// Shows how many players are online on each game version (on the version buttons), from the server the config points
+        /// at. Nothing is shown if the server can't say (offline, or an older EchoRelay).
         /// </summary>
         private async Task RefreshOnlineAsync()
         {
@@ -206,27 +175,30 @@ namespace SummerInstaller
             var players = await GameInstaller.GetOnlinePlayersAsync(config);
             if (config != _config)
                 return;
-            if (players == null)
+            foreach (RadioButton option in new[] { SummerBuildOption, HalloweenBuildOption, WinterBuildOption, ChristmasBuildOption })
             {
-                OnlineText.Visibility = Visibility.Collapsed;
-                return;
-            }
-            OnlineText.Visibility = Visibility.Visible;
-            if (players.Count == 0)
-            {
-                OnlineText.Text = "Nobody is online right now.";
-                return;
-            }
-            // This version's players first, then the other versions by size.
-            var groups = players.GroupBy(p => p.version)
-                .OrderByDescending(g => g.Key == _build.ShortName).ThenByDescending(g => g.Count())
-                .Select(g =>
+                if (option.Tag is not string id || _settings.FindBuild(id) is not GameBuild build)
+                    continue;
+                int online = players?.Count(p => p.version == build.ShortName) ?? 0;
+                if (online == 0)
                 {
-                    var names = g.Select(p => p.name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
-                    string list = string.Join(", ", names.Take(8)) + (names.Count > 8 ? $" +{names.Count - 8} more" : "");
-                    return $"{(string.IsNullOrEmpty(g.Key) ? "Other" : g.Key)} ({names.Count}): {list}";
+                    option.Content = build.ShortName;
+                    continue;
+                }
+                // The version, with a small "N online" line under it.
+                StackPanel content = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+                content.Children.Add(new TextBlock { Text = build.ShortName, HorizontalAlignment = HorizontalAlignment.Center });
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"{online} online",
+                    FontSize = 11,
+                    FontWeight = FontWeights.Normal,
+                    Opacity = 0.6,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 1, 0, 0),
                 });
-            OnlineText.Text = $"{players.Count} online  ·  " + string.Join("  ·  ", groups);
+                option.Content = content;
+            }
         }
 
         private void RefreshSetupState()
@@ -343,18 +315,6 @@ namespace SummerInstaller
         {
             if (!ValidateAccount())
                 return;
-            // Another version's publisher lock makes the game ask the server for game servers of a version nobody hosts, and it
-            // just keeps finding. Easy to pick by mistake (the lock switch sits under the game version), so ask.
-            if (_publisherLockOverride != null && MessageBox.Show(this,
-                    $"The publisher lock is set to {PublisherLock}, not the {_build.ShortName} one ({_build.PublisherLock}).\n\n" +
-                    $"With it the server won't find {_build.ShortName} game servers for you, and the game stays on finding. Continue anyway?\n\n" +
-                    $"Choose No to use the {_build.ShortName} publisher lock.",
-                    Title, MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            {
-                _publisherLockOverride = null;
-                ShowPublisherLock();
-                return;
-            }
             if (GameInstaller.IsInstalled(InstallFolder))
             {
                 // Keep the config current (a changed name, password or server) before playing.

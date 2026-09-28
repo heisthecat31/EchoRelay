@@ -1,12 +1,12 @@
 <Window x:Class="SummerInstaller.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Echo VR Classic Lobbies" Width="600" Height="1000" MinWidth="560" MinHeight="940"
-        WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanMinimize"
+        Title="Echo VR Classic Lobbies" Width="600" Height="920" MinWidth="520" MinHeight="620"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
         AllowsTransparency="True" Background="Transparent" Icon="Resources/icon.ico"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="40" ResizeBorderThickness="0" CornerRadius="0" GlassFrameThickness="0"/>
+        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" CornerRadius="0" GlassFrameThickness="0"/>
     </WindowChrome.WindowChrome>
 
     <Border CornerRadius="18" BorderBrush="#26FFFFFF" BorderThickness="1" ClipToBounds="True">
@@ -93,11 +93,13 @@
                     <!-- Setup view -->
                     <Grid x:Name="SetupView">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <Border Grid.Row="0" CornerRadius="16" Background="{StaticResource Card}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Padding="22,20">
+                        <!-- The settings scroll when the window is shorter than them. -->
+                        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <Border CornerRadius="16" Background="{StaticResource Card}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" Padding="22,20">
                             <StackPanel>
                                 <!-- Build -->
                                 <TextBlock Text="Game version" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
@@ -169,8 +171,6 @@
                                             </Border>
                                             <TextBlock x:Name="ConfigServerText" Margin="10,0,0,0" FontSize="13.5" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                        <TextBlock x:Name="OnlineText" Margin="0,6,0,0" FontSize="12.5" Foreground="{StaticResource TextFaint}" TextWrapping="Wrap"
-                                                   Visibility="Collapsed" AutomationProperties.Name="Players online now"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Height="40" Padding="16,0" Click="ChangeConfig_Click" AutomationProperties.Name="Change server config">
                                         <StackPanel Orientation="Horizontal">
@@ -209,32 +209,10 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Publisher lock -->
-                                <Grid Margin="0,18,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                                        <TextBlock Text="Publisher lock" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>
-                                        <TextBlock x:Name="PublisherLockText" Margin="0,4,0,0" FontSize="12.5" Foreground="{StaticResource TextFaint}" TextWrapping="Wrap"
-                                                   Text="Tells the server which game version you play. Follows the game version."/>
-                                    </StackPanel>
-                                    <UniformGrid Grid.Column="1" Columns="2" VerticalAlignment="Center">
-                                        <RadioButton x:Name="SummerLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13" Margin="0,0,4,4"
-                                                     Content="Summer" Tag="rad15_summer" Checked="PublisherLockOption_Checked" ToolTip="rad15_summer" AutomationProperties.Name="Summer publisher lock"/>
-                                        <RadioButton x:Name="HalloweenLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13" Margin="4,0,0,4"
-                                                     Content="Halloween" Tag="rad15_halloween" Checked="PublisherLockOption_Checked" ToolTip="rad15_halloween" AutomationProperties.Name="Halloween publisher lock"/>
-                                        <RadioButton x:Name="WinterLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13" Margin="0,4,4,0"
-                                                     Content="Xmas 2018" Tag="rad15_winter" Checked="PublisherLockOption_Checked" ToolTip="rad15_winter" AutomationProperties.Name="Christmas 2018 publisher lock"/>
-                                        <RadioButton x:Name="ChristmasLockOption" GroupName="PublisherLock" Style="{StaticResource BuildOption}" Height="36" Width="110" FontSize="13" Margin="4,4,0,0"
-                                                     Content="Xmas 2017" Tag="rad15_live" Checked="PublisherLockOption_Checked" ToolTip="rad15_live" AutomationProperties.Name="Christmas 2017 publisher lock"/>
-                                    </UniformGrid>
-                                </Grid>
-
                                 <CheckBox x:Name="ShortcutCheck" Content="Create a desktop shortcut" IsChecked="True" Margin="0,18,0,0"/>
                             </StackPanel>
                         </Border>
+                        </ScrollViewer>
 
                         <!-- Error / status banner -->
                         <Border x:Name="Banner" Grid.Row="1" VerticalAlignment="Top" Margin="0,14,0,0" CornerRadius="12" Padding="16,12"
