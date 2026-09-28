@@ -4,6 +4,7 @@
 #include "summersocial.h"
 #include "xmaspatches.h"
 #include "voiplog.h"
+#include "framelimit.h"
 #include <winternl.h>
 #include <dxgi.h>
 #include <cstdio>
@@ -771,6 +772,11 @@ namespace XmasPatches
 	}
 
 	/// <summary>
+	/// The frame timer's vtable, whose per-frame method servers are rate-limited through (see framelimit.h).
+	/// </summary>
+	static const DWORD FRAME_TIMER_VTABLE = 0xB83F70;
+
+	/// <summary>
 	/// Test only (ECHORELAY_TEST_NO_DISPLAY=1): no adapter has a display, as on a server whose RDP session is disconnected.
 	/// </summary>
 	static HRESULT STDMETHODCALLTYPE EnumOutputsNone(IDXGIAdapter*, UINT, IDXGIOutput** output)
@@ -989,6 +995,7 @@ namespace XmasPatches
 			ApplyPatch(exe, SERVER_BASIC_RENDER_ADAPTER);
 			HookCreateDevice(exe);
 			PatchNoDisplay(exe);
+			FrameLimit::Install((VOID**)(exe + FRAME_TIMER_VTABLE), Log);
 			AddVectoredExceptionHandler(1, LogCrash);
 			CHAR test[8] = {};
 			if (GetEnvironmentVariableA("ECHORELAY_TEST_NO_DISPLAY", test, sizeof(test)) > 0 && test[0] == '1')

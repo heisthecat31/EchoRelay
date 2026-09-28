@@ -2,6 +2,7 @@
 #include "summersocial.h"
 #include "xmaspatches.h"
 #include "voiplog.h"
+#include "framelimit.h"
 #include <winternl.h>
 #include <cstdio>
 #include <cstdarg>
@@ -54,6 +55,7 @@ namespace SummerPatches
 		BOOL supportsHeadless;     // the game itself knows -headless (unknown flags make these builds exit; see headless)
 		BOOL serverSkipsOvr;       // -server implies -noovr. Not on builds whose renderer needs an OVR swap chain.
 		DWORD pnsOvrOrgScopedId;   // builds played without Revive: pnsovr.dll's org-scoped id, set to this install's own id (0: not used)
+		UINT64 frameTimerVtable;   // the frame timer's vtable, whose per-frame method servers are rate-limited through (see framelimit.h)
 	};
 
 	static const BuildProfile BUILDS[] = {
@@ -96,6 +98,7 @@ namespace SummerPatches
 			TRUE,
 			TRUE,
 			0x154AF8,                     // no Revive: the player's own id (from their display name)
+			0x141186958,                  // frame timer vtable
 		},
 		{
 			// The 2018 halloween lobby build. Sites were located against the summer build by their anchors (strings,
@@ -157,6 +160,7 @@ namespace SummerPatches
 			FALSE,
 			FALSE,
 			0xF7DC0,                      // no Revive: the player's own id (from their display name)
+			0x140FE47E0,                  // frame timer vtable
 		},
 		{
 			// The 2018 christmas ("winter") lobby build, two months after halloween and the same generation. Sites were
@@ -212,6 +216,7 @@ namespace SummerPatches
 			FALSE,
 			FALSE,
 			0x10B6B8,                     // no Revive: the player's own id (from their display name)
+			0x141038870,                  // frame timer vtable
 		},
 	};
 
@@ -607,6 +612,8 @@ namespace SummerPatches
 			ApplyGamePatch(g_build->headless, "run with no graphics or audio");
 		else if (isServer || headless)
 			ApplyGamePatch(g_build->noAudio, "disable audio");
+		if (isServer && g_build->frameTimerVtable != 0)
+			FrameLimit::Install((VOID**)((BYTE*)GetModuleHandleA(NULL) + (g_build->frameTimerVtable - 0x140000000)), Log);
 		RedirectStatusHost();
 
 		// Parties and friends through EchoRelay instead of Oculus (unless -oculussocial). Not needed on dedicated servers.
