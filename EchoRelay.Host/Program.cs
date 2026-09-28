@@ -37,6 +37,7 @@ Usage:
             Dictionary<string, string> executables = new Dictionary<string, string>();
             if (args.Length == 0)
             {
+                ColorConsole.Install();
                 // Guided setup (EchoRelay-Host.bat): asks for the installs and region, updates the DLLs, then hosts.
                 HostConfig config;
                 try

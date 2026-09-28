@@ -160,7 +160,8 @@ namespace EchoRelay.Host
             if (relay != null && (config.Relay == null || relay != config.Relay))
             {
                 config.Relay = relay;
-                config.ApiKey = apiKey;
+                if (!string.IsNullOrEmpty(apiKey))
+                    config.ApiKey = apiKey;
             }
             if (config.Relay == null)
             {
@@ -168,9 +169,8 @@ namespace EchoRelay.Host
                 config.Relay = AskRequired("EchoRelay server address (e.g. 203.0.113.5:6800)", null);
                 if (!config.Relay.StartsWith("ws://") && !config.Relay.StartsWith("wss://"))
                     config.Relay = "ws://" + config.Relay;
-                config.ApiKey = Ask("ServerDB API key (Enter if it has none)", config.ApiKey);
             }
-            Console.WriteLine($"EchoRelay server: {config.Relay}{(string.IsNullOrEmpty(config.ApiKey) ? "" : " (with its API key)")}");
+            Console.WriteLine($"EchoRelay server: {config.Relay}");
             Console.WriteLine();
 
             // 3. The latest DLLs.
@@ -190,6 +190,21 @@ namespace EchoRelay.Host
             if (config.Region.Length > 24)
                 config.Region = config.Region.Substring(0, 24);
 
+            // 5. The API key last: the EchoRelay server only lets hosts connect with it, if it uses one. Not asked when the
+            // installs' config (or this host's saved one) already has it.
+            Console.WriteLine();
+            if (!string.IsNullOrEmpty(apiKey))
+                Console.WriteLine("API key: found in the installs' _local\\config.json.");
+            else if (!string.IsNullOrEmpty(config.ApiKey))
+                Console.WriteLine($"API key: using the saved one (api_key in {Path.GetFileName(HostConfig.FilePath)}).");
+            else
+            {
+                Console.WriteLine("The EchoRelay server's ServerDB API key (its owner has it: EchoRelay settings, \"Use API key authentication\").");
+                string? key = Ask("API key (Enter if the server doesn't use one)", null);
+                if (!string.IsNullOrWhiteSpace(key))
+                    config.ApiKey = key.Trim();
+            }
+
             config.Save();
             Console.WriteLine();
             Console.WriteLine($"Saved to {HostConfig.FilePath}");
@@ -203,6 +218,7 @@ namespace EchoRelay.Host
                 Console.WriteLine($"  {GameServerBuilds.Names.GetValueOrDefault(install.Key, install.Key),-18} {install.Value}");
             Console.WriteLine($"  {"Server",-18} {config.Relay}");
             Console.WriteLine($"  {"Region",-18} {config.Region}");
+            Console.WriteLine($"  {"API key",-18} {(string.IsNullOrEmpty(config.ApiKey) ? "none" : "saved")}");
             Console.WriteLine($"  {"Name",-18} {config.Name}");
             Console.WriteLine($"  {"Tick rate",-18} {(config.TickRate == 0 ? "uncapped" : config.TickRate + " frames a second")}");
             Console.WriteLine($"  {"Per player",-18} {config.PerPlayer} per game version");
@@ -385,6 +401,7 @@ namespace EchoRelay.Host
         {
             Console.Write(string.IsNullOrEmpty(current) ? $"{question}: " : $"{question} [{current}]: ");
             string? answer = Console.ReadLine();
+            ColorConsole.LineEnded();
             if (answer == null)
                 throw new InvalidOperationException("No input (run it in a console window).");
             answer = answer.Trim().Trim('\uFEFF').Trim(); // a pasted or piped byte order mark
