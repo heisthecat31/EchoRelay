@@ -184,9 +184,9 @@ namespace SummerInstaller
                 PrimaryAction.Content = "Play";
                 SecondaryAction.Content = "Reinstall";
                 SecondaryAction.Visibility = Visibility.Visible;
-                RequestServerAction.Visibility = Visibility.Visible;
                 if (installedBuild != null)
                     InstallMemory.Remember(installedBuild, folder);
+                _ = RefreshRegionsAsync();
                 ShowBanner($"The {(installedBuild ?? _build).Name} is already installed here. Play it, or reinstall to download it again.", info: true);
             }
             else
@@ -194,6 +194,7 @@ namespace SummerInstaller
                 PrimaryAction.Content = partial ? "Resume download" : "Install";
                 SecondaryAction.Visibility = Visibility.Collapsed;
                 RequestServerAction.Visibility = Visibility.Collapsed;
+                RegionAction.Visibility = Visibility.Collapsed;
             }
             PrimaryAction.IsEnabled = validPath;
             UpdateSpaceText(folder);
@@ -651,18 +652,63 @@ namespace SummerInstaller
         private void Play_Click(object sender, RoutedEventArgs e) => LaunchGame();
 
         /// <summary>
-        /// Asks the server (the config's apiservice_host) to start a game server of this version for the player. The server
-        /// decides whether it does (and how many each player can have); its answer is shown in the banner.
+        /// The regions the server can start game servers of this version in, and the one picked.
+        /// </summary>
+        private System.Collections.Generic.List<string> _regions = new System.Collections.Generic.List<string>();
+        private int _regionIndex;
+
+        /// <summary>
+        /// Asks the server which regions can start game servers of this version, and shows the region picker and Request server
+        /// only if there are any.
+        /// </summary>
+        private async Task RefreshRegionsAsync()
+        {
+            GameBuild build = _build;
+            string config = _config;
+            System.Collections.Generic.List<string> regions = await GameInstaller.GetGameServerRegionsAsync(config, build);
+            if (build != _build || !GameInstaller.IsInstalled(InstallFolder))
+                return;
+            string? previous = _regions.Count > 0 ? _regions[_regionIndex] : null;
+            _regions = regions;
+            _regionIndex = Math.Max(0, previous != null ? regions.FindIndex(r => string.Equals(r, previous, StringComparison.OrdinalIgnoreCase)) : 0);
+            Visibility visibility = regions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            RequestServerAction.Visibility = visibility;
+            RegionAction.Visibility = visibility;
+            ShowRegion();
+        }
+
+        private void ShowRegion()
+        {
+            if (_regions.Count == 0)
+                return;
+            RegionAction.Content = "Region: " + _regions[_regionIndex];
+            RegionAction.ToolTip = _regions.Count > 1
+                ? $"Request a game server in {_regions[_regionIndex]}. Click for another region ({string.Join(", ", _regions)})."
+                : $"This server hosts {_build.ShortName} game servers in {_regions[0]}.";
+        }
+
+        private void Region_Click(object sender, RoutedEventArgs e)
+        {
+            if (_regions.Count == 0)
+                return;
+            _regionIndex = (_regionIndex + 1) % _regions.Count;
+            ShowRegion();
+        }
+
+        /// <summary>
+        /// Asks the server (the config's apiservice_host) to start a game server of this version for the player, in the picked
+        /// region. The server decides whether it does (and how many each player can have); its answer is shown in the banner.
         /// </summary>
         private async void RequestServer_Click(object sender, RoutedEventArgs e)
         {
             if (!ValidateAccount())
                 return;
             RequestServerAction.IsEnabled = false;
-            ShowBanner($"Asking {GameInstaller.DescribeServer(_config)} for a {_build.ShortName} game server…", info: true);
+            string? region = _regions.Count > 0 ? _regions[_regionIndex] : null;
+            ShowBanner($"Asking {GameInstaller.DescribeServer(_config)} for a {_build.ShortName} game server{(region != null ? " in " + region : "")}…", info: true);
             try
             {
-                var (ok, message) = await GameInstaller.RequestGameServerAsync(_config, _build, DisplayName, Password);
+                var (ok, message) = await GameInstaller.RequestGameServerAsync(_config, _build, region, DisplayName, Password);
                 ShowBanner(string.IsNullOrEmpty(message) ? (ok ? "The server is starting a game server." : "The server turned the request down.") : message, info: ok);
             }
             finally

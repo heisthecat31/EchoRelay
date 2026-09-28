@@ -277,6 +277,20 @@ namespace EchoRelay.Core.Server
                         continue;
                     }
 
+                    // Game server hosts (EchoRelay.Host) connect to /hosts, with the ServerDB API key if one is set.
+                    if (listenerContext.Request.Url?.LocalPath.ToLower().TrimEnd('/') == "/hosts")
+                    {
+                        string? key = listenerContext.Request.QueryString["api_key"];
+                        if (Settings.ServerDBApiKey != null && key != Settings.ServerDBApiKey)
+                        {
+                            await webSocketContext.WebSocket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Invalid API key", CancellationToken.None);
+                            continue;
+                        }
+                        string address = listenerContext.Request.RemoteEndPoint?.ToString() ?? "?";
+                        _ = Task.Run(() => GameServerHosts.HandleConnection(webSocketContext.WebSocket, address));
+                        continue;
+                    }
+
                     // Try to obtain a service for this request path. If we could not, return an error to the client.
                     if (listenerContext.Request.Url == null || !_serviceMap.TryGetValue(listenerContext.Request.Url.LocalPath.ToLower() ?? "", out var service))
                     {
@@ -316,17 +330,17 @@ namespace EchoRelay.Core.Server
         /// <param name="context">The HTTP request context.</param>
         /// <returns>True if the request was answered.</returns>
         /// <summary>
-        /// Decides a player's game server request (the installer's "Request game server"), if the host takes them: see
-        /// {api}/servers/request. Null (the default, e.g. the CLI) turns requests down.
+        /// The PCs that start game servers players request from the installer, by region: this PC (set by EchoRelay.App) and
+        /// EchoRelay.Host instances connected to {server}/hosts.
         /// </summary>
-        public Func<GameServerRequest, GameServerRequestResult>? GameServerRequestHandler { get; set; }
+        public GameServerHosts GameServerHosts { get; } = new GameServerHosts();
 
         /// <summary>
-        /// Handles POST {api}/servers/request: {"build", "displayname", "password"}. The player is identified like a lobby build
-        /// login (their display name's account, with its password), then the host's <see cref="GameServerRequestHandler"/> decides.
+        /// Handles POST {api}/servers/request: {"build", "region", "displayname", "password"}. The player is identified like a
+        /// lobby build login (their display name's account, with its password), then a game server host in the region decides.
         /// </summary>
         /// <returns>The reply: {"ok", "message"}.</returns>
-        private JObject HandleGameServerRequest(HttpListenerContext context)
+        private async Task<JObject> HandleGameServerRequest(HttpListenerContext context)
         {
             static JObject Reply(bool ok, string message) => new JObject { ["ok"] = ok, ["message"] = message };
             JObject body;
@@ -342,6 +356,7 @@ namespace EchoRelay.Core.Server
             string build = body.Value<string>("build")?.Trim().ToLowerInvariant() ?? "";
             string displayName = body.Value<string>("displayname")?.Trim() ?? "";
             string password = body.Value<string>("password") ?? "";
+            string? region = body.Value<string>("region");
             if (!GameServerBuilds.Names.ContainsKey(build))
                 return Reply(false, "Unknown game version.");
             if (displayName.Length == 0)
@@ -357,12 +372,11 @@ namespace EchoRelay.Core.Server
             if (account.Banned)
                 return Reply(false, "This account is banned.");
 
-            Func<GameServerRequest, GameServerRequestResult>? handler = GameServerRequestHandler;
-            if (handler == null)
+            if (GameServerHosts.GetRegions(null).Count == 0)
                 return Reply(false, "This server doesn't take game server requests.");
             try
             {
-                GameServerRequestResult result = handler(new GameServerRequest(build, accountId, displayName, context.Request.RemoteEndPoint?.Address));
+                GameServerRequestResult result = await GameServerHosts.Request(new GameServerRequest(build, accountId, displayName, context.Request.RemoteEndPoint?.Address), region);
                 return Reply(result.Accepted, result.Message);
             }
             catch (Exception ex)
@@ -381,11 +395,29 @@ namespace EchoRelay.Core.Server
                 response = new JObject { ["available"] = true, ["message"] = Settings.SummerServiceStatus };
             else if (path == api + "/status/news")
                 response = new JObject { ["message"] = Settings.SummerNews };
+            else if (path == api + "/servers/regions")
+            {
+                // The regions that can start a game server of a build (?build=summer), for the installer's region picker.
+                string? build = context.Request.QueryString["build"]?.Trim().ToLowerInvariant();
+                response = new JObject { ["regions"] = new JArray(GameServerHosts.GetRegions(string.IsNullOrEmpty(build) ? null : build)) };
+            }
             else if (path == api + "/servers/request")
-                response = HandleGameServerRequest(context);
+            {
+                // Answered once a game server host has decided, without holding up the accept loop.
+                _ = Task.Run(async () => WriteApiResponse(context, await HandleGameServerRequest(context)));
+                return true;
+            }
             if (response == null)
                 return false;
+            WriteApiResponse(context, response);
+            return true;
+        }
 
+        /// <summary>
+        /// Writes an API request's JSON response and closes it.
+        /// </summary>
+        private static void WriteApiResponse(HttpListenerContext context, JObject response)
+        {
             // Read the request details up front: closing the response disposes the context, so reading them afterwards
             // throws (which used to make every successful response log as "failed: Cannot access a disposed object").
             string request = $"HTTP {context.Request.HttpMethod} {context.Request.Url} from {context.Request.RemoteEndPoint}";
@@ -404,7 +436,6 @@ namespace EchoRelay.Core.Server
             {
                 TrafficCapture.Log($"{request} failed: {e.Message}");
             }
-            return true;
         }
 
         /// <summary>

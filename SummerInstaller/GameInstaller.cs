@@ -120,13 +120,13 @@ namespace SummerInstaller
         /// The server decides; its answer is shown to the player.
         /// </summary>
         /// <returns>Whether a game server is starting, and the server's message.</returns>
-        public static async Task<(bool ok, string message)> RequestGameServerAsync(string config, GameBuild build, string displayName, string password)
+        public static async Task<(bool ok, string message)> RequestGameServerAsync(string config, GameBuild build, string? region, string displayName, string password)
         {
             string? api = GetConfigValue(config, "apiservice_host");
             if (string.IsNullOrWhiteSpace(api))
                 return (false, "The server config has no \"apiservice_host\", so there's nowhere to send the request.");
             string url = api!.TrimEnd('/') + "/servers/request";
-            string body = "{\"build\":\"" + build.Id + "\",\"displayname\":\"" + JsonEscape(displayName.Trim()) + "\",\"password\":\"" + JsonEscape(password) + "\"}";
+            string body = "{\"build\":\"" + build.Id + "\",\"region\":\"" + JsonEscape(region ?? "") + "\",\"displayname\":\"" + JsonEscape(displayName.Trim()) + "\",\"password\":\"" + JsonEscape(password) + "\"}";
             try
             {
                 using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -142,6 +142,34 @@ namespace SummerInstaller
             {
                 return (false, "Couldn't reach the server: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// The regions the server a config points at can start game servers of a version in ({api}/servers/regions), or an
+        /// empty list if it can't (or is an older EchoRelay).
+        /// </summary>
+        public static async Task<System.Collections.Generic.List<string>> GetGameServerRegionsAsync(string config, GameBuild build)
+        {
+            System.Collections.Generic.List<string> regions = new System.Collections.Generic.List<string>();
+            string? api = GetConfigValue(config, "apiservice_host");
+            if (string.IsNullOrWhiteSpace(api))
+                return regions;
+            try
+            {
+                using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                using HttpResponseMessage response = await Http.GetAsync(api!.TrimEnd('/') + "/servers/regions?build=" + build.Id, timeout.Token);
+                if (!response.IsSuccessStatusCode)
+                    return regions;
+                string json = await response.Content.ReadAsStringAsync();
+                Match list = Regex.Match(json, "\"regions\"\\s*:\\s*\\[(.*?)\\]", RegexOptions.Singleline);
+                if (list.Success)
+                    foreach (Match item in Regex.Matches(list.Groups[1].Value, "\"((?:[^\"\\\\]|\\\\.)*)\""))
+                        regions.Add(Regex.Unescape(item.Groups[1].Value));
+            }
+            catch
+            {
+            }
+            return regions;
         }
 
         private static string JsonEscape(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");

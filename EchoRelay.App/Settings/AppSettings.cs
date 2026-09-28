@@ -41,6 +41,12 @@ namespace EchoRelay.App.Settings
         public int GameServerRequestsMax { get; set; } = 6;
 
         /// <summary>
+        /// The region this PC hosts requested game servers in (e.g. "EU", "US"), which players pick in the installer.
+        /// </summary>
+        [JsonProperty("game_server_requests_region")]
+        public string GameServerRequestsRegion { get; set; } = "Main";
+
+        /// <summary>
         /// The directory containing the game executable, derived from <see cref="GameExecutableFilePath"/>.
         /// </summary>
         [JsonIgnore]

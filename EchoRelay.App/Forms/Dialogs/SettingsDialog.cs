@@ -50,6 +50,7 @@ namespace EchoRelay.App.Forms.Dialogs
         private CheckBox chkGameServerRequests = null!;
         private NumericUpDown numRequestsPerPlayer = null!;
         private NumericUpDown numRequestsMax = null!;
+        private TextBox txtRequestsRegion = null!;
 
         /// <summary>
         /// Adds a "Game Server Requests" box above the Save button: whether players may request game servers from the installer,
@@ -76,10 +77,13 @@ namespace EchoRelay.App.Forms.Dialogs
             numRequestsPerPlayer = new NumericUpDown { Minimum = 1, Maximum = 10, Value = Math.Clamp(Settings.GameServerRequestsPerPlayer, 1, 10), Location = new Point(106, 48), Size = new Size(60, 23) };
             Label lblMax = new Label { Text = "At once, in total:", AutoSize = true, Location = new Point(190, 51) };
             numRequestsMax = new NumericUpDown { Minimum = 1, Maximum = 50, Value = Math.Clamp(Settings.GameServerRequestsMax, 1, 50), Location = new Point(300, 48), Size = new Size(60, 23) };
-            void UpdateEnabled() => numRequestsPerPlayer.Enabled = numRequestsMax.Enabled = chkGameServerRequests.Checked;
+            Label lblRegion = new Label { Text = "Region:", AutoSize = true, Location = new Point(378, 51) };
+            txtRequestsRegion = new TextBox { Text = Settings.GameServerRequestsRegion, Location = new Point(430, 48), Size = new Size(60, 23), MaxLength = 24 };
+            new ToolTip().SetToolTip(txtRequestsRegion, "The region players pick in the installer for this PC's game servers (e.g. EU, US).");
+            void UpdateEnabled() => numRequestsPerPlayer.Enabled = numRequestsMax.Enabled = txtRequestsRegion.Enabled = chkGameServerRequests.Checked;
             chkGameServerRequests.CheckedChanged += (_, _) => UpdateEnabled();
             UpdateEnabled();
-            box.Controls.AddRange(new Control[] { chkGameServerRequests, lblPerPlayer, numRequestsPerPlayer, lblMax, numRequestsMax });
+            box.Controls.AddRange(new Control[] { chkGameServerRequests, lblPerPlayer, numRequestsPerPlayer, lblMax, numRequestsMax, lblRegion, txtRequestsRegion });
             Controls.Add(box);
             btnSaveSettings.Top += boxHeight + 6;
             Height += boxHeight + 6;
@@ -277,6 +281,7 @@ namespace EchoRelay.App.Forms.Dialogs
             Settings.GameServerRequestsEnabled = chkGameServerRequests.Checked;
             Settings.GameServerRequestsPerPlayer = (int)numRequestsPerPlayer.Value;
             Settings.GameServerRequestsMax = (int)numRequestsMax.Value;
+            Settings.GameServerRequestsRegion = string.IsNullOrWhiteSpace(txtRequestsRegion.Text) ? "Main" : txtRequestsRegion.Text.Trim();
             Settings.FilesystemDatabaseDirectory = txtDbFolder.Text;
             Settings.MongoDBConnectionString = null; // TODO: currently unsupported
             Settings.StartServerOnStartup = chkStartServerOnStartup.Checked;

@@ -215,8 +215,10 @@
                         </Border>
 
                         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="RegionAction" Style="{StaticResource SecondaryButton}" Content="Region" Margin="0,0,8,0" Click="Region_Click" Visibility="Collapsed"
+                                    ToolTip="The region to request a game server in. Click to change."/>
                             <Button x:Name="RequestServerAction" Style="{StaticResource SecondaryButton}" Content="Request server" Margin="0,0,12,0" Click="RequestServer_Click" Visibility="Collapsed"
-                                    ToolTip="Ask the server to start a game server of this version for you (if it allows it)"/>
+                                    ToolTip="Ask the server to start a game server of this version for you, in the region shown (if it allows it)"/>
                             <Button x:Name="SecondaryAction" Style="{StaticResource SecondaryButton}" Content="Reinstall" Margin="0,0,12,0" Click="SecondaryAction_Click" Visibility="Collapsed"/>
                             <Button x:Name="PrimaryAction" Style="{StaticResource PrimaryButton}" Content="Install" MinWidth="170" Click="PrimaryAction_Click"/>
                         </StackPanel>

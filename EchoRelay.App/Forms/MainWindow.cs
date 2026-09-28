@@ -156,9 +156,10 @@ namespace EchoRelay
             Server.ServerDBService.Registry.OnGameServerUnregistered += Registry_OnGameServerUnregistered;
             Server.ServerDBService.OnGameServerRegistrationFailure += ServerDBService_OnGameServerRegistrationFailure; ;
 
-            // Game servers players request from the installer (allowed in Settings).
-            EchoRelay.App.Forms.GameServerRequestHost requestHost = new EchoRelay.App.Forms.GameServerRequestHost(Settings, text => this.InvokeUIThread(() => AppendLogText(text)));
-            Server.GameServerRequestHandler = requestHost.Handle;
+            // Game servers players request from the installer: this PC hosts them if allowed in Settings, and other PCs can
+            // connect as hosts (EchoRelay.Host). Hosts and requests are logged.
+            Server.GameServerHosts.OnLog += text => this.InvokeUIThread(() => AppendLogText(text));
+            EchoRelay.App.Forms.GameServerRequestHost.Apply(Server, Settings);
         }
         #endregion
 
