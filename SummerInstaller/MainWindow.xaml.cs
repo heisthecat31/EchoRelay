@@ -295,6 +295,18 @@ namespace SummerInstaller
         {
             if (!ValidateAccount())
                 return;
+            // Another version's publisher lock makes the game ask the server for game servers of a version nobody hosts, and it
+            // just keeps finding. Easy to pick by mistake (the lock switch sits under the game version), so ask.
+            if (_publisherLockOverride != null && MessageBox.Show(this,
+                    $"The publisher lock is set to {PublisherLock}, not the {_build.ShortName} one ({_build.PublisherLock}).\n\n" +
+                    $"With it the server won't find {_build.ShortName} game servers for you, and the game stays on finding. Continue anyway?\n\n" +
+                    $"Choose No to use the {_build.ShortName} publisher lock.",
+                    Title, MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                _publisherLockOverride = null;
+                ShowPublisherLock();
+                return;
+            }
             if (GameInstaller.IsInstalled(InstallFolder))
             {
                 // Keep the config current (a changed name, password or server) before playing.

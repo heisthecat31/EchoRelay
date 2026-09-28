@@ -32,6 +32,12 @@ namespace EchoRelay.Core.Server.Services.Matching
         public Guid? MatchedSessionId { get; set; }
 
         /// <summary>
+        /// Whether the request came in a christmas 2017 build message. Its failure message must be the one that build reads
+        /// (SNSLobbySessionFailurev2) even if its version lock is unknown (e.g. a wrong publisher_lock in its config).
+        /// </summary>
+        public bool IsChristmasClient { get; set; }
+
+        /// <summary>
         /// Indicates whether this matching session belongs to a summer build (rad15_summer) client, which can only be
         /// matched to summer game servers and only understands older message versions.
         /// </summary>

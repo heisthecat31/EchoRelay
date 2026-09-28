@@ -162,6 +162,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             long? gameType = request.GameTypeSymbol != -1 ? request.GameTypeSymbol : request.SessionSettings.GameType;
             MatchingSession matchingSession = MatchingSession.FromFindSessionCriteria(request.UserId, request.Channel, gameType, TeamIndex.Any, request.SessionSettings);
             matchingSession.IsSummer = true;
+            matchingSession.IsChristmasClient = true;
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
@@ -228,6 +229,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             LobbyType lobbyType = SummerBuild.IsPrivateGameType(gameType) ? LobbyType.Private : request.LobbyType;
             MatchingSession matchingSession = MatchingSession.FromCreateSessionCriteria(userId, null, gameType, level, lobbyType, TeamIndex.Any, request.SessionSettings);
             matchingSession.IsSummer = true;
+            matchingSession.IsChristmasClient = true;
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, userId, summer: true);
@@ -245,6 +247,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             _summerPeers[sender] = true;
             MatchingSession matchingSession = MatchingSession.FromJoinSpecificSessionCriteria(request.UserId, request.LobbyId, TeamIndex.Any, new SessionSettings());
             matchingSession.IsSummer = true;
+            matchingSession.IsChristmasClient = true;
             matchingSession.VersionLock = request.VersionLock;
             sender.SetSessionData(matchingSession);
             await ProcessMatchingSession(sender, null, request.UserId, summer: true);
@@ -566,7 +569,7 @@ namespace EchoRelay.Core.Server.Services.Matching
             Guid channel = matchingSession.Channel ?? matchingSession.LobbyId ?? new Guid();
 
             // Halloween and christmas clients have no v3 (their newest is v2).
-            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock || SummerBuild.IsChristmasVersionLock(matchingSession.VersionLock))
+            if (matchingSession.VersionLock == SummerBuild.HalloweenVersionLock || SummerBuild.IsChristmasVersionLock(matchingSession.VersionLock) || matchingSession.IsChristmasClient)
             {
                 await peer.Send(new LobbySessionFailurev2(channel, errorCode));
                 return;
