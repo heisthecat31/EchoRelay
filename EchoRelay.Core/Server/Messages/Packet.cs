@@ -29,10 +29,17 @@ namespace EchoRelay.Core.Server.Messages
 
 
         /// <summary>
+        /// Whether this packet's messages were framed without <see cref="HEADER_ID"/> (just symbol, length and data), as the
+        /// halloween 2017 build (rad14, Echo Arena 1.76) frames them. Later builds put the header in front of every message.
+        /// </summary>
+        public bool Headerless { get; private set; }
+
+        /// <summary>
         /// Encodes a packet into bytes.
         /// </summary>
+        /// <param name="headerless">Frames the messages without <see cref="HEADER_ID"/>, for a peer that sends them that way.</param>
         /// <returns>Returns the encoded packet data.</returns>
-        public byte[] Encode()
+        public byte[] Encode(bool headerless = false)
         {
             // Create a new stream
             StreamIO io = new StreamIO(ByteOrder.LittleEndian);
@@ -41,7 +48,8 @@ namespace EchoRelay.Core.Server.Messages
             foreach (Message message in this)
             {
                 // Write the message out.
-                io.Write(HEADER_ID);
+                if (!headerless)
+                    io.Write(HEADER_ID);
                 io.Write(message.MessageTypeSymbol);
 
                 // Encode the message, write the length, then the encoded message data.
@@ -66,8 +74,9 @@ namespace EchoRelay.Core.Server.Messages
             // Create a stream out of the data, to read underlying messages.
             StreamIO io = new StreamIO(data, ByteOrder.LittleEndian);
 
-            // Create a packet to store our messages.
+            // Create a packet to store our messages. A packet that doesn't start with the header is headerless throughout.
             Packet packet = new Packet();
+            packet.Headerless = data.Length >= 8 && BitConverter.ToUInt64(data, 0) != HEADER_ID;
 
             // Read messages until we are at the end of our stream.
             try
@@ -75,7 +84,7 @@ namespace EchoRelay.Core.Server.Messages
                 while (io.Position != io.Length)
                 {
                     // Verify the header identifier
-                    if (io.ReadUInt64() != HEADER_ID)
+                    if (!packet.Headerless && io.ReadUInt64() != HEADER_ID)
                     {
                         throw new IOException("Invalid websocket packet header identifier");
                     }

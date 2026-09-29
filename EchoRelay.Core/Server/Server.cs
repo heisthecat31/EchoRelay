@@ -339,8 +339,10 @@ namespace EchoRelay.Core.Server
             string path = context.Request.Url?.AbsolutePath.TrimEnd('/').ToLowerInvariant() ?? "";
             string api = Settings.ApiServicePath.TrimEnd('/').ToLowerInvariant();
             JObject? response = null;
-            // The christmas 2017 build's dedicated servers check {api}/status/serverdb before logging in.
-            if (path == api + "/status/services" || path == api + "/status/serverdb")
+            // The christmas 2017 build's dedicated servers check {api}/status/serverdb before logging in; halloween 2017's
+            // append "prod/status/serverdb" to the API host as it is (e.g. /apiprod/status/serverdb).
+            if (path == api + "/status/services" || path == api + "/status/serverdb"
+                || (path.StartsWith(api) && path.EndsWith("/status/serverdb")))
                 response = new JObject { ["available"] = true, ["message"] = Settings.SummerServiceStatus };
             else if (path == api + "/status/news")
                 response = new JObject { ["message"] = Settings.SummerNews };

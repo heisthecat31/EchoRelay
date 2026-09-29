@@ -29,124 +29,160 @@ namespace XmasPatches
 		SIZE_T size;
 	};
 
-	// ----------------------------------------------------------------------------------------------------------------
-	// EchoArena.exe (image base 0x140000000; RVAs)
-	// ----------------------------------------------------------------------------------------------------------------
+	/// <summary>
+	/// A site we have not located on a build. Patches marked this way are skipped, with a log line.
+	/// </summary>
+	#define NO_PATCH { NULL, 0, { 0 }, { 0 }, 0 }
 
 	/// <summary>
-	/// -server: dedicated server mode. The -mpmnu branch of the command line parser sets bit 59 of the option flags ("boot
-	/// into multiplayer") and start-up flag 1 ("stop at the multiplayer menu"). Replacing 1 with 2 boots straight into
-	/// multiplayer (the start-up code starts it when bit 59 is set and flag 1 isn't) as a dedicated server (flag 2 makes
-	/// NetGame load pnsradgameserver). Unlike the lobby builds (6), flag 4 must stay clear: in this build it selects the
-	/// demo net service provider (pnsdemo.dll, not shipped) instead of pnsovr.
+	/// Everything that differs between the rad14 builds we support (EchoArena.exe and its pnsovr.dll). RVAs.
 	/// </summary>
-	static const BytePatch SERVER_FLAGS = {
-		"set the dedicated server start-up flags (or dword [rbx+4540h], 1 -> 6)", 0x9A667,
-		{ 0x83, 0x8B, 0x40, 0x45, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x40, 0x45, 0x00, 0x00, 0x06 }, 7 };
-
-	/// <summary>
-	/// -server: start-up flag 4 makes NetGame create the server lobby instead of the client lobby, but it also makes the game
-	/// load the pnsdemo platform provider (not shipped) instead of pnsovr. Servers use only the RAD provider (EchoRelay), like
-	/// the halloween build's: pnsovr needs the Oculus platform runtime, which a plain server machine doesn't have. The
-	/// dedicated branch's pnsdemo load becomes 'xor esi, esi; xor r15d, r15d; jmp' to the pnsrad load.
-	/// </summary>
-	static const BytePatch SERVER_RAD_ONLY = {
-		"create only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped, and no Oculus)", 0x97FBB,
-		{ 0x45, 0x33, 0xC0, 0x48, 0x8D, 0x15, 0x43, 0x44, 0xAC, 0x00 }, { 0x31, 0xF6, 0x45, 0x31, 0xFF, 0xE9, 0x31, 0x00, 0x00, 0x00 }, 10 };
-
-	/// <summary>
-	/// -server: NetGame takes the platform (r15) and social (rsi) providers besides the RAD one (r13); give it the RAD provider
-	/// for all three (mov r9, rsi; mov r8, r15 -> mov r9, r13; mov r8, r13). rsi is cleared right after, r15 isn't used again.
-	/// </summary>
-	static const BytePatch SERVER_NETGAME_RAD = {
-		"give the dedicated server's NetGame the RAD provider in place of the Oculus/demo ones (r8, r9 <- r13)", 0x98097,
-		{ 0x4C, 0x8B, 0xCE, 0x4D, 0x8B, 0xC7 }, { 0x4D, 0x8B, 0xCD, 0x4D, 0x8B, 0xC5 }, 6 };
-
-	/// <summary>
-	/// -server: never start an Oculus VR session (as -novr does): a server machine has no headset or Oculus runtime, and the
-	/// session failure (-3001) is fatal. Always take the branch that sets the -novr option flag.
-	/// </summary>
-	static const BytePatch SERVER_NO_VR = {
-		"skip Oculus/VR initialization, as -novr does (je -> nop)", 0x9A356, { 0x74, 0x11 }, { 0x90, 0x90 }, 2 };
-
-	/// <summary>
-	/// -server: the start-up code also sets start-up flag 1 when it picks multiplayer (Echo Arena rather than Lone Echo);
-	/// clear it here too, or the server stops at the multiplayer menu instead of starting multiplayer.
-	/// </summary>
-	static const BytePatch SERVER_NO_MENU = {
-		"don't stop the server at the multiplayer menu (or dword [rcx+4540h], 1 -> 0)", 0x9CA81,
-		{ 0x83, 0x89, 0x40, 0x45, 0x00, 0x00, 0x01 }, { 0x83, 0x89, 0x40, 0x45, 0x00, 0x00, 0x00 }, 7 };
-
-	/// <summary>
-	/// -server / -headless: disable audio, as -noaudio would (always take the branch that sets option flag 0x8000).
-	/// </summary>
-	static const BytePatch NO_AUDIO = {
-		"disable audio, as -noaudio would (je -> nop)", 0x2E8D12,
-		{ 0x74, 0x0B }, { 0x90, 0x90 }, 2 };
-
-	/// <summary>
-	/// -server: the r14netserver data package isn't shipped; servers load r14netclient (16 bytes before it) instead.
-	/// </summary>
-	static const BytePatch SERVER_PACKAGE = {
-		"load the client data package (r14netclient) in server mode, since r14netserver is not shipped", 0x9501C,
-		{ 0x48, 0x8D, 0x15, 0xCD, 0x71, 0xAC, 0x00 }, { 0x48, 0x8D, 0x15, 0xBD, 0x71, 0xAC, 0x00 }, 7 };
-
-	/// <summary>
-	/// -server: the renderer's adapter list skips the Microsoft Basic Render Driver (vendor 0x1414, device 0x8C), so on a
-	/// machine without a GPU it finds none ("No valid DXGI adapters found!"). Keep it: a device on it is WARP, Windows'
-	/// software renderer, which is plenty for a server that draws nothing. A machine with a GPU still lists that first.
-	/// </summary>
-	static const BytePatch SERVER_BASIC_RENDER_ADAPTER = {
-		"keep the Microsoft Basic Render Driver adapter, so a server without a GPU renders with WARP (je -> nop)", 0x10D107,
-		{ 0x74, 0x40 }, { 0x90, 0x90 }, 2 };
-
-	/// <summary>
-	/// The renderer's D3D11CreateDevice import thunk (jmp qword ptr [rip+x]); its only caller creates the game's device.
-	/// </summary>
-	static const DWORD D3D11_CREATE_DEVICE_THUNK = 0x8C6224;
-
-	// ----------------------------------------------------------------------------------------------------------------
-	// pnsovr.dll (the Oculus platform provider)
-	// ----------------------------------------------------------------------------------------------------------------
-	static const DWORD PNSOVR_TIMESTAMP = 0x5A394933;
-
-	/// <summary>
-	/// Without the Oculus store launch, the entitlement check fails and the provider (and the game) refuse to start. The
-	/// provider has a "skipentitlement" option read from packaged config; this makes it always take that branch.
-	/// </summary>
-	static const BytePatch PNSOVR_SKIP_ENTITLEMENT = {
-		"skip the Oculus entitlement check", 0x12F4E, { 0x75, 0x4F }, { 0xEB, 0x4F }, 2 };
-
-	/// <summary>
-	/// The provider's failure handlers for ovr_User_GetOrgScopedID reset the logged in user's org-scoped id to -1; the
-	/// Oculus request fails for launches outside the Oculus store, and must not clear the id we provide.
-	/// </summary>
-	static const BytePatch PNSOVR_KEEP_ORG_ID[] = {
-		{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails (login)", 0xB20C,
-			{ 0x48, 0xC7, 0x05, 0x21, 0xC7, 0x06, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
-			{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
-		{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails (refresh)", 0xC95C,
-			{ 0x48, 0xC7, 0x05, 0xD1, 0xAF, 0x06, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
-			{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
+	struct Rad14Build
+	{
+		const CHAR* name;
+		DWORD executableTimestamp;
+		DWORD pnsOvrTimestamp;
+		const WCHAR* serverFlag;          // the flag -server becomes (the build's own flag whose parser branch is patched)
+		BytePatch server[8];              // -server: dedicated server patches, in order
+		BytePatch noAudio;                // -server / -headless: disable audio, as -noaudio would
+		BytePatch basicRenderAdapter;     // -server: keep the Microsoft Basic Render Driver adapter (WARP without a GPU)
+		DWORD d3d11CreateDeviceThunk;     // the renderer's D3D11CreateDevice import thunk (jmp qword ptr [rip+x])
+		DWORD outputGetDesc;              // the renderer's "outputs[displayIndex]->GetDesc(&desc)" (mov rax, [rcx]; call [rax+38h])
+		DWORD frameTimerVtable;           // the frame timer's vtable, whose per-frame method servers are rate-limited through
+		DWORD apiHostString;              // the hardcoded API host
+		DWORD apiHostLeas[2];             // lea rdx, [apiHostString] (0: unused)
+		BytePatch pnsOvrSkipEntitlement;
+		BytePatch pnsOvrKeepOrgId[2];
+		BytePatch pnsOvrSkipUserProof[2];
+		DWORD pnsOvrOrgScopedId;          // pnsovr.dll's logged in user org-scoped id (0: kept per object; see the next)
+		DWORD pnsOvrOrgScopedIdRead;      // or where the login reads it: call [ovr_Message_GetOrgScopedID]; mov rcx, rax;
+		                                  // call [ovr_OrgScopedID_GetID] (15 bytes), which becomes mov rax, <our id>
 	};
 
-	/// <summary>
-	/// Logging in first asks Oculus for a user proof (a signed nonce), which fails outside the Oculus store; the provider then
-	/// reports a login failure without ever connecting. These take the success path, with an empty nonce.
-	/// </summary>
-	static const BytePatch PNSOVR_SKIP_USER_PROOF[] = {
-		{ "log in even though ovr_User_GetUserProof failed", 0xCD54,
-			{ 0x0F, 0x84, 0x9D, 0x00, 0x00, 0x00 }, { 0xE9, 0x9E, 0x00, 0x00, 0x00, 0x90 }, 6 },
-		// ovr_Message_GetUserProof + ovr_UserProof_GetNonce -> lea rax, [empty string at RVA 0x52618]
-		{ "log in with an empty nonce", 0xCE5E,
-			{ 0xFF, 0x15, 0xB4, 0x25, 0x04, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0x03, 0x26, 0x04, 0x00 },
-			{ 0x48, 0x8D, 0x05, 0xB3, 0x57, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 15 },
+	static const Rad14Build BUILDS[] = {
+		{
+			"christmas 2017 (rad14, ea_rel6_0)", 0x5A39494F, 0x5A394933,
+			L"-mpmnu",
+			{
+				// -server: dedicated server mode. The -mpmnu branch of the command line parser sets bit 59 of the option flags
+				// ("boot into multiplayer") and start-up flag 1 ("stop at the multiplayer menu"). Replacing 1 with 6 boots
+				// straight into multiplayer (the start-up code starts it when bit 59 is set and flag 1 isn't) as a dedicated
+				// server (flag 2 makes NetGame load pnsradgameserver; flag 4 creates the server lobby).
+				{ "set the dedicated server start-up flags (or dword [rbx+4540h], 1 -> 6)", 0x9A667,
+					{ 0x83, 0x8B, 0x40, 0x45, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x40, 0x45, 0x00, 0x00, 0x06 }, 7 },
+				// The start-up code also sets start-up flag 1 when it picks multiplayer (Echo Arena rather than Lone Echo);
+				// clear it here too, or the server stops at the multiplayer menu instead of starting multiplayer.
+				{ "don't stop the server at the multiplayer menu (or dword [rcx+4540h], 1 -> 0)", 0x9CA81,
+					{ 0x83, 0x89, 0x40, 0x45, 0x00, 0x00, 0x01 }, { 0x83, 0x89, 0x40, 0x45, 0x00, 0x00, 0x00 }, 7 },
+				// Start-up flag 4 also makes the game load the pnsdemo platform provider (not shipped) instead of pnsovr.
+				// Servers use only the RAD provider (EchoRelay): pnsovr needs the Oculus platform runtime, which a plain
+				// server machine doesn't have. The dedicated branch's pnsdemo load becomes 'xor esi, esi; xor r15d, r15d; jmp'
+				// to the pnsrad load.
+				{ "create only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped, and no Oculus)", 0x97FBB,
+					{ 0x45, 0x33, 0xC0, 0x48, 0x8D, 0x15, 0x43, 0x44, 0xAC, 0x00 }, { 0x31, 0xF6, 0x45, 0x31, 0xFF, 0xE9, 0x31, 0x00, 0x00, 0x00 }, 10 },
+				// NetGame takes the platform (r15) and social (rsi) providers besides the RAD one (r13); give it the RAD
+				// provider for all three (mov r9, rsi; mov r8, r15 -> mov r9, r13; mov r8, r13).
+				{ "give the dedicated server's NetGame the RAD provider in place of the Oculus/demo ones (r8, r9 <- r13)", 0x98097,
+					{ 0x4C, 0x8B, 0xCE, 0x4D, 0x8B, 0xC7 }, { 0x4D, 0x8B, 0xCD, 0x4D, 0x8B, 0xC5 }, 6 },
+				// Never start an Oculus VR session (as -novr does): a server machine has no headset or Oculus runtime, and
+				// the session failure (-3001) is fatal. Always take the branch that sets the -novr option flag.
+				{ "skip Oculus/VR initialization, as -novr does (je -> nop)", 0x9A356, { 0x74, 0x11 }, { 0x90, 0x90 }, 2 },
+				// The r14netserver data package isn't shipped; servers load r14netclient (16 bytes before it) instead.
+				{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped", 0x9501C,
+					{ 0x48, 0x8D, 0x15, 0xCD, 0x71, 0xAC, 0x00 }, { 0x48, 0x8D, 0x15, 0xBD, 0x71, 0xAC, 0x00 }, 7 },
+			},
+			{ "disable audio, as -noaudio would (je -> nop)", 0x2E8D12, { 0x74, 0x0B }, { 0x90, 0x90 }, 2 },
+			// The renderer's adapter list skips the Microsoft Basic Render Driver (vendor 0x1414, device 0x8C), so on a
+			// machine without a GPU it finds none ("No valid DXGI adapters found!"). Keep it: a device on it is WARP.
+			{ "keep the Microsoft Basic Render Driver adapter, so a server without a GPU renders with WARP (je -> nop)", 0x10D107,
+				{ 0x74, 0x40 }, { 0x90, 0x90 }, 2 },
+			0x8C6224, // D3D11CreateDevice thunk
+			0xE4FB9,  // outputs[i]->GetDesc
+			0xB83F70, // frame timer vtable
+			// "https://api.readyatdawn.com": the dedicated server's status check ({api}/status/serverdb?env=...&projectid=rad14),
+			// which must report available before a server logs in, and the other API requests.
+			0xBB2790, { 0x3CC2EA, 0x3D5C1D },
+			// pnsovr.dll. Without the Oculus store launch, the entitlement check fails and the provider (and the game) refuse
+			// to start. The provider has a "skipentitlement" option read from packaged config; this always takes that branch.
+			{ "skip the Oculus entitlement check", 0x12F4E, { 0x75, 0x4F }, { 0xEB, 0x4F }, 2 },
+			{
+				// The failure handlers for ovr_User_GetOrgScopedID reset the logged in user's org-scoped id to -1; the Oculus
+				// request fails for launches outside the Oculus store, and must not clear the id we provide.
+				{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails (login)", 0xB20C,
+					{ 0x48, 0xC7, 0x05, 0x21, 0xC7, 0x06, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
+					{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
+				{ "keep the org-scoped id when ovr_User_GetOrgScopedID fails (refresh)", 0xC95C,
+					{ 0x48, 0xC7, 0x05, 0xD1, 0xAF, 0x06, 0x00, 0xFF, 0xFF, 0xFF, 0xFF },
+					{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 11 },
+			},
+			{
+				// Logging in first asks Oculus for a user proof (a signed nonce), which fails outside the Oculus store; the
+				// provider then reports a login failure without ever connecting. Take the success path, with an empty nonce.
+				{ "log in even though ovr_User_GetUserProof failed", 0xCD54,
+					{ 0x0F, 0x84, 0x9D, 0x00, 0x00, 0x00 }, { 0xE9, 0x9E, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				// ovr_Message_GetUserProof + ovr_UserProof_GetNonce -> lea rax, [empty string at RVA 0x52618]
+				{ "log in with an empty nonce", 0xCE5E,
+					{ 0xFF, 0x15, 0xB4, 0x25, 0x04, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0x03, 0x26, 0x04, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0xB3, 0x57, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 15 },
+			},
+			0x77938, // pnsovr.dll org-scoped id
+			0,
+		},
+		{
+			// Echo Arena 1.76, two months before christmas 2017. Unlike christmas it has a -server flag of its own (a
+			// dedicated server that then loads pnsdemo.dll and waits for its first entrant); the patches make it a
+			// dedicated server on the RAD provider, like christmas 2017's.
+			"halloween 2017 (rad14, release4_5)", 0x59E8F804, 0x59E8F7BF,
+			L"-server",
+			{
+				// -server sets start-up flag 1; flag 2 (the dedicated lobby: its broadcaster and pnsradgameserver) as well.
+				{ "set the dedicated server start-up flags (or dword [rbx+4150h], 1 -> 3)", 0xAC389,
+					{ 0x83, 0x8B, 0x50, 0x41, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x50, 0x41, 0x00, 0x00, 0x03 }, 7 },
+				// Dedicated servers load the pnsdemo platform provider (not shipped) and then pnsrad. Skip the pnsdemo load
+				// (xor r8d, r8d -> jmp to the pnsrad load)...
+				{ "load only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped)", 0xA9C24,
+					{ 0x45, 0x33, 0xC0 }, { 0xEB, 0x1C, 0x90 }, 3 },
+				// ...initialize the RAD provider where the platform one would be ([rbp+0FB8h] -> [rbp+0FC0h])...
+				{ "initialize the RAD provider in place of the platform one (mov rcx, [rbp+0FB8h] -> [rbp+0FC0h])", 0xA9C67,
+					{ 0x48, 0x8B, 0x8D, 0xB8, 0x0F, 0x00, 0x00 }, { 0x48, 0x8B, 0x8D, 0xC0, 0x0F, 0x00, 0x00 }, 7 },
+				// ...and give NetGame the RAD provider as its platform provider too (lea r8, [rbp+0FB8h] -> [rbp+0FC0h]).
+				{ "give the dedicated server's NetGame the RAD provider in place of the platform one (lea r8, [rbp+0FC0h])", 0xA9CDD,
+					{ 0x4C, 0x8D, 0x85, 0xB8, 0x0F, 0x00, 0x00 }, { 0x4C, 0x8D, 0x85, 0xC0, 0x0F, 0x00, 0x00 }, 7 },
+				{ "skip Oculus/VR initialization, as -novr does (je -> nop)", 0xABF71, { 0x74, 0x11 }, { 0x90, 0x90 }, 2 },
+				{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped", 0xA6CF5,
+					{ 0x48, 0x8D, 0x15, 0x2C, 0x97, 0xAA, 0x00 }, { 0x48, 0x8D, 0x15, 0x1C, 0x97, 0xAA, 0x00 }, 7 },
+			},
+			{ "disable audio, as -noaudio would (je -> nop)", 0x2C3802, { 0x74, 0x0B }, { 0x90, 0x90 }, 2 },
+			{ "keep the Microsoft Basic Render Driver adapter, so a server without a GPU renders with WARP (je -> nop)", 0x108847,
+				{ 0x74, 0x40 }, { 0x90, 0x90 }, 2 },
+			0x88E0B4, // D3D11CreateDevice thunk
+			0xE0139,  // outputs[i]->GetDesc
+			0xB76FA0, // frame timer vtable
+			// "https://4zi3pui65h.execute-api.us-west-2.amazonaws.com" (long gone), + "/prod/status/serverdb?env=...": the
+			// dedicated server's status check, which must report available before the server starts its lobby.
+			0xBA16C0, { 0x3AA76A, 0 },
+			// pnsovr.dll: the same login code as christmas's, except that the org-scoped id is kept in the provider object.
+			{ "skip the Oculus entitlement check", 0x12ED5, { 0x75, 0x4F }, { 0xEB, 0x4F }, 2 },
+			{
+				// On failure it would store -1; take the success path, which reads the id at pnsOvrOrgScopedIdRead.
+				{ "log in even though ovr_User_GetOrgScopedID failed (je -> jmp)", 0x782E, { 0x74, 0x39 }, { 0xEB, 0x39 }, 2 },
+				NO_PATCH,
+			},
+			{
+				{ "log in even though ovr_User_GetUserProof failed", 0x78C4,
+					{ 0x0F, 0x84, 0x9D, 0x00, 0x00, 0x00 }, { 0xE9, 0x9E, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				// ovr_Message_GetUserProof + ovr_UserProof_GetNonce -> lea rax, [""] (the terminator of the
+				// "ovr_User_GetUserProof failed: %s" string at RVA 0x51780)
+				{ "log in with an empty nonce", 0x79CE,
+					{ 0xFF, 0x15, 0x8C, 0x7B, 0x04, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0xA3, 0x7B, 0x04, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0xCB, 0x9D, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 15 },
+			},
+			0,
+			0x7869,
+		},
 	};
 
-	/// <summary>
-	/// The provider's logged in user org-scoped id (0 or -1 until known), used for logging in.
-	/// </summary>
-	static const DWORD PNSOVR_ORG_SCOPED_ID = 0x77938;
+	static const Rad14Build* g_build = NULL;
 
 	/// <summary>
 	/// The shared id Revive (LibRevive64 / Gammon) reports, never used as an install's id.
@@ -192,7 +228,11 @@ namespace XmasPatches
 
 	BOOL IsXmasBuild()
 	{
-		return GetTimestamp((BYTE*)GetModuleHandleA(NULL)) == EXECUTABLE_TIMESTAMP;
+		DWORD timestamp = GetTimestamp((BYTE*)GetModuleHandleA(NULL));
+		for (const Rad14Build& build : BUILDS)
+			if (build.executableTimestamp == timestamp)
+				g_build = &build;
+		return g_build != NULL;
 	}
 
 	static BOOL WriteCode(BYTE* target, const BYTE* bytes, SIZE_T size)
@@ -211,6 +251,8 @@ namespace XmasPatches
 	/// </summary>
 	static BOOL ApplyPatch(BYTE* base, const BytePatch& patch)
 	{
+		if (patch.size == 0)
+			return FALSE;
 		BYTE* target = base + patch.rva;
 		if (memcmp(target, patch.patched, patch.size) == 0)
 		{
@@ -309,14 +351,6 @@ namespace XmasPatches
 	// API host
 	// ----------------------------------------------------------------------------------------------------------------
 
-	/// <summary>
-	/// The instructions that load the hardcoded API host, "https://api.readyatdawn.com" (lea rdx, [rip+x]; 7 bytes). The
-	/// first is the dedicated server's status check ({api}/status/serverdb?env=...&projectid=rad14), which must
-	/// report available before a server logs in.
-	/// </summary>
-	static const DWORD API_HOST_LEAS[] = { 0x3CC2EA, 0x3D5C1D };
-	static const DWORD API_HOST_STRING = 0xBB2790;
-
 	static std::string GetGameRoot();
 
 	/// <summary>
@@ -378,10 +412,12 @@ namespace XmasPatches
 		VirtualProtect(copy, host.size() + 1, PAGE_READONLY, &oldProtect);
 
 		INT redirected = 0;
-		for (DWORD rva : API_HOST_LEAS)
+		for (DWORD rva : g_build->apiHostLeas)
 		{
+			if (rva == 0)
+				continue;
 			BYTE* lea = exe + rva;
-			if (lea[0] != 0x48 || lea[1] != 0x8D || lea[2] != 0x15 || lea + 7 + *(INT32*)(lea + 3) != exe + API_HOST_STRING)
+			if (lea[0] != 0x48 || lea[1] != 0x8D || lea[2] != 0x15 || lea + 7 + *(INT32*)(lea + 3) != exe + g_build->apiHostString)
 			{
 				Log("Unexpected code at API host reference 0x%X; not redirected", rva);
 				continue;
@@ -464,15 +500,15 @@ namespace XmasPatches
 	// ----------------------------------------------------------------------------------------------------------------
 	static VOID PatchPnsOvr(BYTE* base)
 	{
-		if (GetTimestamp(base) != PNSOVR_TIMESTAMP)
+		if (GetTimestamp(base) != g_build->pnsOvrTimestamp)
 		{
-			Log("pnsovr.dll is not the christmas build's, not patching it");
+			Log("pnsovr.dll is not the %s build's, not patching it", g_build->name);
 			return;
 		}
-		ApplyPatch(base, PNSOVR_SKIP_ENTITLEMENT);
-		for (const BytePatch& patch : PNSOVR_KEEP_ORG_ID)
+		ApplyPatch(base, g_build->pnsOvrSkipEntitlement);
+		for (const BytePatch& patch : g_build->pnsOvrKeepOrgId)
 			ApplyPatch(base, patch);
-		for (const BytePatch& patch : PNSOVR_SKIP_USER_PROOF)
+		for (const BytePatch& patch : g_build->pnsOvrSkipUserProof)
 			ApplyPatch(base, patch);
 
 		// ovr_GetLoggedInUserID() -> our id: redirect each call qword ptr [rip+x] (6 bytes) to call stub (5 bytes) + nop.
@@ -489,8 +525,26 @@ namespace XmasPatches
 		Log("Patched: %d ovr_GetLoggedInUserID calls return %llu", redirected, (unsigned long long)g_userId);
 
 		// The org-scoped id the provider logs in with (normally filled in by ovr_User_GetOrgScopedID).
-		*(UINT64*)(base + PNSOVR_ORG_SCOPED_ID) = g_userId;
-		Log("Set the logged in user org-scoped id to %llu", (unsigned long long)g_userId);
+		if (g_build->pnsOvrOrgScopedId != 0)
+		{
+			*(UINT64*)(base + g_build->pnsOvrOrgScopedId) = g_userId;
+			Log("Set the logged in user org-scoped id to %llu", (unsigned long long)g_userId);
+		}
+		if (g_build->pnsOvrOrgScopedIdRead != 0)
+		{
+			BYTE* read = base + g_build->pnsOvrOrgScopedIdRead;
+			static const BYTE original[] = { 0xFF, 0x15 };
+			if (memcmp(read, original, sizeof(original)) != 0 || read[6] != 0x48 || read[7] != 0x8B || read[8] != 0xC8 || read[9] != 0xFF || read[10] != 0x15)
+				Log("SKIPPED (unexpected bytes at %p): log in with this install's org-scoped id", read);
+			else
+			{
+				BYTE code[15] = { 0x48, 0xB8 }; // mov rax, imm64; then nops
+				memcpy(code + 2, &g_userId, 8);
+				memset(code + 10, 0x90, 5);
+				if (WriteCode(read, code, sizeof(code)))
+					Log("Patched: log in with org-scoped id %llu", (unsigned long long)g_userId);
+			}
+		}
 	}
 
 	typedef struct _LDR_DLL_LOADED_NOTIFICATION_DATA {
@@ -704,7 +758,7 @@ namespace XmasPatches
 	/// </summary>
 	static VOID HookCreateDevice(BYTE* exe)
 	{
-		BYTE* thunk = exe + D3D11_CREATE_DEVICE_THUNK;
+		BYTE* thunk = exe + g_build->d3d11CreateDeviceThunk;
 		if (thunk[0] != 0xFF || thunk[1] != 0x25)
 		{
 			Log("SKIPPED (unexpected bytes at %p): fall back to WARP when Direct3D 11 device creation fails", thunk);
@@ -727,18 +781,13 @@ namespace XmasPatches
 	}
 
 	/// <summary>
-	/// The renderer's "outputs[displayIndex]->GetDesc(&desc)" (mov rax, [rcx]; call [rax+38h]) when it sizes the window.
-	/// With no display at all (a server whose RDP session is disconnected) the output is null and the game crashed; every
-	/// other use of the outputs checks for null.
-	/// </summary>
-	static const DWORD OUTPUT_GET_DESC = 0xE4FB9;
-
-	/// <summary>
-	/// Sends OUTPUT_GET_DESC to a stub that gives a missing display a 1280x720 desktop instead of crashing.
+	/// Sends the renderer's "outputs[displayIndex]->GetDesc(&desc)" (mov rax, [rcx]; call [rax+38h]) when it sizes the
+	/// window to a stub. With no display at all (a server whose RDP session is disconnected) the output is null and the
+	/// game crashed; every other use of the outputs checks for null. The stub that gives a missing display a 1280x720 desktop instead of crashing.
 	/// </summary>
 	static VOID PatchNoDisplay(BYTE* exe)
 	{
-		BYTE* site = exe + OUTPUT_GET_DESC;
+		BYTE* site = exe + g_build->outputGetDesc;
 		static const BYTE original[] = { 0x48, 0x8B, 0x01, 0xFF, 0x50, 0x38 };
 		if (memcmp(site, original, sizeof(original)) != 0)
 		{
@@ -770,11 +819,6 @@ namespace XmasPatches
 		if (WriteCode(site, call, sizeof(call)))
 			Log("Patched: run without a display (a server whose remote desktop session is disconnected) instead of crashing");
 	}
-
-	/// <summary>
-	/// The frame timer's vtable, whose per-frame method servers are rate-limited through (see framelimit.h).
-	/// </summary>
-	static const DWORD FRAME_TIMER_VTABLE = 0xB83F70;
 
 	/// <summary>
 	/// Test only (ECHORELAY_TEST_NO_DISPLAY=1): no adapter has a display, as on a server whose RDP session is disconnected.
@@ -833,15 +877,44 @@ namespace XmasPatches
 		static LONG logged = 0;
 		if (info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || InterlockedIncrement(&logged) > 3)
 			return EXCEPTION_CONTINUE_SEARCH;
-		BYTE* at = (BYTE*)info->ExceptionRecord->ExceptionAddress;
-		HMODULE module = NULL;
-		CHAR path[MAX_PATH] = "?";
-		if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)at, &module))
-			GetModuleFileNameA(module, path, MAX_PATH);
-		const CHAR* name = strrchr(path, '\\') != NULL ? strrchr(path, '\\') + 1 : path;
-		Log("Access violation at %s+0x%llX (%s 0x%llX, thread %lu)", name, (unsigned long long)(at - (BYTE*)module),
-			info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
-			(unsigned long long)info->ExceptionRecord->ExceptionInformation[1], GetCurrentThreadId());
+		// "module+offset" for an address, or just the address outside any module.
+		auto describe = [](const VOID* address, CHAR* out, SIZE_T size)
+		{
+			HMODULE module = NULL;
+			CHAR path[MAX_PATH] = "";
+			if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)address, &module)
+				&& GetModuleFileNameA(module, path, MAX_PATH) > 0)
+			{
+				const CHAR* name = strrchr(path, '\\') != NULL ? strrchr(path, '\\') + 1 : path;
+				sprintf_s(out, size, "%s+0x%llX", name, (unsigned long long)((BYTE*)address - (BYTE*)module));
+			}
+			else
+				sprintf_s(out, size, "0x%llX", (unsigned long long)address);
+		};
+		CHAR at[MAX_PATH + 32], target[MAX_PATH + 32];
+		describe(info->ExceptionRecord->ExceptionAddress, at, sizeof(at));
+		describe((VOID*)info->ExceptionRecord->ExceptionInformation[1], target, sizeof(target));
+		// The return addresses on the stack that are in EchoArena.exe (how it got there).
+		std::string callers;
+		BYTE* exe = (BYTE*)GetModuleHandleA(NULL);
+		IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
+		UINT64* stack = (UINT64*)info->ContextRecord->Rsp;
+		for (INT i = 0, found = 0; i < 512 && found < 10; i++)
+		{
+			MEMORY_BASIC_INFORMATION memory;
+			if (VirtualQuery(stack + i, &memory, sizeof(memory)) == 0 || memory.State != MEM_COMMIT)
+				break;
+			UINT64 value = stack[i];
+			if (value > (UINT64)exe && value < (UINT64)exe + nt->OptionalHeader.SizeOfImage)
+			{
+				CHAR entry[24];
+				sprintf_s(entry, " 0x%llX", (unsigned long long)(value - (UINT64)exe));
+				callers += entry;
+				found++;
+			}
+		}
+		Log("Access violation at %s (%s %s, thread %lu); EchoArena.exe addresses on the stack:%s", at,
+			info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading", target, GetCurrentThreadId(), callers.c_str());
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
 
@@ -1043,7 +1116,7 @@ namespace XmasPatches
 
 	VOID Initialize()
 	{
-		Log("EchoRelay.Patch: christmas 2017 build (EchoArena.exe) detected");
+		Log("EchoRelay.Patch: %s build (EchoArena.exe) detected", g_build->name);
 		// Voice chat diagnostics (see voiplog.h).
 		// Voice: this build takes voice from its platform provider, pnsovr.dll, i.e. the Oculus Platform SDK's microphone and
 		// voice codec, which without Oculus's backend works for some players and not others (some can't speak, some can't
@@ -1059,14 +1132,18 @@ namespace XmasPatches
 		AddVectoredExceptionHandler(1, LogCrash);
 		VoipLog::Install(Log);
 
-		// -server: EchoArena.exe doesn't know it; it becomes -mpmnu (whose parser branch we patch into server mode).
-		BOOL server = ReplaceFlag(GetCommandLineW(), L"-server", L"-mpmnu");
-		ReplaceFlag(GetCommandLineA(), "-server", "-mpmnu");
+		// -server: christmas 2017's EchoArena.exe doesn't know it; it becomes -mpmnu (whose parser branch we patch into server
+		// mode). Halloween 2017's has its own -server, which we patch.
+		CHAR serverFlag[16] = {};
+		for (SIZE_T i = 0; g_build->serverFlag[i] != 0 && i < sizeof(serverFlag) - 1; i++)
+			serverFlag[i] = (CHAR)g_build->serverFlag[i];
+		BOOL server = ReplaceFlag(GetCommandLineW(), L"-server", g_build->serverFlag);
+		ReplaceFlag(GetCommandLineA(), "-server", serverFlag);
 		// -headless: EchoArena.exe doesn't know it (it becomes -novr), so it's emulated: no audio and a hidden window.
 		BOOL headless = ReplaceFlag(GetCommandLineW(), L"-headless", L"-novr");
 		ReplaceFlag(GetCommandLineA(), "-headless", "-novr");
 		if (headless || server)
-			ApplyPatch((BYTE*)GetModuleHandleA(NULL), NO_AUDIO);
+			ApplyPatch((BYTE*)GetModuleHandleA(NULL), g_build->noAudio);
 		if (headless)
 		{
 			Log("Headless mode (-headless): running as -novr with no audio and the window hidden");
@@ -1076,20 +1153,16 @@ namespace XmasPatches
 		{
 			BYTE* exe = (BYTE*)GetModuleHandleA(NULL);
 			Log("Dedicated server mode (-server)");
-			ApplyPatch(exe, SERVER_FLAGS);
-			ApplyPatch(exe, SERVER_NO_MENU);
-			ApplyPatch(exe, SERVER_RAD_ONLY);
-			ApplyPatch(exe, SERVER_NETGAME_RAD);
-			ApplyPatch(exe, SERVER_NO_VR);
-			ApplyPatch(exe, SERVER_PACKAGE);
+			for (const BytePatch& patch : g_build->server)
+				ApplyPatch(exe, patch);
 			// Servers use the GPU when there is one, and WARP (Windows' software renderer) only when no GPU renderer can be
 			// created, e.g. a server with no GPU. -warp: always use WARP.
 			g_forceWarp = ReplaceFlag(GetCommandLineW(), L"-warp", L"     ");
 			ReplaceFlag(GetCommandLineA(), "-warp", "     ");
-			ApplyPatch(exe, SERVER_BASIC_RENDER_ADAPTER);
+			ApplyPatch(exe, g_build->basicRenderAdapter);
 			HookCreateDevice(exe);
 			PatchNoDisplay(exe);
-			FrameLimit::Install((VOID**)(exe + FRAME_TIMER_VTABLE), Log);
+			FrameLimit::Install((VOID**)(exe + g_build->frameTimerVtable), Log);
 			CHAR test[8] = {};
 			if (GetEnvironmentVariableA("ECHORELAY_TEST_NO_DISPLAY", test, sizeof(test)) > 0 && test[0] == '1')
 			{

@@ -403,6 +403,37 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void DecodesHeaderlessHalloween2017Login()
+        {
+            // A halloween 2017 client's login: symbol, length and data, without the packet header later builds send.
+            byte[] data = Convert.FromHexString("40CE0C1BBBD1ADA5A9000000000000000000000000000000000000000000000004000000000000000EE0205CFD967C5B656E0000000000007B226170706964223A313336393037383430393837333430322C22646973706C61796E616D65223A2248616C6C6F7765656E536572766572222C22636C69656E7476657273696F6E223A313530383433353932372C226163636F756E746964223A363539323330393936393438303131343139302C226E6F6E6365223A22227D00");
+            Packet packet = Packet.Decode(data);
+            Assert.True(packet.Headerless);
+            SummerLoginRequest login = Assert.IsType<SummerLoginRequest>(Assert.Single(packet));
+            Assert.Equal(6592309969480114190UL, login.UserId.AccountId);
+            // Encoded back the same way: symbol first (no header), and the length it writes is what follows.
+            byte[] encoded = packet.Encode(headerless: true);
+            Assert.Equal(login.MessageTypeSymbol, BitConverter.ToInt64(encoded, 0));
+            Assert.Equal((ulong)(encoded.Length - 16), BitConverter.ToUInt64(encoded, 8));
+            Assert.Equal(Packet.HEADER_ID, BitConverter.ToUInt64(packet.Encode(), 0));
+        }
+
+        [Fact]
+        public void DecodesCapturedHalloween2017FindSessionRequest()
+        {
+            byte[] data = Convert.FromHexString("F750E391AD7C015E12062A1932D4D241F8F49FA8B1D0E8C8010000000000000000000000000000007B2267616D6574797065223A343734333038363636393231303139313337382C226C6576656C223A2D333939323034353334343239333233363934392C22636C6F7365646C6F626279223A66616C73657D0004000000000000000EE0205CFD967C5B");
+            Halloween2017LobbyFindSessionRequestv4 request = new Halloween2017LobbyFindSessionRequestv4();
+            request.Decode(data);
+            Assert.Equal(SummerBuild.Halloween2017VersionLock, request.VersionLock);
+            Assert.True(SummerBuild.IsChristmasVersionLock(request.VersionLock));
+            Assert.Equal(SummerBuild.GameTypeSocialChristmas, request.GameTypeSymbol);
+            Assert.Equal(SummerBuild.LevelHalloween2017Lobby, request.SessionSettings.Level);
+            Assert.Equal(6592309969480114190UL, request.UserId.AccountId);
+            Assert.Equal(SummerBuild.LevelHalloween2017Lobby, SummerBuild.DefaultLevelForGameType(request.GameTypeSymbol, request.VersionLock));
+            Assert.Equal(data, request.Encode());
+        }
+
+        [Fact]
         public void DecodesCapturedClientLogSet()
         {
             // Two log lines from a summer client (180 bytes: two lines, padding, then the offsets 0 and 0x3B).

@@ -301,6 +301,10 @@ namespace EchoRelay.Core.Server.Services.Login
                     case UserServerProfileUpdateRequest userServerProfileUpdateRequest:
                         await ProcessUserServerProfileUpdateRequest(sender, userServerProfileUpdateRequest);
                         break;
+                    case ClientVersionRequest:
+                        // Halloween 2017 clients check their version before going to the lobby: any version will do.
+                        await sender.Send(new ClientVersionResponse(0));
+                        break;
                 }
             }
         }
@@ -508,7 +512,8 @@ namespace EchoRelay.Core.Server.Services.Login
                 _halloweenClientPeers[sender] = true;
             else
                 _halloweenClientPeers.TryRemove(sender, out _);
-            if (request.AccountInfo.PublisherLock == SummerBuild.ChristmasPublisherLock)
+            // Halloween 2017 clients are christmas 2017's code two months earlier: they're served as christmas clients.
+            if (SummerBuild.IsRad14PublisherLock(request.AccountInfo.PublisherLock))
                 _christmasClientPeers[sender] = true;
             else
                 _christmasClientPeers.TryRemove(sender, out _);

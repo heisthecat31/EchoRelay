@@ -45,6 +45,13 @@ namespace EchoRelay.Core.Game
         public const long ChristmasLiveVersionLock = unchecked((long)0xF178DD22E259B1C3);
 
         /// <summary>
+        /// The version lock the 2017 halloween build (rad14, Echo Arena 1.76, publisher lock "release4_5") sends. It is
+        /// christmas 2017's code two months earlier and speaks the same server messages, but its clients send the older
+        /// SNSLobbyFindSessionRequestv4 / CreateSessionRequestv5 / JoinSessionRequestv4.
+        /// </summary>
+        public const long Halloween2017VersionLock = 0x5E017CAD91E350F7;
+
+        /// <summary>
         /// The version lock the 2018 christmas ("winter") lobby build (rad15_winter, goldmaster 268902) sends. It speaks the
         /// summer build's messages, except for its login settings (SNSLoginClientSettings, like halloween).
         /// </summary>
@@ -55,7 +62,7 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static bool IsChristmasVersionLock(long? versionLock)
         {
-            return versionLock == ChristmasVersionLock || versionLock == ChristmasLiveVersionLock;
+            return versionLock == ChristmasVersionLock || versionLock == ChristmasLiveVersionLock || versionLock == Halloween2017VersionLock;
         }
 
         /// <summary>
@@ -93,11 +100,25 @@ namespace EchoRelay.Core.Game
         public const string ChristmasPublisherLock = "rad15_live";
 
         /// <summary>
+        /// The publisher lock halloween 2017 build (rad14, Echo Arena 1.76) clients log in with. The relay treats them as
+        /// christmas 2017 clients (same profiles and saved loadouts); their version lock keeps them on their own servers.
+        /// </summary>
+        public const string Halloween2017PublisherLock = "release4_5";
+
+        /// <summary>
+        /// Checks whether a publisher lock belongs to one of the rad14 builds (christmas or halloween 2017).
+        /// </summary>
+        public static bool IsRad14PublisherLock(string? publisherLock)
+        {
+            return publisherLock == ChristmasPublisherLock || publisherLock == Halloween2017PublisherLock;
+        }
+
+        /// <summary>
         /// Checks whether a publisher lock belongs to a build whose login connection only takes messages up to 16 KiB.
         /// </summary>
         public static bool HasSmallMessageLimit(string? publisherLock)
         {
-            return publisherLock == HalloweenPublisherLock || publisherLock == ChristmasPublisherLock;
+            return publisherLock == HalloweenPublisherLock || IsRad14PublisherLock(publisherLock);
         }
 
         /// <summary>
@@ -124,6 +145,11 @@ namespace EchoRelay.Core.Game
         public static readonly long LevelChristmasLobby = Symbol.Hash("mpl_lobby_a_xmas");
 
         /// <summary>
+        /// The halloween 2017 build's lobby (its data has mpl_lobby_a_spooky and mpl_lobby_a, no christmas lobby).
+        /// </summary>
+        public static readonly long LevelHalloween2017Lobby = Symbol.Hash("mpl_lobby_a_spooky");
+
+        /// <summary>
         /// The lobby builds' game types and levels, for naming symbols the final build's symbol cache doesn't know.
         /// </summary>
         private static readonly Lazy<Dictionary<long, string>> _knownNames = new Lazy<Dictionary<long, string>>(() =>
@@ -131,7 +157,7 @@ namespace EchoRelay.Core.Game
             {
                 "social_2.0", "social_2.0_private", "social_2.0_npe", "echo_arena", "echo_arena_private", "echo_combat", "echo_combat_private",
                 "social", "arena",
-                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_arena_a", "mpl_combat_dyson",
+                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_lobby_a_spooky", "mpl_arena_a", "mpl_combat_dyson",
             }.ToDictionary(Symbol.Hash, name => name));
 
         /// <summary>
@@ -231,7 +257,7 @@ namespace EchoRelay.Core.Game
             {
                 if (gameType == GameTypeArenaChristmas || gameType == GameTypeArena || gameType == Symbol.Hash("echo_arena_private"))
                     return LevelArena;
-                return IsSocialGameType(gameType) ? LevelChristmasLobby : null;
+                return IsSocialGameType(gameType) ? (versionLock == Halloween2017VersionLock ? LevelHalloween2017Lobby : LevelChristmasLobby) : null;
             }
             long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : versionLock == WinterVersionLock ? LevelWinterLobby : LevelSummerLobby;
             if (gameType == null)
@@ -317,6 +343,11 @@ namespace EchoRelay.Core.Game
         public const uint ChristmasExecutableTimestamp = 0x5A39494F;
 
         /// <summary>
+        /// The PE header timestamp of the halloween 2017 build's EchoArena.exe (Echo Arena 1.76).
+        /// </summary>
+        public const uint Halloween2017ExecutableTimestamp = 0x59E8F804;
+
+        /// <summary>
         /// Names the Echo VR build an executable belongs to, from its PE header timestamp.
         /// </summary>
         /// <param name="executableFilePath">The path to the game executable.</param>
@@ -329,6 +360,7 @@ namespace EchoRelay.Core.Game
                 ExecutableTimestamp => "Summer 2019",
                 HalloweenExecutableTimestamp => "Halloween 2018",
                 ChristmasExecutableTimestamp => "Christmas 2017",
+                Halloween2017ExecutableTimestamp => "Halloween 2017",
                 WinterExecutableTimestamp => "Christmas 2018",
                 _ => null,
             };

@@ -35,28 +35,37 @@ namespace Summer
 		UINT64 eventSymbol;
 		/// NetGame::SetState(netgame, state). State 7 is "in game": the session's level finished loading.
 		UINT64 netGameSetState;
-		/// The first 15 bytes of NetGame::SetState, which the hook relocates (all position-independent).
-		BYTE setStatePrologue[15];
+		/// The first bytes of NetGame::SetState, which the hook relocates (all position-independent; whole instructions,
+		/// at least the 14 bytes the hook's jump takes).
+		BYTE setStatePrologue[16];
+		/// How many of setStatePrologue's bytes are the prologue.
+		SIZE_T setStatePrologueSize;
 		/// The NetGame state "in game" (the session's level finished loading).
 		INT32 inGameState;
 		/// The build's session success message is SNSLobbySessionSuccessv3: v4 without its leading u64 game type.
 		BOOL sessionSuccessV3;
 		/// IServerLib::RequestRegistration takes no region: (server id, version lock, local config).
 		BOOL registrationWithoutRegion;
+		/// SNSLobbyStartSessionv2 has no lobby type: u64 entrant slots | guid session | settings json \0 (halloween 2017).
+		BOOL startSessionWithoutLobbyType;
 	};
 
 	static const BuildProfile BUILDS[] = {
 		{ "summer (rad15_summer, goldmaster 340872)", 0x5D388D3C, 0xE700A0, 0x17620, 0x604610,
-			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 7, FALSE, FALSE },
+			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 15, 7, FALSE, FALSE },
 		{ "halloween (rad15_halloween, goldmaster 253636)", 0x5BC7B897, 0x46E9E0, 0x95270, 0x8EEC90,
-			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 7, FALSE, FALSE },
+			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 15, 7, FALSE, FALSE },
 		// The christmas 2018 ("winter") build: the same code as halloween, relocated.
 		{ "christmas 2018 (rad15_winter, goldmaster 268902)", 0x5C17F6B9, 0x47BDE0, 0xA67C0, 0x90A7E0,
-			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 7, FALSE, FALSE },
+			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 15, 7, FALSE, FALSE },
 		// The christmas 2017 build (rad14, EchoArena.exe) uses the message's CSymbol64 as the local event id (eventSymbol 0),
 		// has no "loading global" NetGame state (so "in game" is 5) and the older SNSLobbySessionSuccessv3.
 		{ "christmas 2017 (rad14, ea_rel6_0)", 0x5A39494F, 0x267630, 0, 0x3D2330,
-			{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xFA, 0x48, 0x8B, 0xD9 }, 5, TRUE, TRUE },
+			{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xFA, 0x48, 0x8B, 0xD9 }, 15, 5, TRUE, TRUE },
+		// The halloween 2017 build (rad14, Echo Arena 1.76): christmas 2017's code two months earlier. Its NetGame state is
+		// 64-bit (the hook reads the low half) and SetState's prologue is 16 bytes.
+		{ "halloween 2017 (rad14, release4_5)", 0x59E8F804, 0x2662E0, 0, 0x3B0030,
+			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 16, 5, TRUE, TRUE, TRUE },
 	};
 
 	typedef UINT64 ReceiveLocalEventFunc(VOID* broadcaster, UINT64 eventId, const CHAR* name, const VOID* msg, UINT64 msgSize);
@@ -556,11 +565,13 @@ namespace Summer
 			}
 			size_t jsonEnd = p.find('\0', 36);
 			std::string json = p.substr(36, jsonEnd == std::string::npos ? std::string::npos : jsonEnd - 36);
-			std::string msg(0x20, '\0');
+			// Halloween 2017's has no lobby type: its session settings start right after the session guid.
+			std::string msg(g_build->startSessionWithoutLobbyType ? 0x18 : 0x20, '\0');
 			UINT64 slots = 16;
 			memcpy(&msg[0], &slots, 8);
 			memcpy(&msg[8], p.data(), 16);
-			msg[0x18] = p[34];
+			if (!g_build->startSessionWithoutLobbyType)
+				msg[0x18] = p[34];
 			msg += json;
 			msg.push_back('\0');
 			g_sessionActive = true;
@@ -632,7 +643,7 @@ namespace Summer
 	static VOID InstallSetStateHook()
 	{
 		const BYTE* prologue = g_build->setStatePrologue;
-		const SIZE_T prologueSize = sizeof(g_build->setStatePrologue);
+		const SIZE_T prologueSize = g_build->setStatePrologueSize;
 		BYTE* target = (BYTE*)(g_base + g_build->netGameSetState);
 		if (memcmp(target, prologue, prologueSize) != 0)
 		{
@@ -640,7 +651,7 @@ namespace Summer
 			return;
 		}
 
-		// Trampoline: the original prologue, then jmp [rip] back to target + 15.
+		// Trampoline: the original prologue, then jmp [rip] back to the rest of the function.
 		BYTE* trampoline = (BYTE*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 		if (trampoline == NULL)
 			return;
@@ -651,17 +662,18 @@ namespace Summer
 		memcpy(trampoline + prologueSize, jumpBack, sizeof(jumpBack));
 		SetStateTrampoline = (SetStateFunc*)trampoline;
 
-		// Patch the target: jmp [rip] to our hook, then a nop over the 15th byte.
-		BYTE patch[15] = { 0xFF, 0x25, 0, 0, 0, 0 };
+		// Patch the target: jmp [rip] to our hook (14 bytes), then nops over the rest of the prologue.
+		BYTE patch[sizeof(g_build->setStatePrologue)];
+		memset(patch, 0x90, sizeof(patch));
+		patch[0] = 0xFF; patch[1] = 0x25; memset(patch + 2, 0, 4);
 		UINT64 hook = (UINT64)&SetStateHook;
 		memcpy(patch + 6, &hook, 8);
-		patch[14] = 0x90;
 		DWORD oldProtect;
-		if (VirtualProtect(target, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect))
+		if (VirtualProtect(target, prologueSize, PAGE_EXECUTE_READWRITE, &oldProtect))
 		{
-			memcpy(target, patch, sizeof(patch));
-			VirtualProtect(target, sizeof(patch), oldProtect, &oldProtect);
-			FlushInstructionCache(GetCurrentProcess(), target, sizeof(patch));
+			memcpy(target, patch, prologueSize);
+			VirtualProtect(target, prologueSize, oldProtect, &oldProtect);
+			FlushInstructionCache(GetCurrentProcess(), target, prologueSize);
 			Log("Hooked NetGame::SetState");
 		}
 	}
@@ -747,9 +759,10 @@ namespace Summer
 		if (port == 0)
 			port = 6792;
 
-		// The christmas build passes the same server id on every server, and EchoRelay keys game servers by it, so a second
-		// server would replace the first. Give each server process its own id (kept for re-registrations).
-		if (g_build->executableTimestamp == 0x5A39494F)
+		// The rad14 builds (christmas and halloween 2017) pass the same server id on every server, and EchoRelay keys game
+		// servers by it, so a second server would replace the first. Give each server process its own id (kept for
+		// re-registrations).
+		if (g_build->executableTimestamp == 0x5A39494F || g_build->executableTimestamp == 0x59E8F804)
 		{
 			static UINT64 processId = 0;
 			if (processId == 0)

@@ -178,8 +178,23 @@ namespace EchoRelay.Core.Server.Services
                     switch (messageType)
                     {
                         case WebSocketMessageType.Binary:
-                            // Parse a packet out of this message.
-                            Packet packet = Packet.Decode(packetBuffer);
+                            // Parse a packet out of this message. Record the start of one that doesn't decode (a build that
+                            // frames its messages differently), for reverse engineering.
+                            Packet packet;
+                            try
+                            {
+                                packet = Packet.Decode(packetBuffer);
+                            }
+                            catch (IOException e)
+                            {
+                                TrafficCapture.Log($"UNDECODABLE {GetType().Name} message ({packetBuffer.Length} bytes) from {peer.Address}:{peer.Port}: {e.Message} data={Convert.ToHexString(packetBuffer, 0, Math.Min(packetBuffer.Length, 2048))}");
+                                throw;
+                            }
+                            if (packet.Headerless && !peer.Headerless)
+                            {
+                                peer.Headerless = true;
+                                TrafficCapture.Log($"{GetType().Name} peer {peer.Address}:{peer.Port} frames its messages without the packet header (halloween 2017); replying the same way");
+                            }
 
                             // Capture messages we have no implementation for, so they can be reverse engineered.
                             foreach (Message message in packet)

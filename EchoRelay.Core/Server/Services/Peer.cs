@@ -114,6 +114,12 @@ namespace EchoRelay.Core.Server.Services
         /// Initializes a <see cref="Peer"/> with the provided arguments.
         /// </summary>
         /// <param name="context">The <see cref="HttpListenerContext"/> used to accept the connection request.</param>
+        /// <summary>
+        /// Whether this peer frames its messages without the packet header (see <see cref="Packet.Headerless"/>); what it's
+        /// sent is framed the same way. Set from the first packet it sends.
+        /// </summary>
+        public bool Headerless { get; set; }
+
         public Peer(Server server, Service service, HttpListenerContext context, WebSocket connection)
         {
             // Set our provided arguments.
@@ -206,7 +212,7 @@ namespace EchoRelay.Core.Server.Services
             // whatever is sending: another peer's message loop (a game server's, when it tells players their session), or
             // a loop over a party. A send that doesn't finish in time drops the connection instead; its receive loop then
             // ends and the peer is cleaned up. Failures to a dead peer don't throw into the sender's handling.
-            byte[] data = packet.Encode();
+            byte[] data = packet.Encode(Headerless);
             bool sent = false;
             try
             {
