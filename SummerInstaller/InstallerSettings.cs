@@ -12,7 +12,7 @@ namespace SummerInstaller
     /// </summary>
     public class GameBuild
     {
-        /// <summary>"summer", "halloween", "winter" (christmas 2018) or "christmas" (christmas 2017).</summary>
+        /// <summary>"summer", "halloween", "winter" (christmas 2018), "christmas" (christmas 2017) or "halloween2017".</summary>
         public string Id { get; set; } = "";
         /// <summary>Shown on the build switch and as the window subtitle, e.g. "Summer Lobby".</summary>
         public string Name { get; set; } = "";
@@ -186,6 +186,27 @@ namespace SummerInstaller
             if (all.TryGetValue("winterDownloadSizeBytes", out object? winterSize) && winterSize != null)
                 winter.DownloadSizeBytes = Convert.ToInt64(winterSize);
             settings.Builds.Add(winter);
+            // The 2017 halloween build (Echo Arena 1.76): christmas 2017's generation, with its config keys and game files.
+            GameBuild halloween2017 = new GameBuild
+            {
+                Id = "halloween2017",
+                Name = Get(all, "halloween2017Subtitle", "Halloween 2017 Lobby"),
+                ShortName = "Halloween 2017",
+                Tagline = Get(all, "halloween2017Tagline", "The 2017 halloween build, running on community servers."),
+                DownloadUrl = Get(all, "halloween2017DownloadUrl", ""),
+                DownloadMirrors = GetList(all, "halloween2017DownloadMirrors"),
+                Sha256 = Get(all, "halloween2017Sha256", ""),
+                DefaultInstallFolder = Get(all, "halloween2017DefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Halloween 2017"),
+                ShortcutName = Get(all, "halloween2017ShortcutName", "Echo VR Halloween 2017"),
+                PublisherLock = "release4_5",
+                ExecutableTimestamp = 0x59E8F804,
+                Executable = @"bin\win7\EchoArena.exe",
+                UsesLegacyConfigKeys = true,
+                LobbyName = "halloween lobby",
+            };
+            if (all.TryGetValue("halloween2017DownloadSizeBytes", out object? halloween2017Size) && halloween2017Size != null)
+                halloween2017.DownloadSizeBytes = Convert.ToInt64(halloween2017Size);
+            settings.Builds.Add(halloween2017);
             return settings;
         }
 

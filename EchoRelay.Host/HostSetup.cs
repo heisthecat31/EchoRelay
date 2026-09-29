@@ -24,7 +24,7 @@ namespace EchoRelay.Host
         [JsonProperty("region")]
         public string? Region { get; set; }
 
-        /// <summary>Each game version's install folder (summer, halloween, winter, christmas).</summary>
+        /// <summary>Each game version's install folder (summer, halloween, winter, christmas, halloween2017).</summary>
         [JsonProperty("installs")]
         public Dictionary<string, string> Installs { get; set; } = new Dictionary<string, string>();
 
@@ -44,7 +44,8 @@ namespace EchoRelay.Host
         [JsonProperty("max")]
         public int Max { get; set; } = 6;
 
-        /// <summary>Christmas 2017 servers render in software (WARP) even with a GPU. It's the fallback without one anyway.</summary>
+        /// <summary>Christmas and halloween 2017 servers render in software (WARP) even with a GPU. It's the fallback without
+        /// one anyway.</summary>
         [JsonProperty("christmas_software_rendering")]
         public bool ChristmasSoftwareRendering { get; set; }
 
@@ -70,7 +71,7 @@ namespace EchoRelay.Host
             {
                 List<string> list = ExtraArgs.TryGetValue(build, out string? extra)
                     ? extra.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList() : new List<string>();
-                if (build == "christmas" && ChristmasSoftwareRendering && !list.Contains("-warp"))
+                if ((build == "christmas" || build == "halloween2017") && ChristmasSoftwareRendering && !list.Contains("-warp"))
                     list.Add("-warp");
                 if (list.Count > 0)
                     arguments[build] = list.ToArray();
@@ -104,6 +105,7 @@ namespace EchoRelay.Host
         private static readonly (string build, string exe)[] Builds =
         {
             ("summer", "echovr.exe"), ("halloween", "echovr.exe"), ("winter", "echovr.exe"), ("christmas", "EchoArena.exe"),
+            ("halloween2017", "EchoArena.exe"),
         };
 
         private static uint BuildTimestamp(string build) => build switch
@@ -111,6 +113,7 @@ namespace EchoRelay.Host
             "summer" => SummerBuild.ExecutableTimestamp,
             "halloween" => SummerBuild.HalloweenExecutableTimestamp,
             "winter" => SummerBuild.WinterExecutableTimestamp,
+            "halloween2017" => SummerBuild.Halloween2017ExecutableTimestamp,
             _ => SummerBuild.ChristmasExecutableTimestamp,
         };
 
@@ -181,8 +184,8 @@ namespace EchoRelay.Host
             config.TickRate = AskNumber("  Tick rate: frames a second each game server runs at (fixed timestep; lower uses less CPU, 0 = uncapped)", config.TickRate, 0, 1000);
             config.PerPlayer = AskNumber("  Game servers one player can have running at once, per game version", config.PerPlayer, 1, 10);
             config.Max = AskNumber("  Game servers this PC runs at once, in total", config.Max, 1, 50);
-            if (config.Installs.ContainsKey("christmas"))
-                config.ChristmasSoftwareRendering = AskYesNo("  Christmas 2017: render in software instead of on the GPU (no GPU use, a little more CPU)", config.ChristmasSoftwareRendering);
+            if (config.Installs.ContainsKey("christmas") || config.Installs.ContainsKey("halloween2017"))
+                config.ChristmasSoftwareRendering = AskYesNo("  Christmas / Halloween 2017: render in software instead of on the GPU (no GPU use, a little more CPU)", config.ChristmasSoftwareRendering);
             config.UpdateOnStart = AskYesNo("  Check for EchoRelay DLL updates every time the host starts", config.UpdateOnStart);
             config.Name = AskRequired("  This PC's name, in the EchoRelay server's log", config.Name).Trim();
             Console.WriteLine();
@@ -223,8 +226,8 @@ namespace EchoRelay.Host
             Console.WriteLine($"  {"Tick rate",-18} {(config.TickRate == 0 ? "uncapped" : config.TickRate + " frames a second")}");
             Console.WriteLine($"  {"Per player",-18} {config.PerPlayer} per game version");
             Console.WriteLine($"  {"At once",-18} {config.Max}");
-            if (config.Installs.ContainsKey("christmas"))
-                Console.WriteLine($"  {"Christmas 2017",-18} {(config.ChristmasSoftwareRendering ? "software rendering" : "GPU (software if there is none)")}");
+            if (config.Installs.ContainsKey("christmas") || config.Installs.ContainsKey("halloween2017"))
+                Console.WriteLine($"  {"2017 builds",-18} {(config.ChristmasSoftwareRendering ? "software rendering" : "GPU (software if there is none)")}");
             Console.WriteLine($"  {"Updates",-18} {(config.UpdateOnStart ? "checked at every start" : "off")}");
             foreach (var extra in config.ExtraArgs.Where(e => !string.IsNullOrWhiteSpace(e.Value)))
                 Console.WriteLine($"  {"Extra args " + extra.Key,-18} {extra.Value}");
@@ -367,12 +370,12 @@ namespace EchoRelay.Host
         }
 
         /// <summary>
-        /// A build's DLLs from a GameFiles zip (christmas 2017 loads the patch as dbghelp.dll; the zip keeps its copies under
-        /// christmas/). A DLL a running game has loaded can't be overwritten but can be renamed, so the old one is moved aside.
+        /// A build's DLLs from a GameFiles zip (christmas and halloween 2017 load the patch as dbghelp.dll; the zip keeps their
+        /// copies under christmas/). A DLL a running game has loaded can't be overwritten but can be renamed, so the old one is moved aside.
         /// </summary>
         private static void InstallGameFiles(ZipArchive archive, string build, string folder)
         {
-            (string entry, string target)[] files = build == "christmas"
+            (string entry, string target)[] files = build == "christmas" || build == "halloween2017"
                 ? new[] { ("christmas/bin/win7/dbghelp.dll", @"bin\win7\dbghelp.dll"), ("christmas/bin/win7/pnsradgameserver.dll", @"bin\win7\pnsradgameserver.dll") }
                 : new[] { ("bin/win7/dbgcore.dll", @"bin\win7\dbgcore.dll"), ("bin/win7/pnsradgameserver.dll", @"bin\win7\pnsradgameserver.dll") };
             foreach (var (entryName, file) in files)

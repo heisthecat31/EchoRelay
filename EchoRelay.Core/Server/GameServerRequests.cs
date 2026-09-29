@@ -5,7 +5,8 @@ namespace EchoRelay.Core.Server
     /// <summary>
     /// A player's request (from the installer) for a game server of a lobby build, made to {api}/servers/request.
     /// </summary>
-    /// <param name="Build">The build: "summer", "halloween", "winter" (christmas 2018) or "christmas" (christmas 2017).</param>
+    /// <param name="Build">The build: "summer", "halloween", "winter" (christmas 2018), "christmas" (christmas 2017) or
+    /// "halloween2017".</param>
     /// <param name="Requester">The account making the request (already authenticated with its password).</param>
     /// <param name="DisplayName">The requester's display name.</param>
     /// <param name="Address">Where the request came from.</param>
@@ -32,6 +33,7 @@ namespace EchoRelay.Core.Server
             ["halloween"] = "Halloween 2018",
             ["winter"] = "Christmas 2018",
             ["christmas"] = "Christmas 2017",
+            ["halloween2017"] = "Halloween 2017",
         };
     }
 }

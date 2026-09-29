@@ -110,8 +110,10 @@
                                                  Content="Halloween 2018" Tag="halloween" Checked="BuildOption_Checked" AutomationProperties.Name="Halloween 2018 build"/>
                                     <RadioButton x:Name="WinterBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="0,6,6,0"
                                                  Content="Christmas 2018" Tag="winter" Checked="BuildOption_Checked" AutomationProperties.Name="Christmas 2018 build"/>
-                                    <RadioButton x:Name="ChristmasBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,6,0,0"
+                                    <RadioButton x:Name="ChristmasBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,6,0,6"
                                                  Content="Christmas 2017" Tag="christmas" Checked="BuildOption_Checked" AutomationProperties.Name="Christmas 2017 build"/>
+                                    <RadioButton x:Name="Halloween2017BuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="0,6,6,0"
+                                                 Content="Halloween 2017" Tag="halloween2017" Checked="BuildOption_Checked" AutomationProperties.Name="Halloween 2017 build"/>
                                 </UniformGrid>
 
                                 <TextBlock Text="Install location" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>

@@ -348,6 +348,15 @@ namespace EchoRelay.Core.Game
         public const uint Halloween2017ExecutableTimestamp = 0x59E8F804;
 
         /// <summary>
+        /// Checks whether an EchoArena.exe timestamp is one of the rad14 builds (christmas or halloween 2017): the same
+        /// command line, launch folder and game files (the patch loads as dbghelp.dll).
+        /// </summary>
+        public static bool IsRad14ExecutableTimestamp(uint? timestamp)
+        {
+            return timestamp == ChristmasExecutableTimestamp || timestamp == Halloween2017ExecutableTimestamp;
+        }
+
+        /// <summary>
         /// Names the Echo VR build an executable belongs to, from its PE header timestamp.
         /// </summary>
         /// <param name="executableFilePath">The path to the game executable.</param>

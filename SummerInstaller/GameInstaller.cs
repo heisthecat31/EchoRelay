@@ -220,9 +220,9 @@ namespace SummerInstaller
         #region Game file updates
         /// <summary>
         /// The EchoRelay DLLs a release's GameFiles zip carries for a build: (path in the zip, path in the install).
-        /// The christmas build loads the patch as dbghelp.dll, and the zip keeps its copies under christmas/.
+        /// The christmas and halloween 2017 builds load the patch as dbghelp.dll, and the zip keeps their copies under christmas/.
         /// </summary>
-        private static (string entry, string target)[] GameFilesFor(GameBuild build) => build.Id == "christmas"
+        private static (string entry, string target)[] GameFilesFor(GameBuild build) => build.Id == "christmas" || build.Id == "halloween2017"
             ? new[] { ("christmas/bin/win7/dbghelp.dll", @"bin\win7\dbghelp.dll"), ("christmas/bin/win7/pnsradgameserver.dll", @"bin\win7\pnsradgameserver.dll") }
             : new[] { ("bin/win7/dbgcore.dll", @"bin\win7\dbgcore.dll"), ("bin/win7/pnsradgameserver.dll", @"bin\win7\pnsradgameserver.dll") };
 

@@ -11,7 +11,8 @@ namespace EchoRelay.App.Utils
     /// </summary>
     public static class GameFilesUpdater
     {
-        /// <summary>A lobby build install: its name, root folder and whether it's christmas 2017 (which loads dbghelp.dll).</summary>
+        /// <summary>A lobby build install: its name, root folder and whether it's a rad14 build (christmas or halloween 2017,
+        /// which load dbghelp.dll).</summary>
         private record Install(string Name, string Folder, bool Christmas);
 
         /// <summary>
@@ -23,7 +24,7 @@ namespace EchoRelay.App.Utils
             foreach (string exe in executables.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 uint? timestamp = SummerBuild.ReadPETimestamp(exe);
-                bool christmas = timestamp == SummerBuild.ChristmasExecutableTimestamp;
+                bool christmas = SummerBuild.IsRad14ExecutableTimestamp(timestamp);
                 if (!christmas && timestamp != SummerBuild.ExecutableTimestamp && timestamp != SummerBuild.HalloweenExecutableTimestamp
                     && timestamp != SummerBuild.WinterExecutableTimestamp)
                     continue;

@@ -111,8 +111,10 @@ namespace EchoRelay.Core.Server.Services.Login
         {
             if (_halloweenClientPeers.ContainsKey(peer))
                 return "Halloween 2018";
+            // Halloween 2017 clients are served as christmas 2017 ones; they're the only build that frames its messages
+            // without the packet header.
             if (_christmasClientPeers.ContainsKey(peer))
-                return "Christmas 2017";
+                return peer.Headerless ? "Halloween 2017" : "Christmas 2017";
             if (_winterClientPeers.ContainsKey(peer))
                 return "Christmas 2018";
             if (_summerClientPeers.ContainsKey(peer))

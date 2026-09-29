@@ -27,11 +27,12 @@ namespace EchoRelay.Core.Game
             // The summer lobby build (rad15_summer) has different flags: our dbgcore.dll (EchoRelay.Patch) implements
             // -server/-noovr for it, the game itself knows -headless and -spectatorstream (windowed), and there is no
             // offline mode, moderator flag or timestep option.
-            // The christmas 2017 build (EchoArena.exe) only knows -novr; EchoRelay.Patch (dbghelp.dll) adds -server and an
-            // emulated -headless (no audio, window hidden). It runs from the game's root folder.
+            // The christmas and halloween 2017 builds (EchoArena.exe) only know -novr (halloween's own -server is patched);
+            // EchoRelay.Patch (dbghelp.dll) adds -server and an emulated -headless (no audio, window hidden). They run from
+            // the game's root folder.
             // On these builds EchoRelay.Patch caps a server's frame rate: timeStep becomes its -tickrate (frames a second).
             uint? timestamp = SummerBuild.ReadPETimestamp(executableFilePath);
-            if (timestamp == SummerBuild.ChristmasExecutableTimestamp)
+            if (SummerBuild.IsRad14ExecutableTimestamp(timestamp))
             {
                 if (role == LaunchRole.Server)
                     args.Add("-server");
