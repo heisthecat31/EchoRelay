@@ -333,6 +333,25 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     settings.Level = null;
             }
 
+            // Testing: a forced level for christmas 2017 sessions (see ServerSettings.ChristmasForcedLevel).
+            if (IsLobbyBuild && SummerBuild.IsChristmasVersionLock(VersionLock) && Peer.Server.Settings.ChristmasForcedLevel is long forcedLevel)
+            {
+                levelSymbol = forcedLevel;
+                SessionLevelSymbol = forcedLevel;
+                if (settings != null)
+                    settings.Level = null;
+            }
+
+            // Lone Echo ships none of Echo Arena's levels: its sessions are held in one of its own (the bridge, unless a
+            // request named another Lone Echo level).
+            if (VersionLock == SummerBuild.LoneEchoVersionLock && !SummerBuild.IsLoneEchoLevel(levelSymbol) && !SummerBuild.IsLoneEchoLevel(settings?.Level))
+            {
+                levelSymbol = SummerBuild.LevelLoneEchoBridge;
+                SessionLevelSymbol = levelSymbol;
+                if (settings != null)
+                    settings.Level = null;
+            }
+
             // Merge session settings information and send a "start session" message to the game server.
             var mergedSessionSettings = new ERGameServerStartSession.SessionSettings(
                 appId: settings?.AppId ?? "1369078409873402",

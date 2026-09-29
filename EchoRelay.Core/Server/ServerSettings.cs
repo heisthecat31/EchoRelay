@@ -106,6 +106,12 @@ namespace EchoRelay.Core.Server
         /// The service status message summer build clients receive (served at {ApiServicePath}/status/services).
         /// </summary>
         public string SummerServiceStatus { get; }
+
+        /// <summary>
+        /// Testing: every new christmas 2017 session starts on this level (a symbol), e.g. a Lone Echo level loaded from Lone
+        /// Echo's game data added to the game servers' and players' installs. Null for the normal levels.
+        /// </summary>
+        public long? ChristmasForcedLevel { get; set; }
         #endregion
 
         #region Constructor

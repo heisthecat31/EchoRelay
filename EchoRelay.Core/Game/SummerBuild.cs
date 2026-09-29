@@ -52,6 +52,13 @@ namespace EchoRelay.Core.Game
         public const long Halloween2017VersionLock = 0x5E017CAD91E350F7;
 
         /// <summary>
+        /// The version lock Lone Echo's final patch (rad14, loneecho.exe, March 2019) sends with publisher lock "loneecho".
+        /// Echo Arena's multiplayer code is still in it, but none of its levels: its sessions are held in Lone Echo's own
+        /// levels (see <see cref="LevelLoneEchoBridge"/>).
+        /// </summary>
+        public const long LoneEchoVersionLock = unchecked((long)0xC041FDC214E41D7F);
+
+        /// <summary>
         /// The version lock the 2018 christmas ("winter") lobby build (rad15_winter, goldmaster 268902) sends. It speaks the
         /// summer build's messages, except for its login settings (SNSLoginClientSettings, like halloween).
         /// </summary>
@@ -62,7 +69,8 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static bool IsChristmasVersionLock(long? versionLock)
         {
-            return versionLock == ChristmasVersionLock || versionLock == ChristmasLiveVersionLock || versionLock == Halloween2017VersionLock;
+            return versionLock == ChristmasVersionLock || versionLock == ChristmasLiveVersionLock || versionLock == Halloween2017VersionLock
+                || versionLock == LoneEchoVersionLock;
         }
 
         /// <summary>
@@ -110,7 +118,7 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static bool IsRad14PublisherLock(string? publisherLock)
         {
-            return publisherLock == ChristmasPublisherLock || publisherLock == Halloween2017PublisherLock;
+            return publisherLock == ChristmasPublisherLock || publisherLock == Halloween2017PublisherLock || publisherLock == LoneEchoPublisherLock;
         }
 
         /// <summary>
@@ -150,6 +158,40 @@ namespace EchoRelay.Core.Game
         public static readonly long LevelHalloween2017Lobby = Symbol.Hash("mpl_lobby_a_spooky");
 
         /// <summary>
+        /// The publisher lock Lone Echo installs log in with (set in their _local\config.json; the build has none of its own).
+        /// </summary>
+        public const string LoneEchoPublisherLock = "loneecho";
+
+        /// <summary>
+        /// Kronos II's bridge (stn_int_itc_bridge), where Lone Echo's sessions are held: the build ships no multiplayer
+        /// levels (no arena, lobby or global multiplayer level).
+        /// </summary>
+        public static readonly long LevelLoneEchoBridge = Symbol.Hash("stn_int_itc_bridge");
+
+        /// <summary>
+        /// Lone Echo's level archives (their names cracked from the archive hashes: lone_echo_blender/data/level_names_loneecho1.json).
+        /// </summary>
+        public static readonly IReadOnlyList<string> LoneEchoLevels = new[]
+        {
+            "aln_master_vista", "aln_rs1_ext_010_hull", "aln_rs1_ext_010_hull_airlock_powered", "aln_rs1_ext_010_hull_airlock_unpowered",
+            "aln_rs1_int_010_enter", "aln_rs1_int_020_cannon", "aln_rs1_int_040_vents_three", "aln_rs1_int_060_pod_room_core_powered",
+            "aln_rs2_ext_010_hull", "aln_rs2_int_010_cannon", "aln_rs2_int_020_life_support", "aln_rs2_int_030_conduit",
+            "aln_rs2_int_030_conduit_powered", "aln_rs2_int_030_conduit_unpowered", "aln_rs2_int_040_reactor_powered",
+            "aln_rs2_int_050_fury_ride", "aln_rs2_int_060_bridge", "aln_rs2_int_060_bridge_static", "aln_rs2_int_070_bridge_future",
+            "aln_rs2_int_070_bridge_future_static", "gpr_060_damaged_exterior", "min_dmg_master", "mnu_load", "stn_ext_dmg_station",
+            "stn_ext_itc_containers_a", "stn_ext_itc_containers_b", "stn_ext_itc_station_back", "stn_ext_itc_station_front",
+            "stn_int_dmg_bridge_alert", "stn_int_itc_bridge", "stn_int_itc_greenhouse_day", "stn_int_itc_greenhouse_night",
+            "stn_int_itc_master", "tut_cutter", "tut_dialogue", "tut_helmet", "tut_radiation", "tut_scanner",
+        };
+
+        private static readonly HashSet<long> _loneEchoLevelSymbols = new HashSet<long>(LoneEchoLevels.Select(Symbol.Hash));
+
+        /// <summary>
+        /// Checks whether a level symbol is one of Lone Echo's levels.
+        /// </summary>
+        public static bool IsLoneEchoLevel(long? level) => level != null && _loneEchoLevelSymbols.Contains(level.Value);
+
+        /// <summary>
         /// The lobby builds' game types and levels, for naming symbols the final build's symbol cache doesn't know.
         /// </summary>
         private static readonly Lazy<Dictionary<long, string>> _knownNames = new Lazy<Dictionary<long, string>>(() =>
@@ -157,7 +199,7 @@ namespace EchoRelay.Core.Game
             {
                 "social_2.0", "social_2.0_private", "social_2.0_npe", "echo_arena", "echo_arena_private", "echo_combat", "echo_combat_private",
                 "social", "arena",
-                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_lobby_a_spooky", "mpl_arena_a", "mpl_combat_dyson",
+                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_lobby_a_spooky", "mpl_arena_a", "mpl_combat_dyson", "stn_int_itc_bridge",
             }.ToDictionary(Symbol.Hash, name => name));
 
         /// <summary>
@@ -253,6 +295,8 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static long? DefaultLevelForGameType(long? gameType, long versionLock = VersionLock)
         {
+            if (versionLock == LoneEchoVersionLock)
+                return LevelLoneEchoBridge;
             if (IsChristmasVersionLock(versionLock))
             {
                 if (gameType == GameTypeArenaChristmas || gameType == GameTypeArena || gameType == Symbol.Hash("echo_arena_private"))
@@ -348,12 +392,17 @@ namespace EchoRelay.Core.Game
         public const uint Halloween2017ExecutableTimestamp = 0x59E8F804;
 
         /// <summary>
+        /// The PE header timestamp of Lone Echo's final patch (loneecho.exe).
+        /// </summary>
+        public const uint LoneEchoExecutableTimestamp = 0x5C9D6E49;
+
+        /// <summary>
         /// Checks whether an EchoArena.exe timestamp is one of the rad14 builds (christmas or halloween 2017): the same
         /// command line, launch folder and game files (the patch loads as dbghelp.dll).
         /// </summary>
         public static bool IsRad14ExecutableTimestamp(uint? timestamp)
         {
-            return timestamp == ChristmasExecutableTimestamp || timestamp == Halloween2017ExecutableTimestamp;
+            return timestamp == ChristmasExecutableTimestamp || timestamp == Halloween2017ExecutableTimestamp || timestamp == LoneEchoExecutableTimestamp;
         }
 
         /// <summary>
@@ -370,6 +419,7 @@ namespace EchoRelay.Core.Game
                 HalloweenExecutableTimestamp => "Halloween 2018",
                 ChristmasExecutableTimestamp => "Christmas 2017",
                 Halloween2017ExecutableTimestamp => "Halloween 2017",
+                LoneEchoExecutableTimestamp => "Lone Echo",
                 WinterExecutableTimestamp => "Christmas 2018",
                 _ => null,
             };

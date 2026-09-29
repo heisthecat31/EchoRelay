@@ -24,8 +24,8 @@ namespace XmasPatches
 	{
 		const CHAR* description;
 		DWORD rva;
-		BYTE original[16];
-		BYTE patched[16];
+		BYTE original[24];
+		BYTE patched[24];
 		SIZE_T size;
 	};
 
@@ -179,6 +179,51 @@ namespace XmasPatches
 			},
 			0,
 			0x7869,
+		},
+		{
+			// Lone Echo's final patch (loneecho.exe, March 2019, rad14 localization_dev). Echo Arena's multiplayer is still
+			// built in (christmas 2017's code: the same providers, NetGame and messages), but nothing sets the start-up
+			// flags any more (they stay 0) and there is no -server: -server becomes -mp (boot into multiplayer), and
+			// the start-up flags are set to 6 (dedicated server, server lobby) where they're initialized.
+			"lone echo (rad14, localization_dev)", 0x5C9D6E49, 0x59CD7943,
+			L"-mp",
+			{
+				// mov qword [rdi+4558h], -1; mov dword [rdi+4560h], r15d (0) -> lea rax, [rdi+4558h]; or qword [rax], -1;
+				// mov dword [rax+8], 6 (the 64 bytes after the flags are cleared right after, so rax is free here).
+				{ "set the dedicated server start-up flags where they're initialized (0 -> 6)", 0xA0D49,
+					{ 0x48, 0xC7, 0x87, 0x58, 0x45, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x44, 0x89, 0xBF, 0x60, 0x45, 0x00, 0x00 },
+					{ 0x48, 0x8D, 0x87, 0x58, 0x45, 0x00, 0x00, 0x48, 0x83, 0x08, 0xFF, 0xC7, 0x40, 0x08, 0x06, 0x00, 0x00, 0x00 }, 18 },
+				{ "create only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped, and no Oculus)", 0xAC9C9,
+					{ 0x45, 0x33, 0xC0, 0x48, 0x8D, 0x15, 0xDD, 0x23, 0xAE, 0x00 }, { 0x31, 0xF6, 0x45, 0x31, 0xFF, 0xE9, 0x31, 0x00, 0x00, 0x00 }, 10 },
+				{ "give the dedicated server's NetGame the RAD provider in place of the Oculus/demo ones (r8, r9 <- r13)", 0xACAA5,
+					{ 0x4C, 0x8B, 0xCE, 0x4D, 0x8B, 0xC7 }, { 0x4D, 0x8B, 0xCD, 0x4D, 0x8B, 0xC5 }, 6 },
+				{ "skip Oculus/VR initialization, as -novr does (je -> nop)", 0xAE823, { 0x74, 0x11 }, { 0x90, 0x90 }, 2 },
+				{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped", 0xA9A4A,
+					{ 0x48, 0x8D, 0x15, 0x3F, 0x51, 0xAE, 0x00 }, { 0x48, 0x8D, 0x15, 0x2F, 0x51, 0xAE, 0x00 }, 7 },
+			},
+			{ "disable audio, as -noaudio would (je -> nop)", 0x2E0A42, { 0x74, 0x0B }, { 0x90, 0x90 }, 2 },
+			{ "keep the Microsoft Basic Render Driver adapter, so a server without a GPU renders with WARP (je -> nop)", 0x121747,
+				{ 0x74, 0x40 }, { 0x90, 0x90 }, 2 },
+			0x8C7CA4, // D3D11CreateDevice thunk
+			0xF93E9,  // outputs[i]->GetDesc
+			0xBB6410, // frame timer vtable
+			0xBE1CD0, { 0x3C8EAA, 0x3D284D }, // "https://api.readyatdawn.com"
+			// pnsovr.dll (September 2017): halloween 2017's login code, the org-scoped id kept in the provider object.
+			{ "skip the Oculus entitlement check", 0xED52, { 0x75, 0x4F }, { 0xEB, 0x4F }, 2 },
+			{
+				{ "log in even though ovr_User_GetOrgScopedID failed (je -> jmp)", 0x74EE, { 0x74, 0x39 }, { 0xEB, 0x39 }, 2 },
+				NO_PATCH,
+			},
+			{
+				{ "log in even though ovr_User_GetUserProof failed", 0x7580,
+					{ 0x0F, 0x84, 0xA9, 0x00, 0x00, 0x00 }, { 0xE9, 0xAA, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				// -> lea rax, [""] (the terminator of the "ovr_User_GetUserProof failed: %s" string at RVA 0x53ED0)
+				{ "log in with an empty nonce", 0x7681,
+					{ 0xFF, 0x15, 0xE9, 0xEE, 0x03, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0xA0, 0xEE, 0x03, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0x68, 0xC8, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 15 },
+			},
+			0,
+			0x7529,
 		},
 	};
 
