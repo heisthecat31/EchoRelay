@@ -333,8 +333,8 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     settings.Level = null;
             }
 
-            // Testing: a forced level for christmas 2017 sessions (see ServerSettings.ChristmasForcedLevel).
-            if (IsLobbyBuild && SummerBuild.IsChristmasVersionLock(VersionLock) && Peer.Server.Settings.ChristmasForcedLevel is long forcedLevel)
+            // Testing: every new session, on any build, starts on a forced level (see ServerSettings.ForcedLevel).
+            if (Peer.Server.Settings.ForcedLevel is long forcedLevel)
             {
                 levelSymbol = forcedLevel;
                 SessionLevelSymbol = forcedLevel;
@@ -466,7 +466,9 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     channelUUID: SessionChannel ?? new Guid(),
                     endpoint: new LobbyPingRequestv3.EndpointData(InternalAddressFor(matchingPeer), ExternalAddress, Port),
                     teamIndex: IsLobbyBuild ? (short)(matchingSession.AssignedTeam = _pendingTeams[matchingPeer] = AssignSummerTeam(matchingPeer, matchingSession.TeamIndex)).Value : (short)matchingSession.TeamIndex,
-                    unk1: 0,
+                    // The lobby builds read this field's low byte as the session's lobby type (0 public, 1 private): the client keeps it
+                    // for its netgame (the private match podium only shows its screen in a private lobby) and its party data.
+                    unk1: IsLobbyBuild && SessionLobbyType != ERGameServerStartSession.LobbyType.Unassigned ? (uint)SessionLobbyType : 0,
                     serverEncoderFlags: (ulong)serverEncoderSettings,
                     clientEncoderFlags: (ulong)clientEncoderSettings,
                     serverSequenceId: BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8)),

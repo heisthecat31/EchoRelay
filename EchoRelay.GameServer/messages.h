@@ -38,6 +38,7 @@ const EchoVR::SymbolId SYMBOL_TCPBROADCASTER_LOBBY_PLAYERS_REJECTED = 0x77777777
 const EchoVR::SymbolId SYMBOL_TCPBROADCASTER_LOBBY_PLAYERS_REMOVE_PLAYER = 0x7777777777770800; // unofficial
 const EchoVR::SymbolId SYMBOL_TCPBROADCASTER_LOBBY_CHALLENGE_REQUEST = 0x7777777777770900; // unofficial
 const EchoVR::SymbolId SYMBOL_TCPBROADCASTER_LOBBY_CHALLENGE_RESPONSE = 0x7777777777770A00; // unofficial
+const EchoVR::SymbolId SYMBOL_TCPBROADCASTER_LOBBY_REQUEST_SESSION = 0x7777777777770B00; // unofficial (-forcelevel)
 
 /// <summary>
 /// A message sent from game server to server to register the game server.

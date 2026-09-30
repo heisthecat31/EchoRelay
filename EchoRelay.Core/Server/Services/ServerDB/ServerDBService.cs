@@ -1,4 +1,5 @@
-﻿using EchoRelay.Core.Server.Messages;
+﻿using EchoRelay.Core.Game;
+using EchoRelay.Core.Server.Messages;
 using EchoRelay.Core.Server.Messages.Common;
 using EchoRelay.Core.Server.Messages.ServerDB;
 using System.Collections.Specialized;
@@ -94,6 +95,9 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                     case ERGameServerRemovePlayer removePlayer:
                         await ProcessRemovePlayer(sender, removePlayer);
                         break;
+                    case ERGameServerRequestSession requestSession:
+                        _ = ProcessRequestSession(sender, requestSession);
+                        break;
 
                 }
             }
@@ -153,6 +157,26 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             // Summer build servers send it once the session's level finished loading, releasing clients waiting to join.
             RegisteredGameServer? registeredGameServer = sender.GetSessionData<RegisteredGameServer>();
             registeredGameServer?.SetSessionLoaded();
+        }
+
+        /// <summary>
+        /// Processes a <see cref="ERGameServerRequestSession"/>: a game server started with -forcelevel asks for a session on
+        /// itself. It's started like one a player requested (public, on that level and game type), so players can be
+        /// matched into it. The server asks again after each session ends, so a short wait lets it return to its lobby.
+        /// </summary>
+        /// <param name="sender">The sender of the request.</param>
+        /// <param name="request">The request contents.</param>
+        private async Task ProcessRequestSession(Peer sender, ERGameServerRequestSession request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Level))
+                return;
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            RegisteredGameServer? registeredGameServer = sender.GetSessionData<RegisteredGameServer>();
+            if (registeredGameServer == null || registeredGameServer.SessionStarted)
+                return;
+            long level = Symbol.Hash(request.Level.Trim().ToLowerInvariant());
+            long? gameType = string.IsNullOrWhiteSpace(request.GameType) ? null : Symbol.Hash(request.GameType.Trim().ToLowerInvariant());
+            await registeredGameServer.StartSession(new XPlatformId(), ERGameServerStartSession.LobbyType.Public, Guid.Empty, gameType, level, null);
         }
 
         /// <summary>

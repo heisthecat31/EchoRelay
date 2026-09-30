@@ -82,7 +82,7 @@ namespace EchoRelay.Cli
             [Option("summerloadtimeout", Required = false, Default = 30, HelpText = "The maximum time (in seconds) summer clients are held while a summer game server loads a new session.")]
             public int SummerLoadTimeout { get; set; }
 
-            [Option("forcelevel", Required = false, Default = null, HelpText = "Testing: every new christmas 2017 session starts on this level (a level name, e.g. stn_ext_itc_station_front).")]
+            [Option("forcelevel", Required = false, Default = null, HelpText = "Testing: every new session, on every build (including the latest), starts on this level (a level name, e.g. mpl_arena_a or stn_ext_itc_station_front).")]
             public string? ForceLevel { get; set; }
 
             [Option("summernews", Required = false, Default = null, HelpText = "The text shown on the summer build's lobby news board.")]
@@ -165,8 +165,8 @@ namespace EchoRelay.Cli
                     );
                 if (!string.IsNullOrWhiteSpace(options.ForceLevel))
                 {
-                    Server.Settings.ChristmasForcedLevel = Core.Game.Symbol.Hash(options.ForceLevel.Trim());
-                    Info($"[SERVER] Testing: christmas 2017 sessions start on level {options.ForceLevel.Trim()} (0x{Server.Settings.ChristmasForcedLevel:X16})");
+                    Server.Settings.ForcedLevel = Core.Game.Symbol.Hash(options.ForceLevel.Trim());
+                    Info($"[SERVER] Testing: every session starts on level {options.ForceLevel.Trim()} (0x{Server.Settings.ForcedLevel:X16})");
                 }
 
                 // Set up all event handlers.

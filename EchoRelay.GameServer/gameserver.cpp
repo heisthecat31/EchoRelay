@@ -4,6 +4,8 @@
 #include "echovrunexported.h"
 #include "messages.h"
 #include "gameserver.h"
+#include <string>
+#include <shellapi.h>
 
 /// <summary>
 /// A wrapper for WriteLog, simplifying logging operations.
@@ -74,6 +76,51 @@ VOID SendServerdbTcpMessage(GameServerLib* self, EchoVR::SymbolId msgId, VOID* m
 }
 
 /// <summary>
+/// The value following a launch option (e.g. -forcelevel mpl_arena_a), or an empty string.
+/// </summary>
+static std::string GetLaunchOption(const CHAR* name)
+{
+	INT argc = 0;
+	LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+	std::string value;
+	if (argv == NULL)
+		return value;
+	std::wstring wanted(name, name + strlen(name));
+	for (INT i = 0; i + 1 < argc; i++)
+	{
+		if (_wcsicmp(argv[i], wanted.c_str()) == 0)
+		{
+			CHAR buffer[256] = {};
+			WideCharToMultiByte(CP_UTF8, 0, argv[i + 1], -1, buffer, sizeof(buffer) - 1, NULL, NULL);
+			value = buffer;
+			break;
+		}
+	}
+	LocalFree(argv);
+	return value;
+}
+
+/// <summary>
+/// A game server started with -forcelevel <level> (and optionally -gametype <game type>) asks EchoRelay to start a session
+/// on itself on that level, so it hosts that level without a player requesting it. Sent after registering and after
+/// each session ends. (-region is the game's own launch option: the region it registers in.)
+/// </summary>
+static VOID RequestForcedSession(GameServerLib* self)
+{
+	static std::string level = GetLaunchOption("-forcelevel");
+	static std::string gameType = GetLaunchOption("-gametype");
+	if (level.empty() || !self->registered)
+		return;
+	std::string message = level;
+	message.push_back('\0');
+	message += gameType;
+	message.push_back('\0');
+	SendServerdbTcpMessage(self, SYMBOL_TCPBROADCASTER_LOBBY_REQUEST_SESSION, (VOID*)message.data(), message.size());
+	Log(EchoVR::LogLevel::Info, "[ECHORELAY.GAMESERVER] Requested a session on level %s (game type %s)", level.c_str(),
+		gameType.empty() ? "default" : gameType.c_str());
+}
+
+/// <summary>
 /// Event handler for receiving a game server registration success message from the TCP (websocket) ServerDB service.
 /// This message indicates the game server registration with ServerDB was accepted.
 /// </summary>
@@ -85,6 +132,9 @@ VOID OnTcpMsgRegistrationSuccess(GameServerLib* self, VOID* proxymthd, EchoVR::T
 
 	// Forward the received registration success event to the internal broadcast.
 	EchoVR::BroadcasterReceiveLocalEvent(self->broadcaster, SYMBOL_BROADCASTER_LOBBY_REGISTRATION_SUCCESS, "SNSLobbyRegistrationSuccess", msg, msgSize);
+
+	// With -forcelevel, host that level right away.
+	RequestForcedSession(self);
 }
 
 /// <summary>
@@ -368,6 +418,9 @@ VOID GameServerLib::EndSession() {
 		SendServerdbTcpMessage(this, SYMBOL_TCPBROADCASTER_LOBBY_END_SESSION, &message, sizeof(message));
 	}
 	Log(EchoVR::LogLevel::Info, "[ECHORELAY.GAMESERVER] Signaling end of session");
+
+	// With -forcelevel, host that level again.
+	RequestForcedSession(this);
 }
 
 /// <summary>
