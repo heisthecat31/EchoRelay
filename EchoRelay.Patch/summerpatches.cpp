@@ -3,6 +3,7 @@
 #include "xmaspatches.h"
 #include "voiplog.h"
 #include "framelimit.h"
+#include "sessionapi.h"
 #include <winternl.h>
 #include <cstdio>
 #include <cstdarg>
@@ -57,6 +58,28 @@ namespace SummerPatches
 		DWORD pnsOvrOrgScopedId;   // builds played without Revive: pnsovr.dll's org-scoped id, set to this install's own id (0: not used)
 		UINT64 frameTimerVtable;   // the frame timer's vtable, whose per-frame method servers are rate-limited through (see framelimit.h)
 		BytePatch ownPurchases;    // builds where Echo Combat is an in-app purchase: the "owns this item" check says yes
+		// The local HTTP API (http://127.0.0.1:6721/session, as in later builds). These builds serve it on port 80; the
+		// 2018 builds only with -http. Clients get it on, on 6721; dedicated servers don't open it (a host's own client
+		// needs the port).
+		BytePatch httpEnable;      // builds where the listener is behind -http: open it regardless
+		BytePatch httpPort;        // the listener's port, 80 -> 6721
+		BytePatch httpServerOff;   // builds that always open the listener: skip it on a dedicated server
+		// /session's body is sent with its buffer's length, which counts the string's NUL terminator; JSON parsers (Spark)
+		// reject the trailing NUL. The site is 'mov r8, rdi; mov rdx, rax; mov rcx, rbx' before the body write (0: none).
+		UINT64 sessionBodyLength;
+		BYTE sessionNetGame[7];    // at that site: an instruction loading r9 with the handler's net game (nop padded)
+		SessionApi::GameMemory sessionMemory; // game state /session doesn't report on this build (disc, last throw)
+		// The ranged float writer (cbitwriter.cpp) logs "Value is out of range" and skips the value when it's outside
+		// [min, max]. Some values go out of range every frame, and the logging drops frames; clamp them instead.
+		BytePatch clampRangedWrites;
+		// The Oculus runtime logs "ovr_GetPredictedDisplayTime frameIndex got N expected N+1" every frame through the log
+		// callback these builds give ovr_Initialize. The call site ('call [ovr_Initialize]', rcx = the init params) and
+		// the pointer it calls through; the call goes through a wrapper whose log callback drops that message.
+		UINT64 ovrInitializeCall;
+		UINT64 ovrInitializePointer;
+		// The ranged float reader (cbitreader.cpp): a value decoded a rounding error past its range logs "out of range" and
+		// fails the read; clamp it instead.
+		BytePatch clampRangedReads;
 	};
 
 	static const BuildProfile BUILDS[] = {
@@ -100,6 +123,25 @@ namespace SummerPatches
 			TRUE,
 			0x154AF8,                     // no Revive: the player's own id (from their display name)
 			0x141186958,                  // frame timer vtable
+			NO_PATCH,                     // Echo Combat is not a purchase on this build
+			NO_PATCH,                     // the HTTP listener opens without a flag on this build
+			{ "serve the local HTTP API on port 6721 (mov r8d, 50h -> mov r8d, 1A41h)",
+				0x1405DAB2D, { 0x41, 0xB8, 0x50, 0x00, 0x00, 0x00 }, { 0x41, 0xB8, 0x41, 0x1A, 0x00, 0x00 }, 6 },
+			{ "don't open the local HTTP API on a dedicated server (call NetGame's listener setup -> nops)",
+				0x1405DAA9E, { 0xE8, 0x3D, 0x00, 0x00, 0x00 }, { 0x90, 0x90, 0x90, 0x90, 0x90 }, 5 },
+			0x1405FF031,                  // /session body length
+			{ 0x4D, 0x8B, 0xCD, 0x90, 0x90, 0x90, 0x90 }, // mov r9, r13
+			// its /session reports the disc itself; the F10 menu's last throw is a static
+			{ 0, 0, 0, 0, 0, 0, 0, 0x1C58E20, 0 },
+			{ "clamp out-of-range values written to network packets instead of logging an error and dropping them (the "
+				"comiss/ja range checks in the ranged float writer -> maxss xmm4, xmm2; minss xmm4, xmm3)",
+				0x14109518A, { 0x0F, 0x2F, 0xD4, 0x0F, 0x87, 0xE8, 0x00, 0x00, 0x00, 0x0F, 0x2F, 0xE3, 0x0F, 0x87, 0xDF, 0x00, 0x00, 0x00 },
+				{ 0xF3, 0x0F, 0x5F, 0xE2, 0xF3, 0x0F, 0x5D, 0xE3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 18 },
+			0x140EE7585, 0x141C8BA60, // ovr_Initialize call, its pointer
+			{ "clamp values read from network packets instead of logging an error and failing the read (the comiss/ja range "
+				"checks in the ranged float reader -> maxss xmm2, xmm6; minss xmm2, xmm7)",
+				0x141094945, { 0x0F, 0x2F, 0xF2, 0xF3, 0x0F, 0x11, 0x13, 0x77, 0x17, 0x0F, 0x2F, 0xD7, 0x77, 0x12 },
+				{ 0xF3, 0x0F, 0x5F, 0xD6, 0xF3, 0x0F, 0x5D, 0xD7, 0xF3, 0x0F, 0x11, 0x13, 0x90, 0x90 }, 14 },
 		},
 		{
 			// The 2018 halloween lobby build. Sites were located against the summer build by their anchors (strings,
@@ -162,6 +204,26 @@ namespace SummerPatches
 			FALSE,
 			0xF7DC0,                      // no Revive: the player's own id (from their display name)
 			0x140FE47E0,                  // frame timer vtable
+			NO_PATCH,                     // Echo Combat is not a purchase on this build
+			{ "open the local HTTP API without -http (the flag bit's je -> nops)",
+				0x1408D84E8, { 0x74, 0x56 }, { 0x90, 0x90 }, 2 },
+			{ "serve the local HTTP API on port 6721 (mov r8d, 50h -> mov r8d, 1A41h)",
+				0x1408D850F, { 0x41, 0xB8, 0x50, 0x00, 0x00, 0x00 }, { 0x41, 0xB8, 0x41, 0x1A, 0x00, 0x00 }, 6 },
+			NO_PATCH,                     // servers keep the -http gate closed
+			0x1408EC45B,                  // /session body length
+			{ 0x4C, 0x8B, 0x8D, 0x30, 0x67, 0x00, 0x00 }, // mov r9, [rbp+6730h] (r15 is a loop counter by then)
+			// disc: [[[[net game+5D0h]+108C38h]+0D0h]+18h] is its rigid body (position +24h, velocity +44h); the component
+			// at +108C38h is checked by its vtable and name symbol. The F10 menu's last throw is a static.
+			{ 0x5D0, 0x108C38, 0x105A5A0, 0xD0, 0x18, 0x24, 0x44, 0x1AA2C60, 0x2FD481905A71048Eull },
+			{ "clamp out-of-range values written to network packets instead of logging an error and dropping them (the "
+				"comiss/ja range checks in the ranged float writer -> maxss xmm4, xmm2; minss xmm4, xmm3)",
+				0x140B997FA, { 0x0F, 0x2F, 0xD4, 0x0F, 0x87, 0xE8, 0x00, 0x00, 0x00, 0x0F, 0x2F, 0xE3, 0x0F, 0x87, 0xDF, 0x00, 0x00, 0x00 },
+				{ 0xF3, 0x0F, 0x5F, 0xE2, 0xF3, 0x0F, 0x5D, 0xE3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 18 },
+			0x140B6EC05, 0x141A86CE0, // ovr_Initialize call, its pointer
+			{ "clamp values read from network packets instead of logging an error and failing the read (the comiss/ja range "
+				"checks in the ranged float reader -> maxss xmm2, xmm6; minss xmm2, xmm7)",
+				0x140B990C5, { 0x0F, 0x2F, 0xF2, 0xF3, 0x0F, 0x11, 0x13, 0x77, 0x17, 0x0F, 0x2F, 0xD7, 0x77, 0x12 },
+				{ 0xF3, 0x0F, 0x5F, 0xD6, 0xF3, 0x0F, 0x5D, 0xD7, 0xF3, 0x0F, 0x11, 0x13, 0x90, 0x90 }, 14 },
 		},
 		{
 			// The 2018 christmas ("winter") lobby build, two months after halloween and the same generation. Sites were
@@ -224,6 +286,24 @@ namespace SummerPatches
 			{ "treat in-app purchases (Echo Combat) as owned", 0x1408FE6B0,
 				{ 0x48, 0x89, 0x54, 0x24, 0x10, 0x53 },
 				{ 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }, 6 }, // mov eax, 1; ret
+			{ "open the local HTTP API without -http (the flag bit's je -> nops)",
+				0x1408F2076, { 0x74, 0x56 }, { 0x90, 0x90 }, 2 },
+			{ "serve the local HTTP API on port 6721 (mov r8d, 50h -> mov r8d, 1A41h)",
+				0x1408F209D, { 0x41, 0xB8, 0x50, 0x00, 0x00, 0x00 }, { 0x41, 0xB8, 0x41, 0x1A, 0x00, 0x00 }, 6 },
+			NO_PATCH,                     // servers keep the -http gate closed
+			0x1409079EF,                  // /session body length
+			{ 0x4D, 0x8B, 0xCD, 0x90, 0x90, 0x90, 0x90 }, // mov r9, r13
+			// its /session reports the disc itself; the F10 menu's last throw is a static
+			{ 0, 0, 0, 0, 0, 0, 0, 0x1AC4148, 0 },
+			{ "clamp out-of-range values written to network packets instead of logging an error and dropping them (the "
+				"comiss/ja range checks in the ranged float writer -> maxss xmm4, xmm2; minss xmm4, xmm3)",
+				0x140BF7A4A, { 0x0F, 0x2F, 0xD4, 0x0F, 0x87, 0xE8, 0x00, 0x00, 0x00, 0x0F, 0x2F, 0xE3, 0x0F, 0x87, 0xDF, 0x00, 0x00, 0x00 },
+				{ 0xF3, 0x0F, 0x5F, 0xE2, 0xF3, 0x0F, 0x5D, 0xE3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 18 },
+			0x140BCC4B5, 0x141AEF8A0, // ovr_Initialize call, its pointer
+			{ "clamp values read from network packets instead of logging an error and failing the read (the comiss/ja range "
+				"checks in the ranged float reader -> maxss xmm2, xmm6; minss xmm2, xmm7)",
+				0x140BF7215, { 0x0F, 0x2F, 0xF2, 0xF3, 0x0F, 0x11, 0x13, 0x77, 0x17, 0x0F, 0x2F, 0xD7, 0x77, 0x12 },
+				{ 0xF3, 0x0F, 0x5F, 0xD6, 0xF3, 0x0F, 0x5D, 0xD7, 0xF3, 0x0F, 0x11, 0x13, 0x90, 0x90 }, 14 },
 		},
 	};
 
@@ -329,6 +409,138 @@ namespace SummerPatches
 
 	static BOOL HasFlag(const WCHAR* commandLine, const WCHAR* flag);
 
+	/// <summary>
+	/// Sends /session's body without its NUL terminator: the 9 bytes at the site ('mov r8, rdi; mov rdx, rax;
+	/// mov rcx, rbx', rdi = the buffer length) become a jump to a stub, allocated within rel32 range, doing
+	/// 'r8 = rdi ? rdi - 1 : 0' and the two other moves before jumping back.
+	/// </summary>
+	static VOID FixSessionBodyLength(UINT64 siteVa, const BYTE* netGameLoad)
+	{
+		static const BYTE ORIGINAL[] = { 0x4C, 0x8B, 0xC7, 0x48, 0x8B, 0xD0, 0x48, 0x8B, 0xCB };
+		BYTE* base = (BYTE*)GetModuleHandleA(NULL);
+		BYTE* site = base + (siteVa - 0x140000000);
+		if (site[0] == 0xE9)
+		{
+			Log("Already patched: /session body without its NUL terminator");
+			return;
+		}
+		if (memcmp(site, ORIGINAL, sizeof(ORIGINAL)) != 0)
+		{
+			Log("SKIPPED (unexpected bytes at %p): /session body without its NUL terminator", site);
+			return;
+		}
+		// A page for the stub within 2 GB of the site (scan downwards from the image, 64 KB granularity).
+		BYTE* stub = NULL;
+		for (UINT64 at = ((UINT64)base & ~0xFFFFull) - 0x10000; at > (UINT64)base - 0x70000000ull && stub == NULL; at -= 0x10000)
+			stub = (BYTE*)VirtualAlloc((LPVOID)at, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+		if (stub == NULL)
+		{
+			Log("FAILED (no memory near the game for the stub): /session body without its NUL terminator");
+			return;
+		}
+		// The body goes through SessionApi::SessionApiConvert (later builds' layout, no NUL). The site is just before a
+		// call, so rsp is 16-byte aligned; nothing volatile is live across it (the following call clobbers those anyway).
+		BYTE code[] = {
+			0x48, 0x83, 0xEC, 0x30,                   // sub rsp, 30h            (shadow space + out length)
+			0x4C, 0x8D, 0x44, 0x24, 0x20,             // lea r8, [rsp+20h]       (&outLen)
+			0x48, 0x8B, 0xC8,                         // mov rcx, rax            (data)
+			0x48, 0x8B, 0xD7,                         // mov rdx, rdi            (length, counting the NUL)
+			0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // mov r9, <the handler's net game> (per build, below)
+			0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,       // mov rax, SessionApiConvert
+			0xFF, 0xD0,                               // call rax
+			0x4C, 0x8B, 0x44, 0x24, 0x20,             // mov r8, [rsp+20h]       (length to send)
+			0x48, 0x83, 0xC4, 0x30,                   // add rsp, 30h
+			0x48, 0x8B, 0xD0,                         // mov rdx, rax            (body to send)
+			0x48, 0x8B, 0xCB,                         // mov rcx, rbx
+			0xE9, 0, 0, 0, 0,                         // jmp site + 9
+		};
+		memcpy(code + 15, netGameLoad, 7);
+		*(UINT64*)(code + 24) = (UINT64)&SessionApi::SessionApiConvert;
+		memcpy(stub, code, sizeof(code));
+		*(INT32*)(stub + sizeof(code) - 4) = (INT32)((site + 9) - (stub + sizeof(code)));
+		BYTE jump[9] = { 0xE9, 0, 0, 0, 0, 0x90, 0x90, 0x90, 0x90 };
+		*(INT32*)(jump + 1) = (INT32)(stub - (site + 5));
+		DWORD oldProtect;
+		VirtualProtect(site, sizeof(jump), PAGE_EXECUTE_READWRITE, &oldProtect);
+		memcpy(site, jump, sizeof(jump));
+		VirtualProtect(site, sizeof(jump), oldProtect, &oldProtect);
+		FlushInstructionCache(GetCurrentProcess(), site, sizeof(jump));
+		Log("Patched: /session in the later builds' layout, without its NUL terminator (stub at %p)", stub);
+	}
+
+	// ovrInitParams (LibOVR 1.x)
+	typedef VOID(__cdecl* OvrLogCallback)(UINT_PTR userData, INT32 level, const CHAR* message);
+	struct OvrInitParams
+	{
+		UINT32 flags;
+		UINT32 requestedMinorVersion;
+		OvrLogCallback logCallback;
+		UINT_PTR userData;
+		UINT32 connectionTimeoutMs;
+		UINT32 pad;
+	};
+	typedef INT32(__cdecl* OvrInitializeFunc)(const OvrInitParams* params);
+
+	static OvrLogCallback g_ovrLog = NULL;
+	static UINT_PTR g_ovrLogUserData = 0;
+	static OvrInitializeFunc* g_ovrInitialize = NULL;
+
+	static VOID __cdecl OvrLogFiltered(UINT_PTR userData, INT32 level, const CHAR* message)
+	{
+		// the runtime's per-frame complaint about the frame index these builds pass (it floods the log and costs frames)
+		if (message != NULL && strstr(message, "frameIndex got") != NULL)
+			return;
+		if (g_ovrLog != NULL)
+			g_ovrLog(g_ovrLogUserData, level, message);
+	}
+
+	static INT32 __cdecl OvrInitializeFiltered(const OvrInitParams* params)
+	{
+		if (params == NULL || params->logCallback == NULL)
+			return (*g_ovrInitialize)(params);
+		OvrInitParams filtered = *params;
+		g_ovrLog = params->logCallback;
+		g_ovrLogUserData = params->userData;
+		filtered.logCallback = OvrLogFiltered;
+		return (*g_ovrInitialize)(&filtered);
+	}
+
+	/// <summary>
+	/// Makes the game's 'call [ovr_Initialize]' (6 bytes) a call to OvrInitializeFiltered through a stub near the image.
+	/// </summary>
+	static VOID FilterOvrLog(UINT64 siteVa, UINT64 pointerVa)
+	{
+		BYTE* base = (BYTE*)GetModuleHandleA(NULL);
+		BYTE* site = base + (siteVa - 0x140000000);
+		BYTE original[6] = { 0xFF, 0x15 };
+		*(INT32*)(original + 2) = (INT32)(pointerVa - (siteVa + 6));
+		if (memcmp(site, original, sizeof(original)) != 0)
+		{
+			Log("SKIPPED (unexpected bytes at %p): drop the Oculus runtime's frame index log spam", site);
+			return;
+		}
+		g_ovrInitialize = (OvrInitializeFunc*)(base + (pointerVa - 0x140000000));
+		BYTE* stub = NULL;
+		for (UINT64 at = ((UINT64)base & ~0xFFFFull) - 0x10000; at > (UINT64)base - 0x70000000ull && stub == NULL; at -= 0x10000)
+			stub = (BYTE*)VirtualAlloc((LPVOID)at, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+		if (stub == NULL)
+		{
+			Log("FAILED (no memory near the game for the stub): drop the Oculus runtime's frame index log spam");
+			return;
+		}
+		BYTE code[] = { 0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0 }; // mov rax, OvrInitializeFiltered; jmp rax
+		*(UINT64*)(code + 2) = (UINT64)&OvrInitializeFiltered;
+		memcpy(stub, code, sizeof(code));
+		BYTE call[6] = { 0xE8, 0, 0, 0, 0, 0x90 };
+		*(INT32*)(call + 1) = (INT32)(stub - (site + 5));
+		DWORD oldProtect;
+		VirtualProtect(site, sizeof(call), PAGE_EXECUTE_READWRITE, &oldProtect);
+		memcpy(site, call, sizeof(call));
+		VirtualProtect(site, sizeof(call), oldProtect, &oldProtect);
+		FlushInstructionCache(GetCurrentProcess(), site, sizeof(call));
+		Log("Patched: drop the Oculus runtime's 'frameIndex got N expected N+1' log spam (stub at %p)", stub);
+	}
+
 	static VOID PatchPnsOvr(BYTE* base)
 	{
 		if (GetTimestamp(base) != g_build->pnsOvrTimestamp)
@@ -412,6 +624,63 @@ namespace SummerPatches
 	/// Determines the HTTP API host from _local/config.json (two directories above bin\win7): apiservice_host, or
 	/// failing that http://&lt;loginservice host&gt;/api.
 	/// </summary>
+	static std::string ReadLocalConfig();
+
+	/// <summary>
+	/// The login display name from _local/config.json (loginservice_host's displayname parameter), or "".
+	/// </summary>
+	static std::string GetDisplayName()
+	{
+		// summer/christmas 2018 call it loginservice_host, halloween login_host
+		std::string config = ReadLocalConfig();
+		std::string login = JsonGetString(config, "loginservice_host");
+		if (login.empty())
+			login = JsonGetString(config, "login_host");
+		size_t at = login.find("displayname=");
+		if (at == std::string::npos)
+			return "";
+		std::string encoded = login.substr(at + strlen("displayname="));
+		size_t amp = encoded.find('&');
+		if (amp != std::string::npos)
+			encoded = encoded.substr(0, amp);
+		std::string name;
+		for (size_t i = 0; i < encoded.size(); i++)
+		{
+			if (encoded[i] == '%' && i + 2 < encoded.size() && isxdigit((unsigned char)encoded[i + 1]) && isxdigit((unsigned char)encoded[i + 2]))
+			{
+				name += (char)strtol(encoded.substr(i + 1, 2).c_str(), NULL, 16);
+				i += 2;
+			}
+			else
+				name += encoded[i] == '+' ? ' ' : encoded[i];
+		}
+		return name;
+	}
+
+	static std::string ReadLocalConfig()
+	{
+		CHAR path[MAX_PATH];
+		GetModuleFileNameA(NULL, path, MAX_PATH);
+		std::string root = path;
+		for (int i = 0; i < 3; i++)
+		{
+			size_t slash = root.find_last_of('\\');
+			if (slash != std::string::npos)
+				root = root.substr(0, slash);
+		}
+		std::string config;
+		FILE* f = NULL;
+		if (fopen_s(&f, (root + "\\_local\\config.json").c_str(), "rb") == 0 && f != NULL)
+		{
+			CHAR buf[4096];
+			size_t n;
+			while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+				config.append(buf, n);
+			fclose(f);
+		}
+		return config;
+	}
+
 	static std::string GetApiHost()
 	{
 		CHAR path[MAX_PATH];
@@ -624,8 +893,33 @@ namespace SummerPatches
 		if (isServer && g_build->frameTimerVtable != 0)
 			FrameLimit::Install((VOID**)((BYTE*)GetModuleHandleA(NULL) + (g_build->frameTimerVtable - 0x140000000)), Log);
 		RedirectStatusHost();
+		if (g_build->clampRangedWrites.size != 0)
+			ApplyGamePatch(g_build->clampRangedWrites, "clamp out-of-range network values");
+		if (g_build->ovrInitializeCall != 0 && !noOvr)
+			FilterOvrLog(g_build->ovrInitializeCall, g_build->ovrInitializePointer);
+		if (g_build->clampRangedReads.size != 0)
+			ApplyGamePatch(g_build->clampRangedReads, "clamp out-of-range network values read");
 		if (g_build->ownPurchases.size != 0)
 			ApplyGamePatch(g_build->ownPurchases, "own the Echo Combat unlock");
+
+		// Local HTTP API: on for clients (port 6721, like later builds), off on dedicated servers.
+		if (isServer)
+		{
+			if (g_build->httpServerOff.size != 0)
+				ApplyGamePatch(g_build->httpServerOff, "no local HTTP API on a dedicated server");
+		}
+		else
+		{
+			if (g_build->httpEnable.size != 0)
+				ApplyGamePatch(g_build->httpEnable, "open the local HTTP API by default");
+			ApplyGamePatch(g_build->httpPort, "local HTTP API on port 6721");
+			if (g_build->sessionBodyLength != 0)
+			{
+				SessionApi::SetClientName(GetDisplayName());
+				SessionApi::SetGameMemory(g_build->sessionMemory);
+				FixSessionBodyLength(g_build->sessionBodyLength, g_build->sessionNetGame);
+			}
+		}
 
 		// Parties and friends through EchoRelay instead of Oculus (unless -oculussocial). Not needed on dedicated servers.
 		g_echoRelaySocial = g_build->socialSupported && !isServer && !HasFlag(commandLine, L"-oculussocial");

@@ -104,6 +104,7 @@
     <ClInclude Include="patches.h" />
     <ClInclude Include="processmem.h" />
     <ClInclude Include="summerpatches.h" />
+    <ClInclude Include="sessionapi.h" />
     <ClInclude Include="summersocial.h" />
     <ClInclude Include="voiplog.h" />
     <ClInclude Include="framelimit.h" />
@@ -117,6 +118,7 @@
     <ClCompile Include="voiplog.cpp" />
     <ClCompile Include="framelimit.cpp" />
     <ClCompile Include="xmaspatches.cpp" />
+    <ClCompile Include="sessionapi.cpp" />
     <ClCompile Include="dbghelpforwards.cpp" />
   </ItemGroup>
   <ItemGroup>
