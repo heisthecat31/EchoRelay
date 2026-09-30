@@ -826,10 +826,140 @@ namespace XmasPatches
 	}
 
 	/// <summary>
+	/// Reads "loneecho_level_offset": [x, y, z] from _local\config.json. False if it isn't there.
+	/// </summary>
+	static BOOL GetLevelOffset(FLOAT offset[3])
+	{
+		std::string path = GetGameRoot() + "\\_local\\config.json";
+		FILE* f = NULL;
+		if (fopen_s(&f, path.c_str(), "rb") != 0 || f == NULL)
+			return FALSE;
+		std::string json;
+		CHAR buffer[4096];
+		SIZE_T read;
+		while ((read = fread(buffer, 1, sizeof(buffer), f)) > 0)
+			json.append(buffer, read);
+		fclose(f);
+		size_t at = json.find("\"loneecho_level_offset\"");
+		if (at == std::string::npos || (at = json.find('[', at)) == std::string::npos)
+			return FALSE;
+		return sscanf_s(json.c_str() + at, "[ %f , %f , %f", &offset[0], &offset[1], &offset[2]) == 3;
+	}
+
+	static BYTE* g_levelOffsetCave = NULL;    // the hook below; its data holds the offset and the last level root
+	static const SIZE_T LEVEL_OFFSET_DATA = 112; // three floats, then the level root object (8 bytes)
+
+	/// <summary>
+	/// Watches _local\config.json while the game runs: when "loneecho_level_offset" changes, the new value is used for
+	/// the next level load and the Lone Echo levels already loaded are moved there at once (the level root's SetOffset,
+	/// vtable +80h, on the root the hook last saw). A tuning aid: it calls into the game from this thread.
+	/// </summary>
+	static DWORD WINAPI LevelOffsetWatchThread(LPVOID)
+	{
+		typedef VOID(__fastcall* SetOffset)(VOID* root, const FLOAT* position);
+		FLOAT* current = (FLOAT*)(g_levelOffsetCave + LEVEL_OFFSET_DATA);
+		VOID** root = (VOID**)(g_levelOffsetCave + LEVEL_OFFSET_DATA + 16);
+		for (;;)
+		{
+			Sleep(500);
+			FLOAT offset[3];
+			if (!GetLevelOffset(offset) || memcmp(offset, current, sizeof(offset)) == 0)
+				continue;
+			memcpy(current, offset, sizeof(offset));
+			if (*root == NULL)
+			{
+				Log("Lone Echo level offset is now (%.2f, %.2f, %.2f) (next level load)", offset[0], offset[1], offset[2]);
+				continue;
+			}
+			__try
+			{
+				SetOffset set = (*(SetOffset**)*root)[0x80 / 8];
+				set(*root, offset);
+				Log("Moved the loaded Lone Echo levels to (%.2f, %.2f, %.2f)", offset[0], offset[1], offset[2]);
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				Log("Couldn't move the loaded Lone Echo levels (exception 0x%08X); the offset applies on the next load", GetExceptionCode());
+			}
+		}
+		return 0;
+	}
+
+	/// <summary>
+	/// Christmas 2017 running Lone Echo's levels (added to its data): their sub-levels (the bridge, the station) are
+	/// placed by the level loader, which sets the level root to "root position + (target - source)" before
+	/// "[LEVELLOAD] Level '%s' offset by (x, y, z)" (for Lone Echo's levels that is always (0, 0, 0)). Lone Echo's levels
+	/// have no multiplayer spawn points, so players appear at the spawn origin, outside the rooms (and the rooms'
+	/// visibility zones cull everything); this places them at (target - source) + "loneecho_level_offset" instead,
+	/// moving the levels around the players. The root's current position is left out: all the sub-levels share it, so
+	/// adding to it moved each one again (10, 20, 30). Only sub-levels placed this way move (Lone Echo's; the game's own
+	/// levels aren't placed through it).
+	/// </summary>
+	static VOID PatchLevelOffset(BYTE* exe)
+	{
+		static const DWORD SITE = 0x98B95D; // mov rax, [rsi+10h]; mov rcx, [rax+60h] (before the level's SetOffset call)
+		FLOAT offset[3];
+		if (g_build->executableTimestamp != 0x5A39494F || !GetLevelOffset(offset))
+			return;
+		BYTE* site = exe + SITE;
+		static const BYTE original[] = { 0x48, 0x8B, 0x46, 0x10, 0x48, 0x8B, 0x48, 0x60 };
+		if (memcmp(site, original, sizeof(original)) != 0)
+		{
+			Log("SKIPPED (unexpected bytes at %p): offset Lone Echo's levels", site);
+			return;
+		}
+		BYTE* cave = AllocateNear(exe, 144);
+		if (cave == NULL)
+			return;
+		BYTE code[144] = {};
+		SIZE_T n = 0;
+		const SIZE_T data = LEVEL_OFFSET_DATA;
+		// rax is still the root transform the loader added (its position at +10h); [rsp+40h..48h] is what it computed.
+		for (INT axis = 0; axis < 3; axis++)
+		{
+			BYTE disp = (BYTE)(0x40 + axis * 4);
+			BYTE load[] = { 0xF3, 0x0F, 0x10, 0x44, 0x24, disp };           // movss xmm0, [rsp+disp]
+			memcpy(code + n, load, sizeof(load)); n += sizeof(load);
+			BYTE sub[] = { 0xF3, 0x0F, 0x5C, 0x40, (BYTE)(0x10 + axis * 4) }; // subss xmm0, [rax+10h+4*axis]
+			memcpy(code + n, sub, sizeof(sub)); n += sizeof(sub);
+			BYTE add[] = { 0xF3, 0x0F, 0x58, 0x05, 0, 0, 0, 0 };             // addss xmm0, [rip+float]
+			INT32 rel = (INT32)(data + axis * 4 - (n + sizeof(add)));
+			memcpy(add + 4, &rel, 4);
+			memcpy(code + n, add, sizeof(add)); n += sizeof(add);
+			BYTE store[] = { 0xF3, 0x0F, 0x11, 0x44, 0x24, disp };          // movss [rsp+disp], xmm0
+			memcpy(code + n, store, sizeof(store)); n += sizeof(store);
+		}
+		memcpy(code + n, original, sizeof(original)); n += sizeof(original); // rcx = the level root
+		BYTE save[] = { 0x48, 0x89, 0x0D, 0, 0, 0, 0 };                     // mov [rip+root], rcx
+		INT32 rootRel = (INT32)(data + 16 - (n + sizeof(save)));
+		memcpy(save + 3, &rootRel, 4);
+		memcpy(code + n, save, sizeof(save)); n += sizeof(save);
+		code[n++] = 0xE9;                                                    // jmp back
+		INT32 back = (INT32)((site + sizeof(original)) - (cave + n + 4));
+		memcpy(code + n, &back, 4); n += 4;
+		if (n > data)
+		{
+			Log("SKIPPED (hook too long): offset Lone Echo's levels");
+			return;
+		}
+		memcpy(code + data, offset, sizeof(offset));
+		memcpy(cave, code, sizeof(code));
+		BYTE jump[sizeof(original)] = { 0xE9, 0, 0, 0, 0, 0x90, 0x90, 0x90 };
+		INT32 to = (INT32)(cave - (site + 5));
+		memcpy(jump + 1, &to, 4);
+		if (!WriteCode(site, jump, sizeof(jump)))
+			return;
+		g_levelOffsetCave = cave;
+		CreateThread(NULL, 0, LevelOffsetWatchThread, NULL, 0, NULL);
+		Log("Patched: move Lone Echo's levels by (%.2f, %.2f, %.2f) (loneecho_level_offset; edits to it apply live)", offset[0], offset[1], offset[2]);
+	}
+
+	/// <summary>
 	/// Sends the renderer's "outputs[displayIndex]->GetDesc(&desc)" (mov rax, [rcx]; call [rax+38h]) when it sizes the
 	/// window to a stub. With no display at all (a server whose RDP session is disconnected) the output is null and the
 	/// game crashed; every other use of the outputs checks for null. The stub that gives a missing display a 1280x720 desktop instead of crashing.
 	/// </summary>
+
 	static VOID PatchNoDisplay(BYTE* exe)
 	{
 		BYTE* site = exe + g_build->outputGetDesc;
@@ -920,8 +1050,15 @@ namespace XmasPatches
 	static LONG CALLBACK LogCrash(EXCEPTION_POINTERS* info)
 	{
 		static LONG logged = 0;
-		if (info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || InterlockedIncrement(&logged) > 3)
+		DWORD code = info->ExceptionRecord->ExceptionCode;
+		// Access violations, and the engine's own fatal errors (it breaks or raises after logging them, e.g. "Stack
+		// allocator ran out of memory"). Informational codes (thread names, debug output, C++ exceptions) are skipped.
+		BOOL fatal = code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_BREAKPOINT || code == EXCEPTION_STACK_OVERFLOW
+			|| code == EXCEPTION_ILLEGAL_INSTRUCTION || (code >= 0xC0000000 && code != 0xC0000005 && code != 0xE06D7363);
+		if (!fatal || InterlockedIncrement(&logged) > 4)
 			return EXCEPTION_CONTINUE_SEARCH;
+		if (code != EXCEPTION_ACCESS_VIOLATION)
+			Log("Exception 0x%08lX (fatal error or breakpoint)", code);
 		// "module+offset" for an address, or just the address outside any module.
 		auto describe = [](const VOID* address, CHAR* out, SIZE_T size)
 		{
@@ -1216,6 +1353,7 @@ namespace XmasPatches
 			}
 		}
 		RedirectApiHost((BYTE*)GetModuleHandleA(NULL));
+		PatchLevelOffset((BYTE*)GetModuleHandleA(NULL));
 		g_userId = GetPlayerUserId(server);
 		Log("This install's user id: %llu", (unsigned long long)g_userId);
 
