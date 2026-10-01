@@ -105,12 +105,63 @@ static std::string GetLaunchOption(const CHAR* name)
 /// on itself on that level, so it hosts that level without a player requesting it. Sent after registering and after
 /// each session ends. (-region is the game's own launch option: the region it registers in.)
 /// </summary>
+/// <summary>
+/// Echo VR's 64-bit symbol hash (CSymbol64, case-insensitive), as EchoRelay computes it.
+/// </summary>
+static EchoVR::SymbolId HashSymbol(const std::string& name)
+{
+	static UINT64 table[256];
+	static BOOL built = FALSE;
+	if (!built)
+	{
+		for (int i = 0; i < 256; i++)
+		{
+			UINT64 crc = 0;
+			for (int bit = 7; bit >= 0; bit--)
+			{
+				crc <<= 1;
+				if ((i >> bit) & 1)
+					crc ^= 0x95AC9329AC4BC9B5ULL;
+			}
+			table[i] = crc << 1;
+		}
+		built = TRUE;
+	}
+	UINT64 hash = 0xFFFFFFFFFFFFFFFFULL;
+	for (char c : name)
+		hash = (UINT64)(BYTE)tolower((BYTE)c) ^ table[hash >> 56] ^ (hash << 8);
+	return (EchoVR::SymbolId)hash;
+}
+
+static ULONGLONG g_forcedSessionDue = 0;    // when to send the next -forcelevel session request (0: none pending)
+static ULONGLONG g_lastForcedRequest = 0;
+static ULONGLONG g_forcedRetryDelay = 0;
+
 static VOID RequestForcedSession(GameServerLib* self)
 {
 	static std::string level = GetLaunchOption("-forcelevel");
-	static std::string gameType = GetLaunchOption("-gametype");
 	if (level.empty() || !self->registered)
 		return;
+	// A session that ended within seconds of being requested (e.g. a level that fails to load) is retried with a growing
+	// delay (5 s, doubling, up to a minute) instead of in a tight loop.
+	ULONGLONG now = GetTickCount64();
+	if (g_lastForcedRequest != 0 && now - g_lastForcedRequest < 15000)
+		g_forcedRetryDelay = g_forcedRetryDelay == 0 ? 5000 : min(g_forcedRetryDelay * 2, 60000ULL);
+	else
+		g_forcedRetryDelay = 0;
+	g_forcedSessionDue = now + g_forcedRetryDelay;
+	if (g_forcedSessionDue == 0)
+		g_forcedSessionDue = 1;
+}
+
+static VOID SendForcedSessionRequest(GameServerLib* self)
+{
+	static std::string level = GetLaunchOption("-forcelevel");
+	static std::string gameType = GetLaunchOption("-gametype");
+	g_forcedSessionDue = 0;
+	if (level.empty() || !self->registered)
+		return;
+	g_lastForcedRequest = GetTickCount64();
 	std::string message = level;
 	message.push_back('\0');
 	message += gameType;
@@ -295,6 +346,10 @@ VOID GameServerLib::Terminate()
 /// <returns>None</returns>
 VOID GameServerLib::Update()
 {
+	// -forcelevel: send a pending session request once it's due.
+	if (g_forcedSessionDue != 0 && GetTickCount64() >= g_forcedSessionDue)
+		SendForcedSessionRequest(this);
+
 	// TODO: This is temporary code to test if the profile JSON is updated (but not sent to server).
 	// If it is not updated in this structure, one of the "apply loadout" or "save loadout" operations may trigger the update?
 	for (int i = 0; i < this->lobby->entrantData.count; i++)
@@ -335,6 +390,10 @@ VOID GameServerLib::RequestRegistration(INT64 serverId, CHAR* radId, EchoVR::Sym
 	// Store the registration information.
 	this->serverId = serverId;
 	this->regionId = regionId;
+	// -region <name> picks the region a dedicated server registers in (the game only uses it for its own sessions).
+	std::string region = GetLaunchOption("-region");
+	if (!region.empty())
+		this->regionId = HashSymbol(region);
 	this->versionLock = versionLock;
 
 	// Obtain the serverdb URI from our config (or fallback to default)

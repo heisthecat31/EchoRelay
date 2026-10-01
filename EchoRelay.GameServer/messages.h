@@ -48,7 +48,7 @@ struct ERLobbyRegistrationRequest
 	UINT64 serverId;
 	UINT32 internalIp;
 	UINT16 port;
-	BYTE padding[4];
+	BYTE padding[2];          // the region starts at offset 16, as EchoRelay reads it (with 4 bytes, alignment put it at 24)
 	EchoVR::SymbolId regionId;
 	EchoVR::SymbolId versionLock;
 };

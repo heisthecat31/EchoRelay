@@ -393,6 +393,14 @@ VOID NetGameSwitchStateHook(PVOID pGame, EchoVR::NetGameState state)
 
     // Call the original function
     EchoVR::NetGameSwitchState(pGame, state);
+
+    // A windowed game server goes from "logged in" to its lobby by itself (a menu timer, about ten seconds after logging in);
+    // a -headless one has no renderer to run it and stays logged in. Schedule the move to the lobby ourselves.
+    if (isServer && isHeadless && state == EchoVR::NetGameState::LoggedIn)
+    {
+        Log(EchoVR::LogLevel::Info, "[ECHORELAY.PATCH] Headless game server logged in, moving to its lobby.");
+        EchoVR::NetGameScheduleReturnToLobby(pGame);
+    }
 }
 
 /// <summary>
@@ -418,6 +426,9 @@ UINT64 BuildCmdLineSyntaxDefinitionsHook(PVOID pGame, PVOID pArgSyntax)
 
     EchoVR::AddArgSyntax(pArgSyntax, "-timestep", 1, 1, FALSE);
     EchoVR::AddArgHelpString(pArgSyntax, "-timestep", "[EchoRelay] Sets the fixed update interval when using -headless (in ticks/updates per second). 0 = no fixed time step, 120 = default");
+
+    EchoVR::AddArgSyntax(pArgSyntax, "-forcelevel", 1, 1, FALSE);
+    EchoVR::AddArgHelpString(pArgSyntax, "-forcelevel", "[EchoRelay] With -server: host a session on this level (with -gametype and -region) as soon as the server registers, and again after each one ends");
 
     return result;
 }
