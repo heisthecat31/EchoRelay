@@ -74,6 +74,9 @@ namespace EchoRelay.Core.Server.Services.Matching
                     case ChristmasLobbyJoinSessionRequestv5 christmasJoinSessionRequest:
                         await ProcessChristmasJoinSessionRequestv5(sender, christmasJoinSessionRequest);
                         break;
+                    case Halloween2017LobbyJoinSessionRequestv4 halloween2017JoinSessionRequest:
+                        await ProcessChristmasJoinSessionRequestv5(sender, halloween2017JoinSessionRequest.ToChristmasRequest());
+                        break;
                     case SummerLobbyPlayerSessionsRequestv3 summerPlayerSessionsRequest:
                         await ProcessSummerPlayerSessionsRequestv3(sender, summerPlayerSessionsRequest);
                         break;

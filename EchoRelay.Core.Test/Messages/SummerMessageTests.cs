@@ -434,6 +434,72 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void DecodesCapturedHalloween2017JoinSessionRequest()
+        {
+            // A halloween 2017 player joining a lobby by id (captured from a live relay).
+            byte[] data = Convert.FromHexString("E040F4897A9F5FE8451C7E07B1E78F87F750E391AD7C015EF8F49FA8B1D0E8C801000000000000000100000000000000040000000000000042E137A1856B24530000");
+            Halloween2017LobbyJoinSessionRequestv4 request = new Halloween2017LobbyJoinSessionRequestv4();
+            request.Decode(data);
+            Assert.Equal(new Guid(Convert.FromHexString("E040F4897A9F5FE8451C7E07B1E78F87")), request.LobbyId);
+            Assert.Equal(SummerBuild.Halloween2017VersionLock, request.VersionLock);
+            Assert.Equal(SummerBuild.PlatformSymbolOvr, request.PlatformSymbol);
+            Assert.Equal("OVR-ORG-5991031625989218626", request.UserId.ToString());
+            Assert.Equal(0, request.TeamIndex);
+            Assert.Equal(data, request.Encode());
+            Assert.Equal(request.LobbyId, request.ToChristmasRequest().LobbyId);
+            Assert.Equal(request.MessageTypeSymbol, Symbol.Hash("SNSLobbyJoinSessionRequestv4"));
+        }
+
+        [Fact]
+        public void DecodesCapturedRemoteLogSetv2()
+        {
+            // A halloween 2018 game server's SESSION_STARTED log (captured from a live relay).
+            byte[] data = Convert.FromHexString("00000000000000002439D984F97F0000DEBFC538E260DAB2873D472F7D4E3754020000000100000001000000000000007B226D657373616765223A2253657373696F6E2053746172746564222C226D6573736167655F74797065223A2253455353494F4E5F53544152544544222C225B73657373696F6E5D5B757569645D223A227B33384335424644452D363045322D423244412D383733442D3437324637443445333735347D227D0A00");
+            RemoteLogSetv2 logSet = new RemoteLogSetv2();
+            logSet.Decode(data);
+            Assert.Equal(Guid.Parse("38C5BFDE-60E2-B2DA-873D-472F7D4E3754"), logSet.SessionId);
+            Assert.Equal(2U, logSet.LogLevel);
+            Assert.Single(logSet.Logs);
+            Assert.Equal("SESSION_STARTED", JObject.Parse(logSet.Logs[0])["message_type"]?.ToString());
+            Assert.Equal(data, logSet.Encode());
+            Assert.Equal(logSet.MessageTypeSymbol, Symbol.Hash("SNSRemoteLogSetv2"));
+
+            // Later logs are found through the offset table.
+            logSet.Logs = new[] { "{\"a\":1}", "{\"b\":2}", "{\"c\":3}" };
+            RemoteLogSetv2 decoded = new RemoteLogSetv2();
+            decoded.Decode(logSet.Encode());
+            Assert.Equal(logSet.Logs, decoded.Logs);
+        }
+
+        [Fact]
+        public void DecodesCapturedMatchEnded()
+        {
+            // A halloween 2018 game server's match result (captured from a live relay).
+            byte[] data = Convert.FromHexString("93F933E8E1ED6809DBAE007E054946A973AF1C7EDEA460CB6D706C5F6172656E615F61000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000074696D656C696D69745F6869740000001109000000000000020000000000000000000000000000007B22726F756E6473223A5B7B227465616D73223A5B7B2273636F7265223A307D2C7B2273636F7265223A307D5D7D5D7D006261F158A3AFDEF2174FB5DEA8EC5E3F040000000000000096457479BCDC61500000000000000000AFB90F6B5C0AEFE420403E7819F3892204000000000000004B6633B3AA69E67C010001004A617661");
+            MatchEnded matchEnded = new MatchEnded();
+            matchEnded.Decode(data);
+            Assert.Equal(Symbol.Hash("echo_arena"), matchEnded.GameTypeSymbol);
+            Assert.Equal("mpl_arena_a", matchEnded.Level);
+            Assert.Equal("timelimit_hit", matchEnded.EndReason);
+            Assert.Equal("{\"rounds\":[{\"teams\":[{\"score\":0},{\"score\":0}]}]}", matchEnded.Scores);
+            Assert.Equal(new[] { "OVR-ORG-5792153297824794006", "OVR-ORG-8999997087218361931" }, matchEnded.Players.Select(p => p.UserId.ToString()));
+            Assert.Equal(matchEnded.MessageTypeSymbol, Symbol.Hash("SNSMatchEnded"));
+        }
+
+        [Fact]
+        public void DecodesCapturedProcessSkillUpdates()
+        {
+            // A 2017 game server's skill update for a 2v2 match (captured from a live relay).
+            byte[] data = Convert.FromHexString("0100000000000000ABA4B940EC3201CB53E9D325A9809F3104000000000000007C4D3525345C194C000080DAC9C72DE3E82DC7A408933942A9F296A2FC19D756040000000000000042E137A1856B24530100000000000000793F765F5D2AE3A7901087F7445B991B04000000000000004B6633B3AA69E67C000000000000000028C6ECFC591538B1AEF2D4809F5D6514040000000000000096457479BCDC61500100000000000000");
+            ProcessSkillUpdates updates = new ProcessSkillUpdates();
+            updates.Decode(data);
+            Assert.Equal(1UL, updates.Unk0);
+            Assert.Equal(new[] { "OVR-ORG-5483515400332594556", "OVR-ORG-5991031625989218626", "OVR-ORG-8999997087218361931", "OVR-ORG-5792153297824794006" }, updates.Players.Select(p => p.UserId.ToString()));
+            Assert.Equal(new ushort[] { 0, 1, 0, 1 }, updates.Players.Select(p => p.Team));
+            Assert.Equal(updates.MessageTypeSymbol, Symbol.Hash("SNSProcessSkillUpdates"));
+        }
+
+        [Fact]
         public void DecodesCapturedClientLogSet()
         {
             // Two log lines from a summer client (180 bytes: two lines, padding, then the offsets 0 and 0x3B).
