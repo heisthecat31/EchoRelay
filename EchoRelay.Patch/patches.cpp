@@ -48,7 +48,7 @@ EchoVR::Json* localConfig = NULL;
 /// If zero, removes tick rate throttling.
 /// </summary>
 UINT64 headlessTimeStep = 120;
-UINT64 teamSize = 8; // -teamsize: the most players on a team in a game server's private matches
+UINT64 teamSize = 5; // -teamsize: the most players on a team in a game server's private matches
 
 /// <summary>
 /// Reports a fatal error with a message box, then exits the game.
@@ -259,6 +259,7 @@ VOID PatchEnableHeadless(PVOID pGame)
 /// <returns>None</returns>
 VOID PatchEnableServer()
 {
+
     // Patch the flags for our game to indicate we are a game server. This replaces checks to see if we
     // are a server, with code to set the flag permanently, and skips over the rest of the checking code.
     BYTE pbPatch[] = {
@@ -298,15 +299,35 @@ VOID PatchEnableServer()
     ProcessMemcpy(EchoVR::g_GameBaseAddress + 0x116F3D, pbPatch5, sizeof(pbPatch5));
 
     // Teams of more than 5 (private matches): the server's team assignment caps a team at min(session player limit / 2, 5)
-    // ('mov eax, 5; shr rsi, 1; cmp rsi, 5; cmova rsi, rax'). The 5 becomes -teamsize (default 8: 8v8 fills the server's 16
-    // player slots; e.g. -teamsize 6 leaves room for 4 spectators). Public matches stay 4v4, as EchoRelay only matches 8
-    // players into them.
+    // ('mov eax, 5; shr rsi, 1; cmp rsi, 5; cmova rsi, rax'). The 5 becomes -teamsize (default 5). Arena levels only have
+    // 10 of each per-player actor (e.g. ability actors), so an 11th player on a team crashes the server there; more than 5
+    // a team only works with 10 players in all (e.g. 6v4). Public matches stay 4v4, as EchoRelay only matches 8 into them.
     BYTE originalCap[] = { 0xB8, 0x05, 0x00, 0x00, 0x00, 0x48, 0xD1, 0xEE, 0x48, 0x83, 0xFE, 0x05 };
     if (memcmp((BYTE*)(EchoVR::g_GameBaseAddress + 0x1AB8C2), originalCap, sizeof(originalCap)) == 0)
     {
         BYTE cap = (BYTE)teamSize;
         BYTE pbPatch6[] = { 0xB8, cap, 0x00, 0x00, 0x00, 0x48, 0xD1, 0xEE, 0x48, 0x83, 0xFE, cap };
         ProcessMemcpy(EchoVR::g_GameBaseAddress + 0x1AB8C2, pbPatch6, sizeof(pbPatch6));
+    }
+
+    // Levels and their scripts only have team slots 0-4 (spawn points, per-slot actors), and the server crashes on a 6th
+    // team member's slot 5. When a team has no freed slot to reuse, its new member's slot is the team's player count; wrap
+    // it so the 6th member shares slot 0 with a teammate, the 7th slot 1, and so on. Clients just see two players in one
+    // slot. ('shl ax, 5; mov ecx, 0x3E0; xor ax, si; and ax, cx; xor ax, si' sets the slot bits of the user's flags.)
+    BYTE originalSlot[] = { 0x66, 0xC1, 0xE0, 0x05, 0xB9, 0xE0, 0x03, 0x00, 0x00, 0x66, 0x33, 0xC6, 0x66, 0x23, 0xC1, 0x66, 0x33, 0xC6 };
+    if (memcmp((BYTE*)(EchoVR::g_GameBaseAddress + 0x1ABC8A), originalSlot, sizeof(originalSlot)) == 0)
+    {
+        BYTE pbPatch7[] = {
+            0x3C, 0x05,                   // cmp al, 5
+            0x72, 0x02,                   // jb +2
+            0x2C, 0x05,                   // sub al, 5
+            0xC1, 0xE0, 0x05,             // shl eax, 5
+            0x31, 0xF0,                   // xor eax, esi
+            0x66, 0x25, 0xE0, 0x03,       // and ax, 0x3E0
+            0x31, 0xF0,                   // xor eax, esi
+            0x90,
+        };
+        ProcessMemcpy(EchoVR::g_GameBaseAddress + 0x1ABC8A, pbPatch7, sizeof(pbPatch7));
     }
 }
 
@@ -388,8 +409,18 @@ VOID PatchDeadlockMonitor()
 /// <param name="game">A pointer to the game instance.</param>
 /// <param name="state">The state to transition to.</param>
 /// <returns>None</returns>
+/// <summary>
+/// The game's net game (its first field is the NetGame state), for EchoRelay.GameServer (-bots).
+/// </summary>
+static PVOID g_netGame = NULL;
+extern "C" PVOID EchoRelayGetNetGame()
+{
+    return g_netGame;
+}
+
 VOID NetGameSwitchStateHook(PVOID pGame, EchoVR::NetGameState state)
 {
+    g_netGame = pGame;
     // Hook the net game switch state function, so we can redirect "load level failed" to a ready state again.
     // This way if a client requests a non-existent level, the game server library isn't unloaded due to a state
     // transition to "load failed" (because the level failed to load)
@@ -408,12 +439,16 @@ VOID NetGameSwitchStateHook(PVOID pGame, EchoVR::NetGameState state)
     EchoVR::NetGameSwitchState(pGame, state);
 
     // A windowed game server goes from "logged in" to its lobby by itself (a menu timer, about ten seconds after logging in);
-    // a -headless one has no renderer to run it and stays logged in. Schedule the move to the lobby ourselves.
-    if (isServer && isHeadless && state == EchoVR::NetGameState::LoggedIn)
+    // a -headless one has no renderer to run it and stays logged in. Schedule the move to the lobby ourselves, only right
+    // after logging in: between sessions the game passes through "logged in" on its way back to the lobby by itself, and
+    // scheduling another return there ends each new session straight away.
+    static EchoVR::NetGameState previousState = EchoVR::NetGameState::LoggedOut;
+    if (isServer && isHeadless && state == EchoVR::NetGameState::LoggedIn && previousState == EchoVR::NetGameState::LoggingIn)
     {
         Log(EchoVR::LogLevel::Info, "[ECHORELAY.PATCH] Headless game server logged in, moving to its lobby.");
         EchoVR::NetGameScheduleReturnToLobby(pGame);
     }
+    previousState = state;
 }
 
 /// <summary>
@@ -441,7 +476,10 @@ UINT64 BuildCmdLineSyntaxDefinitionsHook(PVOID pGame, PVOID pArgSyntax)
     EchoVR::AddArgHelpString(pArgSyntax, "-timestep", "[EchoRelay] Sets the fixed update interval when using -headless (in ticks/updates per second). 0 = no fixed time step, 120 = default");
 
     EchoVR::AddArgSyntax(pArgSyntax, "-teamsize", 1, 1, FALSE);
-    EchoVR::AddArgHelpString(pArgSyntax, "-teamsize", "[EchoRelay] With -server: the most players on a team in private matches (1-8, default 8; the server has 16 player slots, so e.g. 6 leaves room for 4 spectators)");
+    EchoVR::AddArgHelpString(pArgSyntax, "-teamsize", "[EchoRelay] With -server: the most players on a team in private matches (1-8, default 5; arena levels hold 10 players on teams in all)");
+
+    EchoVR::AddArgSyntax(pArgSyntax, "-bots", 1, 1, FALSE);
+    EchoVR::AddArgHelpString(pArgSyntax, "-bots", "[EchoRelay] With -server: add this many AI bots to each session once it's in game");
 
     EchoVR::AddArgSyntax(pArgSyntax, "-forcelevel", 1, 1, FALSE);
     EchoVR::AddArgHelpString(pArgSyntax, "-forcelevel", "[EchoRelay] With -server: host a session on this level (with -gametype and -region) as soon as the server registers, and again after each one ends");

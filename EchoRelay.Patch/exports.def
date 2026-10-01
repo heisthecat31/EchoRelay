@@ -1,3 +1,4 @@
 LIBRARY EchoRelay.Patch
 EXPORTS
    DetoursExportPlaceholder			@1
+   EchoRelayGetNetGame

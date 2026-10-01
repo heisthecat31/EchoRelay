@@ -6,6 +6,7 @@
 #include "gameserver.h"
 #include <string>
 #include <shellapi.h>
+#include <psapi.h>
 
 /// <summary>
 /// A wrapper for WriteLog, simplifying logging operations.
@@ -172,6 +173,102 @@ static VOID SendForcedSessionRequest(GameServerLib* self)
 }
 
 /// <summary>
+/// -bots N: adds N AI bots to each session once it's in game, through the game's own bot request (what the
+/// "spawn bot" script node uses). The bots are server-side entrants, so every client sees them.
+/// </summary>
+static INT32 BotsWanted()
+{
+	static INT32 wanted = -1;
+	if (wanted < 0)
+	{
+		std::string option = GetLaunchOption("-bots");
+		wanted = option.empty() ? 0 : max(0, min(atoi(option.c_str()), 16));
+	}
+	return wanted;
+}
+
+static VOID UpdateBots()
+{
+	static BOOL initialized = FALSE;
+	static PVOID(*getNetGame)() = NULL;
+	static INT32 added = 0;
+	static ULONGLONG nextTry = 0;
+	INT32 wanted = BotsWanted();
+	if (!initialized)
+	{
+		initialized = TRUE;
+		// EchoRelay.Patch (dbgcore.dll or a plugin) exports the net game.
+		HMODULE modules[1024];
+		DWORD needed = 0;
+		if (wanted > 0 && EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed))
+			for (DWORD i = 0; i < needed / sizeof(HMODULE) && getNetGame == NULL; i++)
+				getNetGame = (PVOID(*)())GetProcAddress(modules[i], "EchoRelayGetNetGame");
+		if (wanted > 0 && getNetGame == NULL)
+			Log(EchoVR::LogLevel::Warning, "[ECHORELAY.GAMESERVER] -bots needs EchoRelay.Patch loaded; no bots will be added");
+	}
+	if (wanted == 0 || getNetGame == NULL)
+		return;
+
+	CHAR* netGame = (CHAR*)getNetGame();
+	if (netGame == NULL || *(INT32*)netGame != 9) // NetGameState::InGame
+	{
+		added = 0;
+		return;
+	}
+	ULONGLONG now = GetTickCount64();
+	if (added >= wanted || now < nextTry || *(UINT16*)(netGame + 0xE2) >= 16 || *(volatile LONG*)(netGame + 0x27D8) != 0)
+		return;
+	nextTry = now + 1000;
+
+	// Each bot takes a body and an AI actor from the level's pools, which the level sizes for its usual player count (10
+	// in arena levels), and adding a bot with nothing left in them crashes the server, so stop at the body pool's size.
+	// (Human players have their own, larger body pool.)
+	typedef BOOL(*FindPoolFunc)(CHAR* pools, UINT64 archetype, CHAR** owner, UINT64* index);
+	FindPoolFunc findPool = (FindPoolFunc)((BYTE*)EchoVR::g_GameBaseAddress + 0x502D80);
+	CHAR* pools = *(CHAR**)(netGame + 0x2B08);
+	UINT64 archetype = *(UINT64*)((BYTE*)EchoVR::g_GameBaseAddress + 0x20D3008); // the body AddBotUser gives bots
+	CHAR* owner = NULL;
+	UINT64 index = 0;
+	if (pools == NULL || !findPool(pools, archetype, &owner, &index) ||
+		*(INT64*)(*(CHAR**)(owner + 1000) + (index & 0xFFFF) * 0x88 + 0x30) <= 0)
+	{
+		static ULONGLONG lastWarning = 0;
+		if (lastWarning == 0 || now - lastWarning > 60000)
+		{
+			lastWarning = now;
+			Log(EchoVR::LogLevel::Warning, "[ECHORELAY.GAMESERVER] This level has no free bodies for more bots (%d of %d added)", added, wanted);
+		}
+		return;
+	}
+
+	// The request, set up the way the spawn bot script node does: any team, no spawn transform.
+	BYTE request[0xD8] = {};
+	*(INT64*)(request + 0x00) = -1;
+	*(UINT32*)(request + 0x08) = 0xFFFF;
+	*(FLOAT*)(request + 0x1C) = 1.0f;
+	memcpy(request + 0x20, (BYTE*)EchoVR::g_GameBaseAddress + 0x201D338, 8);
+	memcpy(request + 0x28, (BYTE*)EchoVR::g_GameBaseAddress + 0x201D340, 4);
+	*(UINT64*)(request + 0x2C) = 0x3F800000;
+	memset(request + 0x38, 0xFF, 0xD0 - 0x38);
+	*(UINT32*)(request + 0xD0) = 0;
+	typedef BOOL(*RequestAddBotFunc)(CHAR* netGame, BYTE* request);
+	RequestAddBotFunc requestAddBot = (RequestAddBotFunc)((BYTE*)EchoVR::g_GameBaseAddress + 0x1A0D70);
+	// CNSLobby::AddBot asks the matchmaker for an online bot session, which EchoRelay doesn't serve. With the lobby's
+	// offline flag (hostingFlags bit 0) set for the call, it adds the bot entrant locally instead (an add entrant
+	// request to itself, as offline AI matches do), which a host lobby replicates to its clients like any entrant.
+	UINT32* hostingFlags = (UINT32*)(*(CHAR**)(netGame + 0x40) + 0x18 + 0x1C);
+	UINT32 savedFlags = *hostingFlags;
+	*hostingFlags |= 1;
+	BOOL requested = requestAddBot(netGame, request);
+	*hostingFlags = savedFlags;
+	if (requested)
+	{
+		added++;
+		Log(EchoVR::LogLevel::Info, "[ECHORELAY.GAMESERVER] Requested AI bot %d of %d", added, wanted);
+	}
+}
+
+/// <summary>
 /// Event handler for receiving a game server registration success message from the TCP (websocket) ServerDB service.
 /// This message indicates the game server registration with ServerDB was accepted.
 /// </summary>
@@ -214,6 +311,31 @@ VOID OnTcpMessageStartSession(GameServerLib* self, VOID* proxymthd, EchoVR::TcpP
 
 	// Forward the received start session event to the internal broadcast.
 	Log(EchoVR::LogLevel::Info, "[ECHORELAY.GAMESERVER] Starting new session");
+
+	// -bots: the game places a bot on a team using the session's "numteams" and "players_per_team" settings (and
+	// crashes without them), which only matchmaker sessions carry. Add them to the settings JSON, after the 36-byte
+	// header (session id, channel, player limit, entrant count, lobby type, padding), unless they're already there.
+	static std::string patched;
+	if (BotsWanted() > 0 && msgSize > 36)
+	{
+		const CHAR* json = (const CHAR*)msg + 36;
+		SIZE_T jsonLength = strnlen(json, msgSize - 36);
+		std::string settings(json, jsonLength);
+		SIZE_T close = settings.rfind('}');
+		if (jsonLength < msgSize - 36 && close != std::string::npos && settings.find("\"numteams\"") == std::string::npos)
+		{
+			std::string teamSize = GetLaunchOption("-teamsize");
+			std::string extra = std::string(settings.find(':') != std::string::npos ? "," : "") + "\"numteams\":2,\"players_per_team\":" +
+				std::to_string(teamSize.empty() ? 5 : atoi(teamSize.c_str()));
+			settings.insert(close, extra);
+			patched.assign((const CHAR*)msg, 36);
+			patched += settings;
+			patched.append((const CHAR*)msg + 36 + jsonLength, msgSize - 36 - jsonLength); // the terminator and entrants
+			msg = (VOID*)patched.data();
+			msgSize = patched.size();
+			Log(EchoVR::LogLevel::Info, "[ECHORELAY.GAMESERVER] Session settings for bots: %s", settings.c_str());
+		}
+	}
 	EchoVR::BroadcasterReceiveLocalEvent(self->broadcaster, SYMBOL_BROADCASTER_LOBBY_START_SESSION_V4, "SNSLobbyStartSessionv4", msg, msgSize);
 }
 
@@ -349,6 +471,8 @@ VOID GameServerLib::Update()
 	// -forcelevel: send a pending session request once it's due.
 	if (g_forcedSessionDue != 0 && GetTickCount64() >= g_forcedSessionDue)
 		SendForcedSessionRequest(this);
+
+	UpdateBots();
 
 	// TODO: This is temporary code to test if the profile JSON is updated (but not sent to server).
 	// If it is not updated in this structure, one of the "apply loadout" or "save loadout" operations may trigger the update?
