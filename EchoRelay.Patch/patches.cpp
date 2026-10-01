@@ -48,6 +48,7 @@ EchoVR::Json* localConfig = NULL;
 /// If zero, removes tick rate throttling.
 /// </summary>
 UINT64 headlessTimeStep = 120;
+UINT64 teamSize = 8; // -teamsize: the most players on a team in a game server's private matches
 
 /// <summary>
 /// Reports a fatal error with a message box, then exits the game.
@@ -295,6 +296,18 @@ VOID PatchEnableServer()
         0x90, 0x90, 0x90, 0x90, 0x90, 0x90 // NOP the jump that is taken if "-spectatorstream" is not provided.
     };
     ProcessMemcpy(EchoVR::g_GameBaseAddress + 0x116F3D, pbPatch5, sizeof(pbPatch5));
+
+    // Teams of more than 5 (private matches): the server's team assignment caps a team at min(session player limit / 2, 5)
+    // ('mov eax, 5; shr rsi, 1; cmp rsi, 5; cmova rsi, rax'). The 5 becomes -teamsize (default 8: 8v8 fills the server's 16
+    // player slots; e.g. -teamsize 6 leaves room for 4 spectators). Public matches stay 4v4, as EchoRelay only matches 8
+    // players into them.
+    BYTE originalCap[] = { 0xB8, 0x05, 0x00, 0x00, 0x00, 0x48, 0xD1, 0xEE, 0x48, 0x83, 0xFE, 0x05 };
+    if (memcmp((BYTE*)(EchoVR::g_GameBaseAddress + 0x1AB8C2), originalCap, sizeof(originalCap)) == 0)
+    {
+        BYTE cap = (BYTE)teamSize;
+        BYTE pbPatch6[] = { 0xB8, cap, 0x00, 0x00, 0x00, 0x48, 0xD1, 0xEE, 0x48, 0x83, 0xFE, cap };
+        ProcessMemcpy(EchoVR::g_GameBaseAddress + 0x1AB8C2, pbPatch6, sizeof(pbPatch6));
+    }
 }
 
 /// <summary>
@@ -427,6 +440,9 @@ UINT64 BuildCmdLineSyntaxDefinitionsHook(PVOID pGame, PVOID pArgSyntax)
     EchoVR::AddArgSyntax(pArgSyntax, "-timestep", 1, 1, FALSE);
     EchoVR::AddArgHelpString(pArgSyntax, "-timestep", "[EchoRelay] Sets the fixed update interval when using -headless (in ticks/updates per second). 0 = no fixed time step, 120 = default");
 
+    EchoVR::AddArgSyntax(pArgSyntax, "-teamsize", 1, 1, FALSE);
+    EchoVR::AddArgHelpString(pArgSyntax, "-teamsize", "[EchoRelay] With -server: the most players on a team in private matches (1-8, default 8; the server has 16 player slots, so e.g. 6 leaves room for 4 spectators)");
+
     EchoVR::AddArgSyntax(pArgSyntax, "-forcelevel", 1, 1, FALSE);
     EchoVR::AddArgHelpString(pArgSyntax, "-forcelevel", "[EchoRelay] With -server: host a session on this level (with -gametype and -region) as soon as the server registers, and again after each one ends");
 
@@ -454,6 +470,13 @@ UINT64 PreprocessCommandLineHook(PVOID pGame)
             isWindowed = TRUE;
         else if (lstrcmpW(argv[i], L"-noovr") == 0)
             isNoOVR = TRUE;
+        else if (lstrcmpW(argv[i], L"-teamsize") == 0)
+        {
+            if (i + 1 < argc)
+                teamSize = std::wcstoull((const WCHAR*)argv[i + 1], nullptr, 10);
+            if (teamSize < 1 || teamSize > 8)
+                FatalError("-teamsize must be between 1 and 8 (the server has 16 player slots).", NULL);
+        }
         else if (lstrcmpW(argv[i], L"-timestep") == 0)
         {
             // Verify a timestep argument was provided.
