@@ -688,6 +688,65 @@ BOOL VerifyGameVersion()
 }
 
 /// <summary>
+/// The older builds (christmas 2017, halloween 2018, christmas 2018) number their join errors differently from EchoRelay:
+/// the code EchoRelay sends when no game server is free to host the session (ServerFindFailed, 6) is "requires crossplay"
+/// to them, which tells the player nothing. Their crossplay texts are rewritten in place (same length or shorter) to say
+/// what actually happened. Builds without these strings are left alone.
+/// </summary>
+static VOID PatchJoinErrorText()
+{
+    static const struct { const CHAR* from; const CHAR* to; } texts[] = {
+        { "Lobby join failed, crossplay required", "No free game server: request one" },
+        { "Server join failed: Lobby requires crossplay", "No free game server: request one (installer)" },
+        { "[NETGAME] Server join failed: Lobby requires crossplay", "[NETGAME] No free game server to host the session" },
+    };
+    BYTE* base = (BYTE*)GetModuleHandleA(NULL);
+    IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
+    IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+    INT patched = 0;
+    for (WORD s = 0; s < nt->FileHeader.NumberOfSections; s++, section++)
+    {
+        if (section->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+            continue;
+        BYTE* start = base + section->VirtualAddress;
+        SIZE_T size = section->Misc.VirtualSize;
+        for (const auto& text : texts)
+        {
+            SIZE_T length = strlen(text.from) + 1; // with its terminator, so only the whole string matches
+            for (SIZE_T i = 1; i + length <= size; i++)
+            {
+                if (start[i - 1] != 0 || memcmp(start + i, text.from, length) != 0)
+                    continue;
+                DWORD oldProtect;
+                if (!VirtualProtect(start + i, length, PAGE_READWRITE, &oldProtect))
+                    continue;
+                memset(start + i, 0, length);
+                memcpy(start + i, text.to, strlen(text.to));
+                VirtualProtect(start + i, length, oldProtect, &oldProtect);
+                patched++;
+            }
+        }
+    }
+    if (patched == 0)
+        return;
+    // Logged to echorelay_patch.log like the build patch sets (the game's own log isn't set up yet).
+    CHAR path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    CHAR* slash = strrchr(path, '\\');
+    if (slash != NULL)
+        *(slash + 1) = 0;
+    strcat_s(path, "echorelay_patch.log");
+    FILE* log = _fsopen(path, "a", _SH_DENYNO);
+    if (log == NULL)
+        return;
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    fprintf(log, "[%02d:%02d:%02d.%03d] [pid %lu] Patched: %d \"crossplay required\" join error texts now say no game server was free\n",
+        t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, GetCurrentProcessId(), patched);
+    fclose(log);
+}
+
+/// <summary>
 /// Initializes the patcher, executing startup patchs on the game and installing detours/hooks on various game functions.
 /// </summary>
 /// <returns>None</returns>
@@ -697,6 +756,8 @@ VOID Initialize()
     if (initialized)
         return;
     initialized = true;
+
+    PatchJoinErrorText();
 
     // The christmas 2017 build (rad14, EchoArena.exe) loads this library as dbghelp.dll and gets its own patch set.
     if (XmasPatches::IsXmasBuild())
