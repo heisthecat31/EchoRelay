@@ -105,6 +105,15 @@ namespace EchoRelay.Core.Server.Services.Login
         }
 
         /// <summary>
+        /// Whether a logged in player plays a rad14 build (christmas 2017 or halloween 2017; also Lone Echo).
+        /// </summary>
+        public bool IsRad14Player(XPlatformId userId)
+        {
+            lock (PeersLock)
+                return Peers.Any(peer => peer.UserId == userId && _christmasClientPeers.ContainsKey(peer));
+        }
+
+        /// <summary>
         /// The game version a login connection plays, from its login.
         /// </summary>
         private string GetVersionName(Peer peer)

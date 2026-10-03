@@ -71,6 +71,17 @@ namespace EchoRelay.Core.Server.Services.Social
         private readonly List<Invite> _invites = new List<Invite>();
 
         /// <summary>
+        /// The fake friends in parties (see <see cref="RefreshFakeFriends"/>), by id.
+        /// </summary>
+        private readonly HashSet<ulong> _fakeFriendIds = new HashSet<ulong>();
+        private const string FAKE_FRIEND_NAME = "Fake Friend";
+
+        /// <summary>
+        /// How long a player's unanswered invite keeps their fake friend away.
+        /// </summary>
+        private const long FAKE_FRIEND_INVITE_HOLD_SECONDS = 120;
+
+        /// <summary>
         /// Oculus error codes the game shows (e.g. "room is full"), used for failed requests.
         /// </summary>
         private const int ERROR_NOT_FOUND = 10;
@@ -101,7 +112,7 @@ namespace EchoRelay.Core.Server.Services.Social
             lock (_lock)
             {
                 Room? room = _rooms.Values.FirstOrDefault(r => r.Members.Contains(userId));
-                return room == null ? Array.Empty<ulong>() : room.Members.Where(id => id != userId).ToArray();
+                return room == null ? Array.Empty<ulong>() : room.Members.Where(id => id != userId && !_fakeFriendIds.Contains(id)).ToArray();
             }
         }
 
@@ -134,7 +145,7 @@ namespace EchoRelay.Core.Server.Services.Social
                     return new PartyPlayer(id, user?.Name ?? id.ToString(), user != null);
                 }
                 List<PartyInfo> parties = _rooms.Values
-                    .Select(room => new PartyInfo(room.Id, Player(room.OwnerId), room.Members.Select(Player).ToList(), room.MaxUsers, room.Locked))
+                    .Select(room => new PartyInfo(room.Id, Player(room.OwnerId), room.Members.Where(id => !_fakeFriendIds.Contains(id)).Select(Player).ToList(), room.MaxUsers, room.Locked))
                     .ToList();
                 List<PartyPlayer> players = _users.Values.Select(u => new PartyPlayer(u.Id, u.Name, true)).OrderBy(p => p.Name).ToList();
                 return (parties, players);
@@ -158,17 +169,13 @@ namespace EchoRelay.Core.Server.Services.Social
                 room.Members.Remove(userId);
                 if (user != null)
                     GiveOwnParty(user, room, outgoing);
-                if (room.Members.Count == 0)
-                {
-                    _rooms.Remove(room.Id);
-                    _invites.RemoveAll(invite => invite.RoomId == room.Id);
-                }
-                else
+                if (!CloseIfEmpty(room))
                 {
                     if (room.OwnerId == userId)
-                        room.OwnerId = room.Members[0];
+                        room.OwnerId = RealMembers(room)[0];
                     NotifyRoomUpdate(room, userId, outgoing);
                 }
+                RefreshFakeFriends(outgoing);
             }
             await SendAll(outgoing);
             OnPartiesChanged?.Invoke();
@@ -187,8 +194,11 @@ namespace EchoRelay.Core.Server.Services.Social
                 Room? room = _rooms.Values.FirstOrDefault(r => r.Members.Contains(userId));
                 if (room == null)
                     return "That player isn't in a party.";
+                if (_fakeFriendIds.Contains(userId))
+                    return "That's a fake friend.";
                 room.OwnerId = userId;
                 NotifyRoomUpdate(room, 0, outgoing);
+                RefreshFakeFriends(outgoing);
             }
             await SendAll(outgoing);
             OnPartiesChanged?.Invoke();
@@ -218,6 +228,7 @@ namespace EchoRelay.Core.Server.Services.Social
                 _invites.RemoveAll(existing => existing.RoomId == partyId && existing.ToId == userId);
                 _invites.Add(invite);
                 outgoing.Add((user.Peer, new JObject { ["t"] = "note", ["kind"] = "invite", ["invite"] = InviteJson(invite) }));
+                RefreshFakeFriends(outgoing);
             }
             await SendAll(outgoing);
             return null;
@@ -255,6 +266,7 @@ namespace EchoRelay.Core.Server.Services.Social
                     LeaveRoom(user, outgoing);
                 _users.Remove(peer);
                 _invites.RemoveAll(invite => invite.ToId == user.Id);
+                RefreshFakeFriends(outgoing);
             }
             _ = SendAll(outgoing);
             OnPartiesChanged?.Invoke();
@@ -405,7 +417,7 @@ namespace EchoRelay.Core.Server.Services.Social
                             result = Error(rid, ERROR_LOCKED, "Party is locked");
                             break;
                         }
-                        if (room.Members.Count >= room.MaxUsers)
+                        if (RealMembers(room).Count >= room.MaxUsers)
                         {
                             result = Error(rid, ERROR_FULL, "Party is full");
                             break;
@@ -501,7 +513,7 @@ namespace EchoRelay.Core.Server.Services.Social
                 {
                     ulong roomId = data.Value<ulong>("room");
                     ulong newOwner = data.Value<ulong>("user");
-                    if (!_rooms.TryGetValue(roomId, out Room? room) || room.OwnerId != user.Id || !room.Members.Contains(newOwner))
+                    if (!_rooms.TryGetValue(roomId, out Room? room) || room.OwnerId != user.Id || !room.Members.Contains(newOwner) || _fakeFriendIds.Contains(newOwner))
                     {
                         result = Error(rid, ERROR_NOT_ALLOWED, "Only the party leader can pass leadership");
                         break;
@@ -551,6 +563,7 @@ namespace EchoRelay.Core.Server.Services.Social
                     break;
             }
             outgoing.Add((sender, result));
+            RefreshFakeFriends(outgoing);
         }
 
         /// <summary>
@@ -624,15 +637,88 @@ namespace EchoRelay.Core.Server.Services.Social
             if (!_rooms.TryGetValue(roomId, out Room? room))
                 return;
             room.Members.Remove(user.Id);
-            if (room.Members.Count == 0)
-            {
-                _rooms.Remove(roomId);
-                _invites.RemoveAll(invite => invite.RoomId == roomId);
+            if (CloseIfEmpty(room))
                 return;
-            }
             if (room.OwnerId == user.Id)
-                room.OwnerId = room.Members[0];
+                room.OwnerId = RealMembers(room)[0];
             NotifyRoomUpdate(room, user.Id, outgoing);
+        }
+
+        /// <summary>
+        /// The room's players, without its fake friend.
+        /// </summary>
+        private List<ulong> RealMembers(Room room)
+        {
+            return room.Members.Where(id => !_fakeFriendIds.Contains(id)).ToList();
+        }
+
+        /// <summary>
+        /// Closes a room no player is left in (a fake friend alone doesn't keep it). True if it was closed.
+        /// </summary>
+        private bool CloseIfEmpty(Room room)
+        {
+            if (RealMembers(room).Count > 0)
+                return false;
+            _rooms.Remove(room.Id);
+            _invites.RemoveAll(invite => invite.RoomId == room.Id);
+            foreach (ulong fake in room.Members)
+                _fakeFriendIds.Remove(fake);
+            return true;
+        }
+
+        /// <summary>
+        /// The 2017 builds (christmas 2017, halloween 2017) can't create a private match without a party member, so a player
+        /// of those builds who is alone in their own party gets a fake friend in it: a member with no game behind it, shown
+        /// online. It leaves as soon as the party gets a real member (someone joins, or the player joins another party) or
+        /// the player invites someone (until the invite is answered or two minutes pass), and comes back when they're alone
+        /// again. Run after every party change; members who changed get a room update.
+        /// </summary>
+        private void RefreshFakeFriends(List<(Peer, JObject)> outgoing)
+        {
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            foreach (Room room in _rooms.Values.ToList())
+            {
+                List<ulong> real = RealMembers(room);
+                ulong wanted = 0;
+                if (real.Count == 1 && room.OwnerId == real[0])
+                {
+                    SocialUser? owner = _users.Values.FirstOrDefault(u => u.Id == real[0]);
+                    bool inviting = _invites.Any(invite => invite.FromId == real[0] && now - invite.SentTime < FAKE_FRIEND_INVITE_HOLD_SECONDS);
+                    if (owner != null && !inviting && IsRad14(owner))
+                        wanted = FakeFriendId(owner.Id);
+                }
+                bool changed = false;
+                foreach (ulong fake in room.Members.Where(id => _fakeFriendIds.Contains(id) && id != wanted).ToList())
+                {
+                    room.Members.Remove(fake);
+                    _fakeFriendIds.Remove(fake);
+                    changed = true;
+                }
+                if (wanted != 0 && !room.Members.Contains(wanted))
+                {
+                    room.Members.Add(wanted);
+                    _fakeFriendIds.Add(wanted);
+                    room.MaxUsers = Math.Max(room.MaxUsers, 2);
+                    changed = true;
+                }
+                if (changed)
+                    NotifyRoomUpdate(room, 0, outgoing);
+            }
+        }
+
+        private bool IsRad14(SocialUser user)
+        {
+            XPlatformId account = Server.LoginService.ResolveSummerAccount(new XPlatformId(PlatformCode.OVR_ORG, user.Id), null, user.Peer.Address);
+            return Server.LoginService.IsRad14Player(account) || Server.LoginService.IsRad14Player(new XPlatformId(PlatformCode.OVR_ORG, user.Id));
+        }
+
+        /// <summary>
+        /// A player's fake friend's id: the same for that player every time, below 2^53 like room ids.
+        /// </summary>
+        private static ulong FakeFriendId(ulong ownerId)
+        {
+            byte[] hash = SHA256.HashData(BitConverter.GetBytes(ownerId).Concat(System.Text.Encoding.ASCII.GetBytes("echorelay-fake-friend")).ToArray());
+            return (BitConverter.ToUInt64(hash) & 0x001FFFFFFFFFFFFFUL) | 1;
         }
 
         /// <summary>
@@ -664,6 +750,8 @@ namespace EchoRelay.Core.Server.Services.Social
 
         private JObject UserJson(ulong id)
         {
+            if (_fakeFriendIds.Contains(id))
+                return new JObject { ["id"] = id, ["name"] = FAKE_FRIEND_NAME, ["online"] = true, ["presence"] = "In a party" };
             SocialUser? user = _users.Values.FirstOrDefault(other => other.Id == id);
             return user != null ? UserJson(user) : new JObject { ["id"] = id, ["name"] = id.ToString(), ["online"] = false, ["presence"] = "" };
         }
