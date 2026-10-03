@@ -74,6 +74,9 @@ namespace EchoRelay.Core.Server.Services.Login
         /// </summary>
         private readonly ConcurrentDictionary<Peer, bool> _christmasClientPeers = new ConcurrentDictionary<Peer, bool>();
 
+        /// <summary>The publisher lock each lobby build login connection logged in with (tells the rad14 builds apart).</summary>
+        private readonly ConcurrentDictionary<Peer, string> _publisherLocks = new ConcurrentDictionary<Peer, string>();
+
         /// <summary>
         /// Login connections of christmas 2018 ("winter") build clients and game servers. They speak the summer messages but
         /// save loadouts with symbol hashes (like christmas 2017), so their server profile data is kept apart.
@@ -122,6 +125,8 @@ namespace EchoRelay.Core.Server.Services.Login
                 return "Halloween 2018";
             // Halloween 2017 clients are served as christmas 2017 ones; they're the only build that frames its messages
             // without the packet header.
+            if (_publisherLocks.TryGetValue(peer, out string? publisherLock) && publisherLock == SummerBuild.Lobby158PublisherLock)
+                return "Echo Arena 1.58";
             if (_christmasClientPeers.ContainsKey(peer))
                 return peer.Headerless ? "Halloween 2017" : "Christmas 2017";
             if (_winterClientPeers.ContainsKey(peer))
@@ -241,6 +246,7 @@ namespace EchoRelay.Core.Server.Services.Login
             _summerClientPeers.TryRemove(peer, out _);
             _halloweenClientPeers.TryRemove(peer, out _);
             _christmasClientPeers.TryRemove(peer, out _);
+            _publisherLocks.TryRemove(peer, out _);
             _winterClientPeers.TryRemove(peer, out _);
             _loginTimes.TryRemove(peer, out _);
 
@@ -519,6 +525,7 @@ namespace EchoRelay.Core.Server.Services.Login
         private async Task ProcessSummerLoginRequest(Peer sender, SummerLoginRequest request)
         {
             _summerClientPeers[sender] = true;
+            _publisherLocks[sender] = request.AccountInfo.PublisherLock ?? "";
             if (request.AccountInfo.PublisherLock == SummerBuild.HalloweenPublisherLock)
                 _halloweenClientPeers[sender] = true;
             else
@@ -633,6 +640,9 @@ namespace EchoRelay.Core.Server.Services.Login
             server["createtime"] = account.Profile.Server.CreateTime ?? now;
             server["dev"] = new JObject { ["xplatformid"] = xplatformId };
             server.Merge(GetSummerServerData(account, publisherLock), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
+            // Stats are shared by the lobby builds (they replace any a build's own data still has).
+            foreach (JProperty group in GetSharedStats(account).Properties())
+                server[group.Name] = group.Value.DeepClone();
 
             // Optionally unlock every cosmetic (the summer build lists unlocked item names in arrays, separately for arena
             // and combat) and max out the level used by level-gated items.
@@ -681,6 +691,77 @@ namespace EchoRelay.Core.Server.Services.Login
         /// hashes, and each build's item hashes only mean something to that build.
         /// </summary>
         private const string WinterServerDataKey = "winter_server";
+
+        /// <summary>
+        /// The stats every lobby build shares (summer, halloween and christmas 2018, the 2017 builds), kept apart from each
+        /// build's own data (whose loadouts only that build can read). The latest build's stats are its own.
+        /// </summary>
+        private const string SharedStatsDataKey = "lobby_stats";
+
+        /// <summary>
+        /// Whether a server profile key holds stats: profile_stats (arena) or profile_stats_combat.
+        /// </summary>
+        private static bool IsStatsKey(string key) => key.StartsWith("profile_stats", StringComparison.Ordinal);
+
+        /// <summary>
+        /// The stats the lobby builds share for an account. Accounts from before they were shared get the stats of the build
+        /// they played the most games of (stat groups can't simply be added up: each stat has its own operation).
+        /// </summary>
+        public static JObject GetSharedStats(AccountResource account)
+        {
+            var stored = account.Profile.Server.AdditionalData;
+            if (stored.TryGetValue(SharedStatsDataKey, out JToken? sharedStats) && sharedStats is JObject sharedStatsObj)
+                return sharedStatsObj;
+            JObject stats = new JObject();
+            foreach (string dataKey in new[] { SummerServerDataKey, ChristmasServerDataKey, WinterServerDataKey })
+            {
+                if (!stored.TryGetValue(dataKey, out JToken? data) || data is not JObject dataObj)
+                    continue;
+                foreach (JProperty group in dataObj.Properties().Where(property => IsStatsKey(property.Name) && property.Value is JObject))
+                {
+                    if (stats[group.Name] is not JObject current || GamesPlayed((JObject)group.Value) > GamesPlayed(current))
+                        stats[group.Name] = group.Value.DeepClone();
+                }
+            }
+            return stats;
+        }
+
+        /// <summary>
+        /// The games a stat group counts (ArenaGamesPlayed or CombatGamesPlayed), for picking an account's stats to keep.
+        /// </summary>
+        private static double GamesPlayed(JObject group)
+        {
+            foreach (string statName in new[] { "ArenaGamesPlayed", "CombatGamesPlayed" })
+                if (group[statName] is JObject stat && stat["val"] is JValue value && (value.Type == JTokenType.Integer || value.Type == JTokenType.Float))
+                    return value.Value<double>();
+            return 0;
+        }
+
+        /// <summary>
+        /// Stores a lobby build game server's update to a player's server profile: stats go to the stats the lobby builds
+        /// share, the rest (e.g. the loadout) to the build's own data.
+        /// </summary>
+        /// <param name="account">The player's account.</param>
+        /// <param name="publisherLock">The build's publisher lock.</param>
+        /// <param name="update">The update the game server sent.</param>
+        public static void ApplySummerServerUpdate(AccountResource account, string? publisherLock, JObject update)
+        {
+            JObject data = GetSummerServerData(account, publisherLock);
+            data.Merge(update, new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
+            JObject sharedStats = GetSharedStats(account);
+            foreach (JProperty group in data.Properties().Where(property => IsStatsKey(property.Name)).ToList())
+            {
+                if (update[group.Name] is JObject updated)
+                {
+                    JObject merged = sharedStats[group.Name] as JObject ?? new JObject();
+                    merged.Merge(updated, new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
+                    sharedStats[group.Name] = merged;
+                }
+                data.Remove(group.Name);
+            }
+            account.Profile.Server.AdditionalData[SharedStatsDataKey] = sharedStats;
+            account.Profile.Server.AdditionalData[GetServerDataKey(publisherLock)] = data;
+        }
 
         private static string GetServerDataKey(string? publisherLock) => publisherLock switch
         {
@@ -798,9 +879,7 @@ namespace EchoRelay.Core.Server.Services.Login
                 return;
             // The game server runs the same build as the player it saves for.
             string? publisherLock = GetSessionPublisherLock(request.Session);
-            JObject data = GetSummerServerData(account, publisherLock);
-            data.Merge(request.Update, new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
-            account.Profile.Server.AdditionalData[GetServerDataKey(publisherLock)] = data;
+            ApplySummerServerUpdate(account, publisherLock, request.Update);
             account.Profile.Server.ModifyTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             Storage.Accounts.Set(account);
 
@@ -933,18 +1012,25 @@ namespace EchoRelay.Core.Server.Services.Login
                 .ThenBy(entry => entry.account.Profile.Server.DisplayName)
                 .ToList();
 
-            // Top of the board, or a window around the first requested user.
-            int count = request.Count > 0 ? (int)Math.Min(request.Count, 100) : 10;
-            int start = 0;
-            if (request.Scope == SummerLeaderboardRequest.SCOPE_USER && request.UserIds.Length > 0)
+            // A user board request only wants the user's place: every build reads just "[0]|rank" from that reply. The
+            // 2017 builds before christmas (halloween 2017, 1.58) tell the two replies apart by that alone: a reply whose
+            // first entry has an integer "rank" is a user's place, and its entries are ignored. So board entries carry no
+            // rank (no build reads one; a board's rows are numbered in order).
+            if (request.Scope == SummerLeaderboardRequest.SCOPE_USER)
             {
-                XPlatformId centerOn = ResolveSummerAccount(request.UserIds[0], sender.GetSessionData<Guid?>(), sender.Address);
-                int userIndex = ranked.FindIndex(entry => entry.account.AccountIdentifier == centerOn);
-                start = Math.Max(0, Math.Min(userIndex - count / 2, ranked.Count - count));
+                XPlatformId? user = request.UserIds.Length > 0
+                    ? ResolveSummerAccount(request.UserIds[0], sender.GetSessionData<Guid?>(), sender.Address)
+                    : null;
+                int userIndex = user == null ? -1 : ranked.FindIndex(entry => entry.account.AccountIdentifier == user);
+                await sender.Send(new SummerLeaderboardResponse(request.Tag,
+                    new JArray(new JObject { ["rank"] = userIndex >= 0 ? userIndex + 1 : ranked.Count + 1 })));
+                return;
             }
 
+            // The top of the board.
+            int count = request.Count > 0 ? (int)Math.Min(request.Count, 100) : 10;
             JArray entries = new JArray();
-            for (int i = start; i < ranked.Count && i < start + count; i++)
+            for (int i = 0; i < ranked.Count && i < count; i++)
             {
                 var (account, profile, score) = ranked[i];
                 JArray related = new JArray();
@@ -952,7 +1038,6 @@ namespace EchoRelay.Core.Server.Services.Login
                     related.Add(new JArray(statName, FormatSummerStat(statName, GetSummerStat(profile, statName))));
                 entries.Add(new JObject
                 {
-                    ["rank"] = i + 1,
                     ["displayname"] = account.Profile.Server.DisplayName ?? account.AccountIdentifier.ToString(),
                     ["score"] = new JArray(rankedStat, FormatSummerStat(rankedStat, score)),
                     ["related"] = related,

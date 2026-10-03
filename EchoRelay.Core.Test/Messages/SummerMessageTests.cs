@@ -434,6 +434,33 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void LobbyBuildsShareStats()
+        {
+            // Stats saved before they were shared: christmas 2017 (1 game) and summer (3 games). The summer ones are kept.
+            Server.Storage.Types.AccountResource account = new Server.Storage.Types.AccountResource(new XPlatformId(PlatformCode.OVR_ORG, 1), "Player");
+            var stored = account.Profile.Server.AdditionalData;
+            stored["christmas_server"] = JObject.Parse("{\"loadout\":{\"name\":1},\"profile_stats\":{\"ArenaGamesPlayed\":{\"op\":\"add\",\"val\":1},\"Goals\":{\"op\":\"add\",\"val\":8}}}");
+            stored["summer_server"] = JObject.Parse("{\"loadout\":{\"name\":\"general\"},\"profile_stats\":{\"ArenaGamesPlayed\":{\"op\":\"add\",\"val\":3},\"Goals\":{\"op\":\"add\",\"val\":2}}}");
+            JObject shared = Server.Services.Login.LoginService.GetSharedStats(account);
+            Assert.Equal(3, shared["profile_stats"]!["ArenaGamesPlayed"]!["val"]!.Value<int>());
+
+            // A christmas 2017 game server saves a match: its stats become everyone's, its loadout stays christmas's own.
+            Server.Services.Login.LoginService.ApplySummerServerUpdate(account, SummerBuild.ChristmasPublisherLock,
+                JObject.Parse("{\"loadout\":{\"name\":2},\"profile_stats\":{\"ArenaGamesPlayed\":{\"op\":\"add\",\"val\":4},\"Goals\":{\"op\":\"add\",\"val\":5}}}"));
+            Assert.Equal(4, ((JObject)stored["lobby_stats"])["profile_stats"]!["ArenaGamesPlayed"]!["val"]!.Value<int>());
+            Assert.Null(((JObject)stored["christmas_server"])["profile_stats"]);
+            Assert.Equal(2, ((JObject)stored["christmas_server"])["loadout"]!["name"]!.Value<int>());
+
+            // A summer game server then adds a combat match, keeping the arena stats.
+            Server.Services.Login.LoginService.ApplySummerServerUpdate(account, null,
+                JObject.Parse("{\"profile_stats_combat\":{\"CombatGamesPlayed\":{\"op\":\"add\",\"val\":1}}}"));
+            shared = Server.Services.Login.LoginService.GetSharedStats(account);
+            Assert.Equal(4, shared["profile_stats"]!["ArenaGamesPlayed"]!["val"]!.Value<int>());
+            Assert.Equal(1, shared["profile_stats_combat"]!["CombatGamesPlayed"]!["val"]!.Value<int>());
+            Assert.Equal("general", ((JObject)stored["summer_server"])["loadout"]!["name"]!.Value<string>());
+        }
+
+        [Fact]
         public void DecodesCapturedHalloween2017JoinSessionRequest()
         {
             // A halloween 2017 player joining a lobby by id (captured from a live relay).

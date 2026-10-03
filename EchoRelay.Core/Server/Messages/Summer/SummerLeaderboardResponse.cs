@@ -8,7 +8,8 @@ namespace EchoRelay.Core.Server.Messages.Summer
     /// <summary>
     /// The summer build's leaderboard reply ("SNSLeaderboardResponse").
     /// Layout: u64 tag (from the request) | u64 uncompressed length | zlib(JSON array of entries), where each entry is
-    /// {"rank": int, "displayname": string, "score": [stat name, value string], "related": [[stat name, value string], ...]}.
+    /// {"displayname": string, "score": [stat name, value string], "related": [[stat name, value string], ...]} for a board, or
+    /// [{"rank": int}] (the user's place) for a user board request.
     /// </summary>
     public class SummerLeaderboardResponse : Message
     {
