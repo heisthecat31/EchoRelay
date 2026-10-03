@@ -47,7 +47,11 @@ namespace EchoRelay.Core.Server.Messages.Summer
             io.Stream(ref Unk1);
             io.StreamJSON(ref SessionSettings, true, JSONCompressionMode.None);
             UserId.Stream(io);
-            io.Stream(ref TeamIndex);
+            // Christmas 2018 (rad15_winter) sends no team index: a party member following their leader ends at the user id.
+            if (io.StreamMode == StreamMode.Write || io.Position + 2 <= io.Length)
+                io.Stream(ref TeamIndex);
+            else
+                TeamIndex = -1;
         }
 
         public override string ToString()
