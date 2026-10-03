@@ -36,6 +36,36 @@ namespace SummerInstaller
                 return;
             }
             base.OnStartup(e);
+            _ = StartAsync(e.Args);
+        }
+
+        /// <summary>
+        /// Updates the installer itself if the latest release has a newer one (before the window opens, so an update never
+        /// interrupts an install), then shows the window. --no-self-update skips the check.
+        /// </summary>
+        private async System.Threading.Tasks.Task StartAsync(string[] args)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            SelfUpdater.CleanUp();
+            if (Array.IndexOf(args, "--no-self-update") < 0)
+            {
+                string repository;
+                try
+                {
+                    repository = InstallerSettings.Load().GameFilesRepository;
+                }
+                catch
+                {
+                    repository = "";
+                }
+                if (await SelfUpdater.UpdateAsync(repository) != null)
+                {
+                    // The new installer has started in this one's place.
+                    Shutdown();
+                    return;
+                }
+            }
+            ShutdownMode = ShutdownMode.OnLastWindowClose;
             new MainWindow().Show();
         }
 
