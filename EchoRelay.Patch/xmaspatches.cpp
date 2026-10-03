@@ -57,6 +57,11 @@ namespace XmasPatches
 		DWORD pnsOvrOrgScopedId;          // pnsovr.dll's logged in user org-scoped id (0: kept per object; see the next)
 		DWORD pnsOvrOrgScopedIdRead;      // or where the login reads it: call [ovr_Message_GetOrgScopedID]; mov rcx, rax;
 		                                  // call [ovr_OrgScopedID_GetID] (15 bytes), which becomes mov rax, <our id>
+		// The login's account data has no publisher_lock on the builds before christmas 2017, so EchoRelay can't tell them
+		// apart (it takes them for christmas). The call that adds the nonce to it ('lea rcx, [rbp+x]; call SetString' with
+		// rdx = "nonce"; 0: none) is sent through a stub that adds this publisher_lock after it.
+		DWORD pnsOvrLoginNonceCall;
+		const CHAR* loginPublisherLock;
 	};
 
 	static const Rad14Build BUILDS[] = {
@@ -224,6 +229,7 @@ namespace XmasPatches
 			},
 			0,
 			0x7529,
+			0x7A51, "release4_5",
 		},
 		{
 			// Echo Arena 1.58 (September 2017, publisher lock "release4"): halloween 2017's code a month earlier, with the same
@@ -266,6 +272,7 @@ namespace XmasPatches
 			},
 			0,
 			0x7819,
+			0x7A01, "release4",
 		},
 		{
 			// Echo Arena 1.9, the first release (July 2017, publisher lock "release"). Halloween 2017's code three months
@@ -615,6 +622,54 @@ namespace XmasPatches
 	// ----------------------------------------------------------------------------------------------------------------
 	// pnsovr.dll
 	// ----------------------------------------------------------------------------------------------------------------
+	/// <summary>
+	/// Adds publisher_lock to the login's account data (see Rad14Build::pnsOvrLoginNonceCall): the call that adds the nonce
+	/// goes to a stub that makes it, then adds "publisher_lock" to the same JSON object with the same setter.
+	/// </summary>
+	static VOID AddLoginPublisherLock(BYTE* base)
+	{
+		BYTE* call = base + g_build->pnsOvrLoginNonceCall;
+		if (call[-4] != 0x48 || call[-3] != 0x8D || call[-2] != 0x4D || call[0] != 0xE8)
+		{
+			Log("SKIPPED (unexpected bytes at %p): send publisher_lock %s with the login", call, g_build->loginPublisherLock);
+			return;
+		}
+		UINT64 setString = (UINT64)(call + 5 + *(INT32*)(call + 1));
+		BYTE* stub = AllocateNear(base, 128);
+		if (stub == NULL)
+		{
+			Log("FAILED to allocate the publisher_lock stub near pnsovr.dll");
+			return;
+		}
+		CHAR* key = (CHAR*)stub + 80;
+		CHAR* value = key + 16;
+		strcpy_s(key, 16, "publisher_lock");
+		strcpy_s(value, 32, g_build->loginPublisherLock);
+		BYTE code[] = {
+			0x48, 0x83, 0xEC, 0x28,                         // sub rsp, 28h (shadow space, alignment)
+			0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,             // mov rax, SetString
+			0xFF, 0xD0,                                     // call rax (the nonce, as before)
+			0x48, 0x8D, 0x4D, call[-1],                     // lea rcx, [rbp+x] (the account data, as at the call site)
+			0x48, 0xBA, 0, 0, 0, 0, 0, 0, 0, 0,             // mov rdx, "publisher_lock"
+			0x49, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,             // mov r8, the build's publisher lock
+			0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,             // mov rax, SetString
+			0xFF, 0xD0,                                     // call rax
+			0x48, 0x83, 0xC4, 0x28,                         // add rsp, 28h
+			0xC3,                                           // ret
+		};
+		UINT64 keyAddress = (UINT64)key, valueAddress = (UINT64)value;
+		memcpy(code + 6, &setString, 8);
+		memcpy(code + 22, &keyAddress, 8);
+		memcpy(code + 32, &valueAddress, 8);
+		memcpy(code + 42, &setString, 8);
+		memcpy(stub, code, sizeof(code));
+		BYTE jump[5] = { 0xE8 };
+		INT32 rel = (INT32)((INT64)stub - (INT64)(call + 5));
+		memcpy(jump + 1, &rel, 4);
+		if (WriteCode(call, jump, sizeof(jump)))
+			Log("Patched: send publisher_lock %s with the login (EchoRelay tells this build apart by it)", g_build->loginPublisherLock);
+	}
+
 	static VOID PatchPnsOvr(BYTE* base)
 	{
 		if (GetTimestamp(base) != g_build->pnsOvrTimestamp)
@@ -662,6 +717,8 @@ namespace XmasPatches
 					Log("Patched: log in with org-scoped id %llu", (unsigned long long)g_userId);
 			}
 		}
+		if (g_build->pnsOvrLoginNonceCall != 0 && g_build->loginPublisherLock != NULL)
+			AddLoginPublisherLock(base);
 	}
 
 	typedef struct _LDR_DLL_LOADED_NOTIFICATION_DATA {

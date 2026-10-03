@@ -564,7 +564,10 @@ namespace EchoRelay.Core.Server.Services.Login
                 else
                     await sender.Send(new LoginSettings(loginSettings));
             }
-            var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion, request.UserId, request.AccountInfo.PublisherLock);
+            // The 2017 builds share christmas 2017's profile data (loadouts by symbol hash, its client profile), whichever
+            // publisher lock they log in with (halloween 2017 and 1.58 send their own, through EchoRelay.Patch).
+            string? profileLock = SummerBuild.IsRad14PublisherLock(request.AccountInfo.PublisherLock) ? SummerBuild.ChristmasPublisherLock : request.AccountInfo.PublisherLock;
+            var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion, request.UserId, profileLock);
             await sender.Send(new SummerLoginProfileResult(session, request.UserId, SummerLoginProfileResult.RESULT_SUCCESS, clientProfile, serverProfile));
 
             // If their version has no game server, start some (ServerSettings.AutoStartGameServers), without holding up the login.
