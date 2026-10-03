@@ -43,6 +43,23 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void NamesEachVersionAndItsLoginBuild()
+        {
+            Assert.Equal("Christmas 2017", GameServerBuilds.VersionName(SummerBuild.ChristmasLiveVersionLock));
+            Assert.Equal("Halloween 2017", GameServerBuilds.VersionName(SummerBuild.Halloween2017VersionLock));
+            Assert.Equal("Christmas 2018", GameServerBuilds.VersionName(SummerBuild.WinterVersionLock));
+            Assert.Equal("Halloween 2018", GameServerBuilds.VersionName(SummerBuild.HalloweenVersionLock));
+            Assert.Equal("Summer 2019", GameServerBuilds.VersionName(SummerBuild.VersionLock));
+            Assert.Equal("Lone Echo", GameServerBuilds.VersionName(SummerBuild.LoneEchoVersionLock));
+            // Logging in with a publisher lock leads to the build whose servers serve it.
+            foreach (string publisherLock in new[] { SummerBuild.PublisherLock, SummerBuild.HalloweenPublisherLock, SummerBuild.WinterPublisherLock,
+                SummerBuild.ChristmasPublisherLock, SummerBuild.Halloween2017PublisherLock })
+                Assert.NotNull(GameServerBuilds.FromPublisherLock(publisherLock));
+            Assert.Null(GameServerBuilds.FromPublisherLock(SummerBuild.LoneEchoPublisherLock));
+            Assert.True(GameServerBuilds.ServesBuild(GameServerBuilds.FromPublisherLock(SummerBuild.ChristmasPublisherLock)!, SummerBuild.ChristmasLiveVersionLock));
+        }
+
+        [Fact]
         public void FindsTheProcessListeningOnAUdpPort()
         {
             if (!OperatingSystem.IsWindows())
@@ -62,6 +79,45 @@ namespace EchoRelay.Core.Test.Messages
             ushort port = (ushort)((IPEndPoint)udp.Client.LocalEndPoint!).Port;
             Assert.Equal(0, new GameServerLauncher().StopIdle(new[] { port }));
             Assert.False(Process.GetCurrentProcess().HasExited);
+        }
+
+        [Fact]
+        public void ClosesGameServersStartedBeforeARestart()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            // A stand-in game server: a process listening on a UDP port, started by a launcher that has since restarted.
+            ProcessStartInfo info = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -Command \"$u = New-Object System.Net.Sockets.UdpClient 0; [Console]::WriteLine($u.Client.LocalEndPoint.Port); Start-Sleep 60\"")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using Process server = Process.Start(info)!;
+            string stateFile = Path.Combine(Path.GetTempPath(), $"echorelay-launcher-test-{Guid.NewGuid():N}.json");
+            try
+            {
+                ushort port = ushort.Parse(server.StandardOutput.ReadLine()!.Trim());
+                long started = server.StartTime.ToUniversalTime().Ticks;
+
+                // A start time that doesn't match is someone else's process reusing the id: it's left alone.
+                File.WriteAllText(stateFile, $"[{{\"pid\":{server.Id},\"started\":{started - TimeSpan.TicksPerMinute},\"requester\":\"OVR-ORG-1\",\"build\":\"summer\"}}]");
+                Assert.Equal(0, new GameServerLauncher().EnablePersistence(stateFile));
+
+                File.WriteAllText(stateFile, $"[{{\"pid\":{server.Id},\"started\":{started},\"requester\":\"OVR-ORG-1\",\"build\":\"summer\"}}]");
+                GameServerLauncher restarted = new GameServerLauncher();
+                Assert.Equal(1, restarted.EnablePersistence(stateFile));
+                Assert.Equal(1, restarted.StopIdle(new[] { port }));
+                Assert.True(server.WaitForExit(5000));
+                Assert.DoesNotContain(server.Id.ToString(), File.ReadAllText(stateFile));
+            }
+            finally
+            {
+                if (!server.HasExited)
+                    server.Kill();
+                File.Delete(stateFile);
+            }
         }
     }
 }

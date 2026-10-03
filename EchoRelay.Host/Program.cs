@@ -1,4 +1,4 @@
-using EchoRelay.Core.Game;
+﻿using EchoRelay.Core.Game;
 using EchoRelay.Core.Server;
 using Newtonsoft.Json.Linq;
 using System.Net.WebSockets;
@@ -35,6 +35,10 @@ Usage:
         {
             string? relay = null, region = null, apiKey = null, name = Environment.MachineName;
             GameServerLauncher launcher = new GameServerLauncher();
+            // Game servers this host started before it restarted (an update, a crash) are taken back, so they still close when empty.
+            int adopted = launcher.EnablePersistence(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EchoRelay", "requested-game-servers-host.json"));
+            if (adopted > 0)
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Took back {adopted} requested game server{(adopted == 1 ? "" : "s")} started before this host restarted");
             Dictionary<string, string> executables = new Dictionary<string, string>();
             if (args.Length == 0)
             {

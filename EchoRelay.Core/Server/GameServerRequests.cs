@@ -35,5 +35,50 @@ namespace EchoRelay.Core.Server
             ["christmas"] = "Christmas 2017",
             ["halloween2017"] = "Halloween 2017",
         };
+
+        /// <summary>
+        /// Who game servers started automatically (not on a player's request) are requested by, see
+        /// <see cref="GameServerHosts.StartForLogin"/>. Hosts don't count them against any player.
+        /// </summary>
+        public static readonly XPlatformId AutomaticRequester = new XPlatformId(PlatformCode.BOT, 0);
+
+        /// <summary>
+        /// The build a lobby build client logs in as, from its publisher lock (null for one without requestable servers).
+        /// </summary>
+        public static string? FromPublisherLock(string? publisherLock) => publisherLock switch
+        {
+            SummerBuild.PublisherLock => "summer",
+            SummerBuild.HalloweenPublisherLock => "halloween",
+            SummerBuild.WinterPublisherLock => "winter",
+            SummerBuild.ChristmasPublisherLock => "christmas",
+            SummerBuild.Halloween2017PublisherLock => "halloween2017",
+            _ => null,
+        };
+
+        /// <summary>
+        /// The game version a game server registered with this version lock runs, e.g. "Christmas 2017" (for display).
+        /// </summary>
+        public static string VersionName(long versionLock)
+        {
+            foreach (var build in Names)
+                if (ServesBuild(build.Key, versionLock))
+                    return build.Value;
+            if (versionLock == SummerBuild.LoneEchoVersionLock)
+                return "Lone Echo";
+            return SummerBuild.IsLobbyVersionLock(versionLock) ? $"Unknown (0x{versionLock:X16})" : "Latest";
+        }
+
+        /// <summary>
+        /// Whether a game server registered with this version lock serves a build's players.
+        /// </summary>
+        public static bool ServesBuild(string build, long versionLock) => build switch
+        {
+            "summer" => versionLock == SummerBuild.VersionLock,
+            "halloween" => versionLock == SummerBuild.HalloweenVersionLock,
+            "winter" => versionLock == SummerBuild.WinterVersionLock,
+            "christmas" => versionLock == SummerBuild.ChristmasLiveVersionLock || versionLock == SummerBuild.ChristmasVersionLock,
+            "halloween2017" => versionLock == SummerBuild.Halloween2017VersionLock,
+            _ => false,
+        };
     }
 }

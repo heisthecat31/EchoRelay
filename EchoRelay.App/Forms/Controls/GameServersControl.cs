@@ -1,4 +1,5 @@
-﻿using EchoRelay.Core.Server.Services;
+﻿using EchoRelay.Core.Server;
+using EchoRelay.Core.Server.Services;
 using EchoRelay.Core.Server.Services.ServerDB;
 
 namespace EchoRelay.App.Forms.Controls
@@ -38,7 +39,7 @@ namespace EchoRelay.App.Forms.Controls
             if (!_items.TryGetValue(gameServer.ServerId, out listItem))
             {
                 listItem = new ListViewItem();
-                for (int i = 0; i < 9; i++)
+                for (int i = 0; i < 10; i++)
                     listItem.SubItems.Add("");
                 listGameServers.Items.Add(listItem);
                 _items[gameServer.ServerId] = listItem;
@@ -46,29 +47,30 @@ namespace EchoRelay.App.Forms.Controls
 
             // Update the subitems of the list.
             listItem.SubItems[0].Text = gameServer.ServerId.ToString();
-            listItem.SubItems[1].Text = gameServer.ExternalAddress.ToString();
-            listItem.SubItems[2].Text = gameServer.Port.ToString();
+            listItem.SubItems[1].Text = GameServerBuilds.VersionName(gameServer.VersionLock);
+            listItem.SubItems[2].Text = gameServer.ExternalAddress.ToString();
+            listItem.SubItems[3].Text = gameServer.Port.ToString();
             if (gameServer.SessionGameTypeSymbol != null)
             {
-                listItem.SubItems[3].Text = gameServer.Peer.Service.Server.SymbolCache.GetName(gameServer.SessionGameTypeSymbol.Value) ?? $"unknown({gameServer.SessionGameTypeSymbol.Value})";
-            }
-            else
-            {
-                listItem.SubItems[3].Text = "-";
-            }
-            if (gameServer.SessionLevelSymbol != null)
-            {
-                listItem.SubItems[4].Text = gameServer.Peer.Service.Server.SymbolCache.GetName(gameServer.SessionLevelSymbol.Value) ?? $"unknown({gameServer.SessionLevelSymbol.Value})";
+                listItem.SubItems[4].Text = gameServer.Peer.Service.Server.SymbolCache.GetName(gameServer.SessionGameTypeSymbol.Value) ?? $"unknown({gameServer.SessionGameTypeSymbol.Value})";
             }
             else
             {
                 listItem.SubItems[4].Text = "-";
             }
-            listItem.SubItems[5].Text = $"{gameServer.SessionPlayerCount}/{gameServer.SessionPlayerLimits.TotalPlayerLimit}";
-            listItem.SubItems[6].Text = gameServer.SessionLobbyType.ToString();
-            listItem.SubItems[7].Text = gameServer.SessionLocked.ToString();
-            listItem.SubItems[8].Text = gameServer.SessionChannel?.ToString() ?? "-";
-            listItem.SubItems[9].Text = gameServer.SessionId?.ToString() ?? "-";
+            if (gameServer.SessionLevelSymbol != null)
+            {
+                listItem.SubItems[5].Text = gameServer.Peer.Service.Server.SymbolCache.GetName(gameServer.SessionLevelSymbol.Value) ?? $"unknown({gameServer.SessionLevelSymbol.Value})";
+            }
+            else
+            {
+                listItem.SubItems[5].Text = "-";
+            }
+            listItem.SubItems[6].Text = $"{gameServer.SessionPlayerCount}/{gameServer.SessionPlayerLimits.TotalPlayerLimit}";
+            listItem.SubItems[7].Text = gameServer.SessionLobbyType.ToString();
+            listItem.SubItems[8].Text = gameServer.SessionLocked.ToString();
+            listItem.SubItems[9].Text = gameServer.SessionChannel?.ToString() ?? "-";
+            listItem.SubItems[10].Text = gameServer.SessionId?.ToString() ?? "-";
             listItem.Tag = gameServer;
 
             // Update the selected item

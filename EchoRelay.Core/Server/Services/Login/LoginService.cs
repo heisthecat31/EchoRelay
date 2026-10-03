@@ -559,6 +559,23 @@ namespace EchoRelay.Core.Server.Services.Login
             }
             var (clientProfile, serverProfile) = BuildSummerProfiles(account, request.AccountInfo.LobbyVersion, request.UserId, request.AccountInfo.PublisherLock);
             await sender.Send(new SummerLoginProfileResult(session, request.UserId, SummerLoginProfileResult.RESULT_SUCCESS, clientProfile, serverProfile));
+
+            // If their version has no game server, start some (ServerSettings.AutoStartGameServers), without holding up the login.
+            if (GameServerBuilds.FromPublisherLock(request.AccountInfo.PublisherLock) is string build)
+            {
+                string displayName = account.Profile.Server.DisplayName ?? request.UserId.ToString();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Server.GameServerHosts.StartForLogin(Server, build, displayName);
+                    }
+                    catch
+                    {
+                        // Starting game servers is a convenience; a failure must not affect the login.
+                    }
+                });
+            }
         }
 
         /// <summary>

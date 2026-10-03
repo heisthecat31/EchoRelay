@@ -1,4 +1,4 @@
-using EchoRelay.App.Settings;
+﻿using EchoRelay.App.Settings;
 using EchoRelay.Core.Server;
 
 namespace EchoRelay.App.Forms
@@ -10,7 +10,17 @@ namespace EchoRelay.App.Forms
     /// </summary>
     public static class GameServerRequestHost
     {
-        private static readonly GameServerLauncher Launcher = new GameServerLauncher();
+        private static readonly GameServerLauncher Launcher = CreateLauncher();
+
+        /// <summary>
+        /// The launcher, remembering its game servers across restarts so ones started before an update still close when empty.
+        /// </summary>
+        private static GameServerLauncher CreateLauncher()
+        {
+            GameServerLauncher launcher = new GameServerLauncher();
+            launcher.EnablePersistence(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EchoRelay", "requested-game-servers-app.json"));
+            return launcher;
+        }
 
         /// <summary>
         /// Registers (or, if requests are off, removes) this PC as a game server host of a server, from the settings.
@@ -25,6 +35,7 @@ namespace EchoRelay.App.Forms
             Launcher.PerPlayer = settings.GameServerRequestsPerPlayer;
             Launcher.Max = settings.GameServerRequestsMax;
             Launcher.TickRate = (uint)Math.Max(0, settings.GameServerTickRate);
+            server.Settings.AutoStartGameServers = Math.Max(0, settings.AutoStartGameServers);
             server.GameServerHosts.SetLocalHost(settings.GameServerRequestsRegion, Environment.MachineName,
                 settings.GameServerRequestsEnabled ? Launcher.Builds : Array.Empty<string>(), Launcher.Start, Launcher.StopIdle);
         }

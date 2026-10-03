@@ -85,6 +85,9 @@ namespace EchoRelay.Cli
             [Option("forcelevel", Required = false, Default = null, HelpText = "Testing: every new session, on every build (including the latest), starts on this level (a level name, e.g. mpl_arena_a or stn_ext_itc_station_front).")]
             public string? ForceLevel { get; set; }
 
+            [Option("autoservers", Required = false, Default = 2, HelpText = "When a player logs in to a lobby build with no game server, start this many of that build on the game server hosts (0 = off). They don't count against the player's own requests.")]
+            public int AutoServers { get; set; } = 2;
+
             [Option("summernews", Required = false, Default = null, HelpText = "The text shown on the summer build's lobby news board.")]
             public string? SummerNews { get; set; }
 
@@ -163,6 +166,9 @@ namespace EchoRelay.Cli
                         summerServiceStatus: options.SummerServiceStatus
                         )
                     );
+                Server.Settings.AutoStartGameServers = Math.Max(0, options.AutoServers);
+                if (options.AutoServers > 0)
+                    Info($"[SERVER] Players logging in to a version with no game server get {options.AutoServers} started for it");
                 if (!string.IsNullOrWhiteSpace(options.ForceLevel))
                 {
                     Server.Settings.ForcedLevel = Core.Game.Symbol.Hash(options.ForceLevel.Trim());
@@ -179,6 +185,7 @@ namespace EchoRelay.Cli
                 Server.ServerDBService.Registry.OnGameServerRegistered += Registry_OnGameServerRegistered;
                 Server.ServerDBService.Registry.OnGameServerUnregistered += Registry_OnGameServerUnregistered;
                 Server.ServerDBService.OnGameServerRegistrationFailure += ServerDBService_OnGameServerRegistrationFailure;
+                Server.GameServerHosts.OnLog += text => Info(text.TrimEnd());
 
                 // Set up all verbose event handlers.
                 if (options.Verbose)

@@ -113,6 +113,12 @@ namespace EchoRelay.Core.Server
         /// game data added to the game servers' and players' installs. Null for the normal levels.
         /// </summary>
         public long? ForcedLevel { get; set; }
+
+        /// <summary>
+        /// When a player logs in to a lobby build that has no game server registered, this many game servers of that build
+        /// are started for it on the game server hosts (0 = off). They don't count against the player's own requests.
+        /// </summary>
+        public int AutoStartGameServers { get; set; }
         #endregion
 
         #region Constructor

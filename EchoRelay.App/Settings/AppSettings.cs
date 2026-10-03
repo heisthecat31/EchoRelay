@@ -47,6 +47,13 @@ namespace EchoRelay.App.Settings
         public string GameServerRequestsRegion { get; set; } = "Main";
 
         /// <summary>
+        /// When a player logs in to a lobby build that has no game server, how many to start for it on the game server hosts
+        /// (this PC, if it hosts, and EchoRelay.Host PCs); 0 = off. They don't count against the player's own requests.
+        /// </summary>
+        [JsonProperty("auto_start_game_servers")]
+        public int AutoStartGameServers { get; set; } = 2;
+
+        /// <summary>
         /// The frame rate (ticks a second) of the game servers this PC starts; 0 = uncapped (a whole CPU core each). Lobby builds
         /// get it as EchoRelay.Patch's -tickrate, the final build as -timestep.
         /// </summary>

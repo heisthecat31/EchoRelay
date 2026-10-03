@@ -1,4 +1,4 @@
-using EchoRelay.Core.Game;
+﻿using EchoRelay.Core.Game;
 using EchoRelay.Core.Server.Services.ServerDB;
 using Newtonsoft.Json.Linq;
 using System.Collections.Concurrent;
@@ -173,6 +173,68 @@ namespace EchoRelay.Core.Server
                 }
             }
             return last!;
+        }
+
+        /// <summary>
+        /// How long after starting game servers for a build automatically (<see cref="StartForLogin"/>) it waits before doing
+        /// so again: they take about half a minute to register, and every login meanwhile would start more.
+        /// </summary>
+        public static readonly TimeSpan AutoStartCooldown = TimeSpan.FromMinutes(3);
+
+        /// <summary>When game servers were last started automatically for each build.</summary>
+        private readonly Dictionary<string, DateTime> _autoStarted = new Dictionary<string, DateTime>();
+
+        /// <summary>
+        /// A player logged in to a build: if no game server of that build is registered, starts
+        /// <see cref="ServerSettings.AutoStartGameServers"/> of them on the hosts that have it (this PC's first). They're
+        /// requested by <see cref="GameServerBuilds.AutomaticRequester"/>, so they don't use up the player's own requests, and
+        /// they close when empty like any requested game server.
+        /// </summary>
+        public async Task StartForLogin(Server server, string build, string displayName)
+        {
+            int count = server.Settings.AutoStartGameServers;
+            if (count <= 0 || !GameServerBuilds.Names.TryGetValue(build, out string? buildName))
+                return;
+            if (server.ServerDBService.Registry.RegisteredGameServers.Values.Any(gameServer => GameServerBuilds.ServesBuild(build, gameServer.VersionLock)))
+                return;
+            List<Host> candidates;
+            DateTime now = DateTime.UtcNow;
+            lock (_lock)
+            {
+                if (_autoStarted.TryGetValue(build, out DateTime last) && now - last < AutoStartCooldown)
+                    return;
+                candidates = _hosts.Where(host => host.Builds.Contains(build)).ToList();
+                if (candidates.Count == 0)
+                    return;
+                _autoStarted[build] = now;
+            }
+
+            GameServerRequest request = new GameServerRequest(build, GameServerBuilds.AutomaticRequester, $"(automatic, {displayName} logged in)", null);
+            int started = 0;
+            foreach (Host host in candidates)
+            {
+                while (started < count)
+                {
+                    GameServerRequestResult result;
+                    try
+                    {
+                        result = await host.Start(request);
+                    }
+                    catch (Exception ex)
+                    {
+                        result = new GameServerRequestResult(false, "The game server host didn't answer: " + ex.Message);
+                    }
+                    if (!result.Accepted)
+                    {
+                        OnLog?.Invoke($"[HOSTS] '{host.Name}' couldn't start a {build} game server for {displayName}'s login: {result.Message}\n");
+                        break;
+                    }
+                    started++;
+                }
+                if (started >= count)
+                    break;
+            }
+            OnLog?.Invoke($"[HOSTS] {displayName} logged in to {buildName}, which had no game servers: started {started} of {count}\n");
         }
 
         /// <summary>
@@ -374,6 +436,89 @@ namespace EchoRelay.Core.Server
         private readonly object _lock = new object();
         private readonly List<(string requester, string build, Process process)> _started = new List<(string, string, Process)>();
 
+        /// <summary>
+        /// Where the started game servers are remembered (see <see cref="EnablePersistence"/>), or null.
+        /// </summary>
+        private string? _stateFile;
+
+        /// <summary>
+        /// Remembers the game servers this launcher starts in a file, and takes back the ones still running from a previous
+        /// run. Without it, a restart (an update, a crash) forgot every requested game server it had started: they kept
+        /// running, and were never closed when empty. A process is only taken back if its start time matches, so a reused
+        /// process id is never mistaken for one.
+        /// </summary>
+        /// <returns>How many running game servers were taken back.</returns>
+        public int EnablePersistence(string stateFile)
+        {
+            lock (_lock)
+            {
+                _stateFile = stateFile;
+                int adopted = 0;
+                try
+                {
+                    if (File.Exists(stateFile))
+                    {
+                        foreach (JToken entry in JArray.Parse(File.ReadAllText(stateFile)))
+                        {
+                            int pid = entry.Value<int>("pid");
+                            long started = entry.Value<long>("started");
+                            if (_started.Any(item => item.process.Id == pid))
+                                continue;
+                            try
+                            {
+                                Process process = Process.GetProcessById(pid);
+                                if (process.HasExited || Math.Abs(process.StartTime.ToUniversalTime().Ticks - started) > TimeSpan.TicksPerSecond)
+                                    continue;
+                                _started.Add((entry.Value<string>("requester") ?? "", entry.Value<string>("build") ?? "", process));
+                                adopted++;
+                            }
+                            catch
+                            {
+                                // Not running any more.
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // An unreadable file: start over.
+                }
+                SaveState();
+                return adopted;
+            }
+        }
+
+        /// <summary>
+        /// Writes the started game servers to the state file (call with the lock held).
+        /// </summary>
+        private void SaveState()
+        {
+            if (_stateFile == null)
+                return;
+            try
+            {
+                JArray entries = new JArray();
+                foreach (var (requester, build, process) in _started)
+                {
+                    try
+                    {
+                        if (process.HasExited)
+                            continue;
+                        entries.Add(new JObject { ["pid"] = process.Id, ["started"] = process.StartTime.ToUniversalTime().Ticks, ["requester"] = requester, ["build"] = build });
+                    }
+                    catch
+                    {
+                    }
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_stateFile))!);
+                File.WriteAllText(_stateFile, entries.ToString());
+            }
+            catch
+            {
+                // Best effort: the servers still close while this process runs.
+            }
+        }
+
         /// <summary>The game executable of each build this PC can start ("summer" -> path).</summary>
         public IReadOnlyDictionary<string, string> Executables { get; set; } = new Dictionary<string, string>();
 
@@ -405,7 +550,8 @@ namespace EchoRelay.Core.Server
                 string requester = request.Requester.ToString();
                 int perPlayer = Math.Max(1, PerPlayer);
                 int mine = _started.Count(entry => entry.requester == requester && entry.build == request.Build);
-                if (mine >= perPlayer)
+                // Game servers started automatically for a login aren't any player's; only the total limit applies to them.
+                if (mine >= perPlayer && requester != GameServerBuilds.AutomaticRequester.ToString())
                     return new GameServerRequestResult(false, $"You already have {mine} requested {buildName} game server{(mine == 1 ? "" : "s")} running (the limit is {perPlayer} per game version). " +
                         $"Empty ones close after {GameServerHosts.IdleTimeout.TotalMinutes:0} minutes.");
                 if (_started.Count >= Math.Max(1, Max))
@@ -415,6 +561,7 @@ namespace EchoRelay.Core.Server
                 if (process == null)
                     return new GameServerRequestResult(false, "The game server didn't start.");
                 _started.Add((requester, request.Build, process));
+                SaveState();
                 return new GameServerRequestResult(true, $"Starting a {buildName} game server. It takes about half a minute; then press Play in the game.");
             }
         }
@@ -442,6 +589,7 @@ namespace EchoRelay.Core.Server
                     }
                     _started.Remove(entry);
                 }
+                SaveState();
             }
             return stopped;
         }

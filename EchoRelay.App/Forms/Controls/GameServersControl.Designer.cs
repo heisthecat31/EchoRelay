@@ -31,6 +31,7 @@
             components = new System.ComponentModel.Container();
             listGameServers = new ListView();
             columnHeaderServerId = new ColumnHeader();
+            columnHeaderVersion = new ColumnHeader();
             columnHeaderIP = new ColumnHeader();
             columnHeaderBroadcastPort = new ColumnHeader();
             columnHeaderGametype = new ColumnHeader();
@@ -67,7 +68,7 @@
             // 
             // listGameServers
             // 
-            listGameServers.Columns.AddRange(new ColumnHeader[] { columnHeaderServerId, columnHeaderIP, columnHeaderBroadcastPort, columnHeaderGametype, columnHeaderLevel, columnHeaderPlayerCount, columnHeaderLobbyType, columnHeaderLocked, columnHeaderChannel, columnHeaderSessionId });
+            listGameServers.Columns.AddRange(new ColumnHeader[] { columnHeaderServerId, columnHeaderVersion, columnHeaderIP, columnHeaderBroadcastPort, columnHeaderGametype, columnHeaderLevel, columnHeaderPlayerCount, columnHeaderLobbyType, columnHeaderLocked, columnHeaderChannel, columnHeaderSessionId });
             listGameServers.Dock = DockStyle.Fill;
             listGameServers.FullRowSelect = true;
             listGameServers.GridLines = true;
@@ -84,6 +85,11 @@
             // 
             columnHeaderServerId.Text = "Server Identifier";
             columnHeaderServerId.Width = 150;
+            // 
+            // columnHeaderVersion
+            //
+            columnHeaderVersion.Text = "Version";
+            columnHeaderVersion.Width = 110;
             // 
             // columnHeaderIP
             // 
@@ -270,6 +276,7 @@
 
         private ListView listGameServers;
         private ColumnHeader columnHeaderIP;
+        private ColumnHeader columnHeaderVersion;
         private ColumnHeader columnHeaderGametype;
         private ColumnHeader columnHeaderLevel;
         private SplitContainer splitContainer1;
