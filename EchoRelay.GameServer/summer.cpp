@@ -66,6 +66,9 @@ namespace Summer
 		// 64-bit (the hook reads the low half) and SetState's prologue is 16 bytes.
 		{ "halloween 2017 (rad14, release4_5)", 0x59E8F804, 0x2662E0, 0, 0x3B0030,
 			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 16, 5, TRUE, TRUE, TRUE },
+		// Echo Arena 1.58 (September 2017, rad14, publisher lock release4): halloween 2017's code a month earlier.
+		{ "1.58 2017 (rad14, release4)", 0x59B81FFD, 0x260840, 0, 0x3A9D60,
+			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 16, 5, TRUE, TRUE, TRUE },
 		// Lone Echo's final patch (loneecho.exe, March 2019, rad14): Echo Arena's multiplayer code, as halloween 2017's.
 		{ "lone echo (rad14, localization_dev)", 0x5C9D6E49, 0x27CAF0, 0, 0x3CF060,
 			{ 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xF2, 0x48, 0x8B, 0xF9 }, 16, 5, TRUE, TRUE, TRUE },
@@ -765,7 +768,7 @@ namespace Summer
 		// The rad14 builds (christmas and halloween 2017, lone echo) pass the same server id on every server, and EchoRelay keys game
 		// servers by it, so a second server would replace the first. Give each server process its own id (kept for
 		// re-registrations).
-		if (g_build->executableTimestamp == 0x5A39494F || g_build->executableTimestamp == 0x59E8F804 || g_build->executableTimestamp == 0x5C9D6E49)
+		if (g_build->executableTimestamp == 0x5A39494F || g_build->executableTimestamp == 0x59E8F804 || g_build->executableTimestamp == 0x59B81FFD || g_build->executableTimestamp == 0x5C9D6E49)
 		{
 			static UINT64 processId = 0;
 			if (processId == 0)

@@ -52,6 +52,12 @@ namespace EchoRelay.Core.Game
         public const long Halloween2017VersionLock = 0x5E017CAD91E350F7;
 
         /// <summary>
+        /// The version lock Echo Arena 1.58 (rad14, September 2017, publisher lock "release4") sends: halloween 2017's code a
+        /// month earlier, served the same way (it frames its messages with the packet header, though).
+        /// </summary>
+        public const long Lobby158VersionLock = unchecked((long)0x91A20C047C2DA2DA);
+
+        /// <summary>
         /// The version lock Lone Echo's final patch (rad14, loneecho.exe, March 2019) sends with publisher lock "loneecho".
         /// Echo Arena's multiplayer code is still in it, but none of its levels: its sessions are held in Lone Echo's own
         /// levels (see <see cref="LevelLoneEchoBridge"/>).
@@ -70,6 +76,7 @@ namespace EchoRelay.Core.Game
         public static bool IsChristmasVersionLock(long? versionLock)
         {
             return versionLock == ChristmasVersionLock || versionLock == ChristmasLiveVersionLock || versionLock == Halloween2017VersionLock
+                || versionLock == Lobby158VersionLock
                 || versionLock == LoneEchoVersionLock;
         }
 
@@ -114,11 +121,17 @@ namespace EchoRelay.Core.Game
         public const string Halloween2017PublisherLock = "release4_5";
 
         /// <summary>
+        /// The publisher lock Echo Arena 1.58 (rad14, September 2017) clients log in with. Served as a christmas 2017 client.
+        /// </summary>
+        public const string Lobby158PublisherLock = "release4";
+
+        /// <summary>
         /// Checks whether a publisher lock belongs to one of the rad14 builds (christmas or halloween 2017).
         /// </summary>
         public static bool IsRad14PublisherLock(string? publisherLock)
         {
-            return publisherLock == ChristmasPublisherLock || publisherLock == Halloween2017PublisherLock || publisherLock == LoneEchoPublisherLock;
+            return publisherLock == ChristmasPublisherLock || publisherLock == Halloween2017PublisherLock || publisherLock == Lobby158PublisherLock
+                || publisherLock == LoneEchoPublisherLock;
         }
 
         /// <summary>
@@ -156,6 +169,11 @@ namespace EchoRelay.Core.Game
         /// The halloween 2017 build's lobby (its data has mpl_lobby_a_spooky and mpl_lobby_a, no christmas lobby).
         /// </summary>
         public static readonly long LevelHalloween2017Lobby = Symbol.Hash("mpl_lobby_a_spooky");
+
+        /// <summary>
+        /// Echo Arena 1.58's lobby.
+        /// </summary>
+        public static readonly long LevelLobby158Lobby = Symbol.Hash("mpl_lobby_a");
 
         /// <summary>
         /// The publisher lock Lone Echo installs log in with (set in their _local\config.json; the build has none of its own).
@@ -301,7 +319,9 @@ namespace EchoRelay.Core.Game
             {
                 if (gameType == GameTypeArenaChristmas || gameType == GameTypeArena || gameType == Symbol.Hash("echo_arena_private"))
                     return LevelArena;
-                return IsSocialGameType(gameType) ? (versionLock == Halloween2017VersionLock ? LevelHalloween2017Lobby : LevelChristmasLobby) : null;
+                if (!IsSocialGameType(gameType))
+                    return null;
+                return versionLock == Halloween2017VersionLock ? LevelHalloween2017Lobby : versionLock == Lobby158VersionLock ? LevelLobby158Lobby : LevelChristmasLobby;
             }
             long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : versionLock == WinterVersionLock ? LevelWinterLobby : LevelSummerLobby;
             if (gameType == null)
@@ -392,6 +412,11 @@ namespace EchoRelay.Core.Game
         public const uint Halloween2017ExecutableTimestamp = 0x59E8F804;
 
         /// <summary>
+        /// The PE header timestamp of Echo Arena 1.58's EchoArena.exe (September 2017).
+        /// </summary>
+        public const uint Lobby158ExecutableTimestamp = 0x59B81FFD;
+
+        /// <summary>
         /// The PE header timestamp of Lone Echo's final patch (loneecho.exe).
         /// </summary>
         public const uint LoneEchoExecutableTimestamp = 0x5C9D6E49;
@@ -402,7 +427,8 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static bool IsRad14ExecutableTimestamp(uint? timestamp)
         {
-            return timestamp == ChristmasExecutableTimestamp || timestamp == Halloween2017ExecutableTimestamp || timestamp == LoneEchoExecutableTimestamp;
+            return timestamp == ChristmasExecutableTimestamp || timestamp == Halloween2017ExecutableTimestamp || timestamp == Lobby158ExecutableTimestamp
+                || timestamp == LoneEchoExecutableTimestamp;
         }
 
         /// <summary>
@@ -419,6 +445,7 @@ namespace EchoRelay.Core.Game
                 HalloweenExecutableTimestamp => "Halloween 2018",
                 ChristmasExecutableTimestamp => "Christmas 2017",
                 Halloween2017ExecutableTimestamp => "Halloween 2017",
+                Lobby158ExecutableTimestamp => "Echo Arena 1.58",
                 LoneEchoExecutableTimestamp => "Lone Echo",
                 WinterExecutableTimestamp => "Christmas 2018",
                 _ => null,

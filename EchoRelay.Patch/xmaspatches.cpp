@@ -225,6 +225,78 @@ namespace XmasPatches
 			0,
 			0x7529,
 		},
+		{
+			// Echo Arena 1.58 (September 2017, publisher lock "release4"): halloween 2017's code a month earlier, with the same
+			// -server, provider slots, dead AWS status host and pnsovr.dll login code; the sites were ported from halloween's.
+			"1.58 2017 (rad14, release4)", 0x59B81FFD, 0x59B81FEF,
+			L"-server",
+			{
+				{ "set the dedicated server start-up flags (or dword [rbx+4150h], 1 -> 3)", 0xA64D9,
+					{ 0x83, 0x8B, 0x50, 0x41, 0x00, 0x00, 0x01 }, { 0x83, 0x8B, 0x50, 0x41, 0x00, 0x00, 0x03 }, 7 },
+				{ "load only the RAD net provider in dedicated mode (no pnsdemo.dll, which is not shipped)", 0xA3D74,
+					{ 0x45, 0x33, 0xC0 }, { 0xEB, 0x1C, 0x90 }, 3 },
+				{ "initialize the RAD provider in place of the platform one (mov rcx, [rbp+0FB8h] -> [rbp+0FC0h])", 0xA3DB7,
+					{ 0x48, 0x8B, 0x8D, 0xB8, 0x0F, 0x00, 0x00 }, { 0x48, 0x8B, 0x8D, 0xC0, 0x0F, 0x00, 0x00 }, 7 },
+				{ "give the dedicated server's NetGame the RAD provider in place of the platform one (lea r8, [rbp+0FC0h])", 0xA3E2D,
+					{ 0x4C, 0x8D, 0x85, 0xB8, 0x0F, 0x00, 0x00 }, { 0x4C, 0x8D, 0x85, 0xC0, 0x0F, 0x00, 0x00 }, 7 },
+				{ "skip Oculus/VR initialization, as -novr does (je -> nop)", 0xA60C1, { 0x74, 0x11 }, { 0x90, 0x90 }, 2 },
+				{ "load the client data package (r14netclient) in server mode, since r14netserver is not shipped", 0xA0E45,
+					{ 0x48, 0x8D, 0x15, 0x1C, 0x03, 0xAA, 0x00 }, { 0x48, 0x8D, 0x15, 0x0C, 0x03, 0xAA, 0x00 }, 7 },
+			},
+			{ "disable audio, as -noaudio would (je -> nop)", 0x2BE1C2, { 0x74, 0x0B }, { 0x90, 0x90 }, 2 },
+			{ "keep the Microsoft Basic Render Driver adapter, so a server without a GPU renders with WARP (je -> nop)", 0x102B57,
+				{ 0x74, 0x40 }, { 0x90, 0x90 }, 2 },
+			0x882774, // D3D11CreateDevice thunk
+			0xDA4A9,  // outputs[i]->GetDesc
+			0xB67CE0, // frame timer vtable
+			// halloween 2017's dead AWS API host (+ "/prod/status/serverdb?env=..."), the server status check.
+			0xB923B0, { 0x3A458A, 0 },
+			{ "skip the Oculus entitlement check", 0x12BC5, { 0x75, 0x4F }, { 0xEB, 0x4F }, 2 },
+			{
+				{ "log in even though ovr_User_GetOrgScopedID failed (je -> jmp)", 0x77DE, { 0x74, 0x39 }, { 0xEB, 0x39 }, 2 },
+				NO_PATCH,
+			},
+			{
+				{ "log in even though ovr_User_GetUserProof failed", 0x7874,
+					{ 0x0F, 0x84, 0x9D, 0x00, 0x00, 0x00 }, { 0xE9, 0x9E, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				// -> lea rax, [""] (the terminator of the "ovr_User_GetUserProof failed: %s" string at RVA 0x4D740)
+				{ "log in with an empty nonce", 0x797E,
+					{ 0xFF, 0x15, 0xCC, 0x3B, 0x04, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0xE3, 0x3B, 0x04, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0xDB, 0x5D, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 15 },
+			},
+			0,
+			0x7819,
+		},
+		{
+			// Echo Arena 1.9, the first release (July 2017, publisher lock "release"). Halloween 2017's code three months
+			// earlier: its own -server, no hardcoded API host (no server status check), and a pnsovr.dll that logs in with
+			// ovr_GetLoggedInUserID (redirected like every build's) and no org-scoped id.
+			// TODO: the dedicated server patches.
+			"first release 2017 (rad14, release)", 0x596FA49E, 0x596FA474,
+			L"-server",
+			{ NO_PATCH },
+			NO_PATCH,
+			NO_PATCH,
+			0, // D3D11CreateDevice thunk
+			0, // outputs[i]->GetDesc
+			0, // frame timer vtable
+			0, { 0, 0 },
+			{ "skip the Oculus entitlement check", 0xE64D, { 0x75, 0x4F }, { 0xEB, 0x4F }, 2 },
+			{ NO_PATCH, NO_PATCH },
+			{
+				// The user proof's failure path reports a failed login ("ovr_User_GetLoggedInUser failed": the message is
+				// shared); take the success path at 0x78B3.
+				{ "log in even though ovr_User_GetUserProof failed", 0x77E4,
+					{ 0x0F, 0x84, 0xC9, 0x00, 0x00, 0x00 }, { 0xE9, 0xCA, 0x00, 0x00, 0x00, 0x90 }, 6 },
+				// ovr_Message_GetUserProof + ovr_UserProof_GetNonce -> lea rax, [""] (the terminator of the
+				// "ovr_User_GetLoggedInUser failed: http status code %d" string at RVA 0x48700)
+				{ "log in with an empty nonce", 0x791A,
+					{ 0xFF, 0x15, 0x20, 0xEC, 0x03, 0x00, 0x48, 0x8B, 0xC8, 0xFF, 0x15, 0x2F, 0xEC, 0x03, 0x00 },
+					{ 0x48, 0x8D, 0x05, 0x13, 0x0E, 0x04, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 15 },
+			},
+			0,
+			0,
+		},
 	};
 
 	static const Rad14Build* g_build = NULL;
@@ -1342,9 +1414,13 @@ namespace XmasPatches
 			g_forceWarp = ReplaceFlag(GetCommandLineW(), L"-warp", L"     ");
 			ReplaceFlag(GetCommandLineA(), "-warp", "     ");
 			ApplyPatch(exe, g_build->basicRenderAdapter);
-			HookCreateDevice(exe);
-			PatchNoDisplay(exe);
-			FrameLimit::Install((VOID**)(exe + g_build->frameTimerVtable), Log);
+			// A build whose sites aren't located yet has zeros here; skip those rather than patch the image header.
+			if (g_build->d3d11CreateDeviceThunk != 0)
+				HookCreateDevice(exe);
+			if (g_build->outputGetDesc != 0)
+				PatchNoDisplay(exe);
+			if (g_build->frameTimerVtable != 0)
+				FrameLimit::Install((VOID**)(exe + g_build->frameTimerVtable), Log);
 			CHAR test[8] = {};
 			if (GetEnvironmentVariableA("ECHORELAY_TEST_NO_DISPLAY", test, sizeof(test)) > 0 && test[0] == '1')
 			{

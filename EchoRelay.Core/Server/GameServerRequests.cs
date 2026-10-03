@@ -1,4 +1,4 @@
-using EchoRelay.Core.Game;
+﻿using EchoRelay.Core.Game;
 
 namespace EchoRelay.Core.Server
 {
@@ -34,6 +34,7 @@ namespace EchoRelay.Core.Server
             ["winter"] = "Christmas 2018",
             ["christmas"] = "Christmas 2017",
             ["halloween2017"] = "Halloween 2017",
+            ["lobby158"] = "Echo Arena 1.58",
         };
 
         /// <summary>
@@ -52,6 +53,7 @@ namespace EchoRelay.Core.Server
             SummerBuild.WinterPublisherLock => "winter",
             SummerBuild.ChristmasPublisherLock => "christmas",
             SummerBuild.Halloween2017PublisherLock => "halloween2017",
+            SummerBuild.Lobby158PublisherLock => "lobby158",
             _ => null,
         };
 
@@ -78,6 +80,7 @@ namespace EchoRelay.Core.Server
             "winter" => versionLock == SummerBuild.WinterVersionLock,
             "christmas" => versionLock == SummerBuild.ChristmasLiveVersionLock || versionLock == SummerBuild.ChristmasVersionLock,
             "halloween2017" => versionLock == SummerBuild.Halloween2017VersionLock,
+            "lobby158" => versionLock == SummerBuild.Lobby158VersionLock,
             _ => false,
         };
     }
