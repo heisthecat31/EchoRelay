@@ -251,5 +251,26 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- Tooltips: dark, like the window (the default white box inherited the window's light text, so it showed blank). -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="MaxWidth" Value="360"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="#F2131C3A" BorderBrush="{StaticResource FieldBorder}" BorderThickness="1" CornerRadius="6" Padding="10,6">
+                            <ContentPresenter>
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Application.Resources>
 </Application>

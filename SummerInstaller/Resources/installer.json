@@ -40,5 +40,13 @@
   "halloween2017Sha256": "E4F5E0C0209D57EE4D1C8643CC70D52E302019BF956B55E94D2688C7DDD7B24B",
   "halloween2017DownloadSizeBytes": 1337594928,
   "halloween2017DefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Halloween 2017",
-  "halloween2017ShortcutName": "Echo VR Halloween 2017"
+  "halloween2017ShortcutName": "Echo VR Halloween 2017",
+  "lobby158Subtitle": "Lobby v1",
+  "lobby158Tagline": "The September 2017 build (Echo Arena 1.58) with the original lobby, running on community servers.",
+  "lobby158DownloadUrl": "https://drive.proton.me/urls/7EAYR9VGCM#3xJ2NdHnL964",
+  "lobby158DownloadMirrors": "",
+  "lobby158Sha256": "2D6CEE5F6532F1440160FC4B125133F48FFEA878312D429F474028CC6735DB81",
+  "lobby158DownloadSizeBytes": 1067820935,
+  "lobby158DefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Lobby v1",
+  "lobby158ShortcutName": "Echo VR Lobby v1"
 }

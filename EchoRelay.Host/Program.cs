@@ -22,7 +22,7 @@ Usage:
   --relay ws://ADDRESS:PORT   The EchoRelay server (the address players' configs use, with ws://).
   --region NAME               The region players pick in the installer for this PC (e.g. EU, US).
   --game BUILD=PATH           A game this PC can start servers of (repeat for each). BUILD is summer, halloween,
-                              winter (christmas 2018), christmas (christmas 2017) or halloween2017;
+                              winter (christmas 2018), christmas (christmas 2017), halloween2017 or lobby158 (1.58);
                               PATH its echovr.exe / EchoArena.exe.
   --perplayer N               Requested game servers of each game version a player can have running at once (default 2).
                               Requested game servers are closed once they've been empty for 5 minutes.
@@ -87,7 +87,7 @@ Usage:
                             string build = equals > 0 ? value.Substring(0, equals).Trim().ToLowerInvariant() : "";
                             string path = equals > 0 ? value.Substring(equals + 1).Trim().Trim('"') : "";
                             if (!GameServerBuilds.Names.ContainsKey(build))
-                                throw new ArgumentException($"Unknown build '{build}' in --game (summer, halloween, winter, christmas or halloween2017)");
+                                throw new ArgumentException($"Unknown build '{build}' in --game (summer, halloween, winter, christmas, halloween2017 or lobby158)");
                             if (!File.Exists(path))
                                 throw new ArgumentException($"--game {build}: {path} doesn't exist");
                             executables[build] = path;

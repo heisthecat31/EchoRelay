@@ -12,7 +12,7 @@ namespace SummerInstaller
     /// </summary>
     public class GameBuild
     {
-        /// <summary>"summer", "halloween", "winter" (christmas 2018), "christmas" (christmas 2017) or "halloween2017".</summary>
+        /// <summary>"summer", "halloween", "winter" (christmas 2018), "christmas" (christmas 2017), "halloween2017" or "lobby158" (Echo Arena 1.58).</summary>
         public string Id { get; set; } = "";
         /// <summary>Shown on the build switch and as the window subtitle, e.g. "Summer Lobby".</summary>
         public string Name { get; set; } = "";
@@ -207,6 +207,27 @@ namespace SummerInstaller
             if (all.TryGetValue("halloween2017DownloadSizeBytes", out object? halloween2017Size) && halloween2017Size != null)
                 halloween2017.DownloadSizeBytes = Convert.ToInt64(halloween2017Size);
             settings.Builds.Add(halloween2017);
+            // Lobby v1: the September 2017 build (Echo Arena 1.58), halloween 2017's code a month earlier, with the original lobby.
+            GameBuild lobby158 = new GameBuild
+            {
+                Id = "lobby158",
+                Name = Get(all, "lobby158Subtitle", "Lobby v1"),
+                ShortName = "Lobby v1 (2017)",
+                Tagline = Get(all, "lobby158Tagline", "The September 2017 build (Echo Arena 1.58) with the original lobby, running on community servers."),
+                DownloadUrl = Get(all, "lobby158DownloadUrl", ""),
+                DownloadMirrors = GetList(all, "lobby158DownloadMirrors"),
+                Sha256 = Get(all, "lobby158Sha256", ""),
+                DefaultInstallFolder = Get(all, "lobby158DefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR Lobby v1"),
+                ShortcutName = Get(all, "lobby158ShortcutName", "Echo VR Lobby v1"),
+                PublisherLock = "release4",
+                ExecutableTimestamp = 0x59B81FFD,
+                Executable = @"bin\win7\EchoArena.exe",
+                UsesLegacyConfigKeys = true,
+                LobbyName = "lobby",
+            };
+            if (all.TryGetValue("lobby158DownloadSizeBytes", out object? lobby158Size) && lobby158Size != null)
+                lobby158.DownloadSizeBytes = Convert.ToInt64(lobby158Size);
+            settings.Builds.Add(lobby158);
             return settings;
         }
 

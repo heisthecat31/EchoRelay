@@ -127,6 +127,7 @@ namespace SummerInstaller
                 "christmas" => ChristmasBuildOption,
                 "winter" => WinterBuildOption,
                 "halloween2017" => Halloween2017BuildOption,
+                "lobby158" => Lobby158BuildOption,
                 _ => SummerBuildOption,
             };
             if (option.IsChecked != true)
