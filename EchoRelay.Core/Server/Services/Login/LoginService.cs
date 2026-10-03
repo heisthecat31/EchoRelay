@@ -621,11 +621,17 @@ namespace EchoRelay.Core.Server.Services.Login
             // and combat) and max out the level used by level-gated items.
             if (Server.Settings.SummerUnlockAll)
             {
-                JObject level = new JObject { ["Level"] = new JObject { ["op"] = "add", ["val"] = 50, ["cnt"] = 1 } };
                 server["unlocks"] = new JArray(SummerBuild.Unlockables);
                 server["unlocks_combat"] = new JArray(SummerBuild.Unlockables);
-                server["profile_stats"] = level.DeepClone();
-                server["profile_stats_combat"] = level.DeepClone();
+                // Only the level is set: the rest of the stats are the player's own. Game servers send each player's stats
+                // after a match as the profile's stats combined with that match, so the profile must carry them, or every
+                // match would start from zero (and the tablet would show none).
+                foreach (string key in new[] { "profile_stats", "profile_stats_combat" })
+                {
+                    JObject stats = server[key] as JObject ?? new JObject();
+                    stats["Level"] = new JObject { ["op"] = "add", ["val"] = 50, ["cnt"] = 1 };
+                    server[key] = stats;
+                }
             }
 
             // The halloween build has no combat unlock list, and a second copy of the unlocks would push the profile past

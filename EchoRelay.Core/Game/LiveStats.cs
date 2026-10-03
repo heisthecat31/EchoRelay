@@ -3,7 +3,8 @@ using Newtonsoft.Json.Linq;
 namespace EchoRelay.Core.Game
 {
     /// <summary>
-    /// Stats for the Echo VR live build only (the lobby builds don't report any). A server profile update carries
+    /// Stats for the Echo VR live build (lobby build game servers send totals already combined with the stored profile, so
+    /// those are stored as sent). A live build server profile update carries
     /// stats as {"op", "val", "cnt"} objects, where "op" (add, rep, min, max or avg) says how the value combines with the
     /// stored one, e.g. {"Goals": {"op": "add", "val": 2, "cnt": 1}} adds two goals to the player's total.
     /// </summary>
