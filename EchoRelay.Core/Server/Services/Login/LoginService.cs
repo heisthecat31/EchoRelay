@@ -668,6 +668,18 @@ namespace EchoRelay.Core.Server.Services.Login
             // the halloween client's message size limit (it disconnects on a larger message).
             if (halloween)
                 server.Remove("unlocks_combat");
+            // The 2017 builds (rad14) reject any message over 16 KB and drop their login connection ("exceeding the max message
+            // size"), and the shared stats grew their profile past it. They have no combat, so no combat stats, and stats at
+            // zero are left out: a game server treats a missing stat as zero when it adds a match to the profile.
+            if (SummerBuild.IsRad14PublisherLock(publisherLock))
+            {
+                server.Remove("profile_stats_combat");
+                if (server["profile_stats"] is JObject arenaStats)
+                    foreach (JProperty stat in arenaStats.Properties().ToList())
+                        if (stat.Name != "Level" && stat.Value is JObject value && value["val"] is JValue val
+                            && (val.Type == JTokenType.Integer || val.Type == JTokenType.Float) && val.Value<double>() == 0)
+                            stat.Remove();
+            }
             return (client, server);
         }
 
