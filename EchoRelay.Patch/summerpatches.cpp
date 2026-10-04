@@ -123,7 +123,12 @@ namespace SummerPatches
 			TRUE,
 			0x154AF8,                     // no Revive: the player's own id (from their display name)
 			0x141186958,                  // frame timer vtable
-			NO_PATCH,                     // Echo Combat is not a purchase on this build
+			// The "owns item" check (christmas 2018 has the same one) asks the Oculus store, which reports no purchases for this
+			// build, unless the client settings say isdev. In-app items are owned by everyone instead, as on christmas 2018.
+			// (The equipment station's padlocks were the server's balance data: gear_table belongs in mp_weapon_settings.json.)
+			{ "treat in-app purchases as owned", 0x1405EE9C0,
+				{ 0x48, 0x89, 0x54, 0x24, 0x10, 0x53 },
+				{ 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }, 6 }, // mov eax, 1; ret
 			NO_PATCH,                     // the HTTP listener opens without a flag on this build
 			{ "serve the local HTTP API on port 6721 (mov r8d, 50h -> mov r8d, 1A41h)",
 				0x1405DAB2D, { 0x41, 0xB8, 0x50, 0x00, 0x00, 0x00 }, { 0x41, 0xB8, 0x41, 0x1A, 0x00, 0x00 }, 6 },
