@@ -26,7 +26,7 @@ namespace EchoRelay.App.Utils
                 uint? timestamp = SummerBuild.ReadPETimestamp(exe);
                 bool christmas = SummerBuild.IsRad14ExecutableTimestamp(timestamp);
                 if (!christmas && timestamp != SummerBuild.ExecutableTimestamp && timestamp != SummerBuild.HalloweenExecutableTimestamp
-                    && timestamp != SummerBuild.WinterExecutableTimestamp)
+                    && timestamp != SummerBuild.WinterExecutableTimestamp && timestamp != SummerBuild.AprilFoolsExecutableTimestamp)
                     continue;
                 string? folder = Directory.GetParent(exe)?.Parent?.Parent?.FullName; // <folder>\bin\win7\<exe>
                 if (folder != null && !installs.Any(i => i.Folder.Equals(folder, StringComparison.OrdinalIgnoreCase)))

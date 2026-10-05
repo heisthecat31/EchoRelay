@@ -71,6 +71,12 @@ namespace EchoRelay.Core.Game
         public const long WinterVersionLock = unchecked((long)0xA1764C13F7D836C6);
 
         /// <summary>
+        /// The version lock the April Fools 2019 build (goldmaster 298283, version 20.3.298283.1) sends. It speaks christmas 2018's
+        /// messages, and its clients log in with that build's publisher lock (rad15_winter); this keeps them on their own servers.
+        /// </summary>
+        public const long AprilFoolsVersionLock = unchecked((long)0x8AFAD1A64DBBB64A);
+
+        /// <summary>
         /// Checks whether a version lock belongs to the christmas build (under any publisher lock).
         /// </summary>
         public static bool IsChristmasVersionLock(long? versionLock)
@@ -85,7 +91,8 @@ namespace EchoRelay.Core.Game
         /// </summary>
         public static bool IsLobbyVersionLock(long versionLock)
         {
-            return versionLock == VersionLock || versionLock == HalloweenVersionLock || versionLock == WinterVersionLock || IsChristmasVersionLock(versionLock);
+            return versionLock == VersionLock || versionLock == HalloweenVersionLock || versionLock == WinterVersionLock || versionLock == AprilFoolsVersionLock
+                || IsChristmasVersionLock(versionLock);
         }
 
         /// <summary>
@@ -107,6 +114,20 @@ namespace EchoRelay.Core.Game
         /// The PE header timestamp of the christmas 2018 ("winter") lobby build's echovr.exe.
         /// </summary>
         public const uint WinterExecutableTimestamp = 0x5C17F6B9;
+
+        /// <summary>
+        /// The PE header timestamp of the April Fools 2019 build's echovr.exe.
+        /// </summary>
+        public const uint AprilFoolsExecutableTimestamp = 0x5C9EA0A9;
+
+        /// <summary>
+        /// The lobby versions the rad15 lobby builds log in with (SNSLoginRequest's lobbyversion). Each build has its own, while a
+        /// publisher lock can be shared (April Fools 2019 clients use christmas 2018's), so they identify a client's build.
+        /// </summary>
+        public const ulong SummerLobbyVersion = 1563819209;
+        public const ulong HalloweenLobbyVersion = 1539037301;
+        public const ulong WinterLobbyVersion = 1543524723;
+        public const ulong AprilFoolsLobbyVersion = 1553705894;
 
         /// <summary>
         /// The publisher lock christmas 2017 build (rad14) clients log in with. Like halloween, the christmas client rejects
@@ -323,7 +344,9 @@ namespace EchoRelay.Core.Game
                     return null;
                 return versionLock == Halloween2017VersionLock ? LevelHalloween2017Lobby : versionLock == Lobby158VersionLock ? LevelLobby158Lobby : LevelChristmasLobby;
             }
-            long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : versionLock == WinterVersionLock ? LevelWinterLobby : LevelSummerLobby;
+            // The April Fools 2019 build has no seasonal lobby, only mpl_lobby_b2.
+            long lobby = versionLock == HalloweenVersionLock ? LevelHalloweenLobby : versionLock == WinterVersionLock ? LevelWinterLobby
+                : versionLock == AprilFoolsVersionLock ? LevelLobby : LevelSummerLobby;
             if (gameType == null)
                 return lobby;
             if (gameType == GameTypeSocial || gameType == Symbol.Hash("social_2.0_private") || gameType == Symbol.Hash("social_2.0_npe"))
@@ -448,6 +471,7 @@ namespace EchoRelay.Core.Game
                 Lobby158ExecutableTimestamp => "Echo Arena 1.58",
                 LoneEchoExecutableTimestamp => "Lone Echo",
                 WinterExecutableTimestamp => "Christmas 2018",
+                AprilFoolsExecutableTimestamp => "April Fools 2019",
                 _ => null,
             };
         }

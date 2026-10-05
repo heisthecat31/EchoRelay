@@ -556,6 +556,13 @@ namespace EchoRelay.Core.Server.Services.Login
             // Send login success, settings, then the profile result.
             await sender.Send(new LoginSuccess(request.UserId, session));
             LoginSettingsResource? loginSettings = Storage.LoginSettings.Get();
+            if (loginSettings != null && GameServerBuilds.FromLogin(request.AccountInfo.PublisherLock, request.AccountInfo.LobbyVersion) == "aprilfools")
+            {
+                // The April Fools 2019 build: "super ultra hyper turbo mode" plays arena with combat players
+                // (player_combat, with their weapons) when the client settings say arenacombat_unlocked.
+                loginSettings = JsonConvert.DeserializeObject<LoginSettingsResource>(JsonConvert.SerializeObject(loginSettings))!;
+                loginSettings.AdditionalData["arenacombat_unlocked"] = true;
+            }
             if (loginSettings != null)
             {
                 // The halloween and christmas 2018 builds only know the original name of this message.
@@ -571,7 +578,7 @@ namespace EchoRelay.Core.Server.Services.Login
             await sender.Send(new SummerLoginProfileResult(session, request.UserId, SummerLoginProfileResult.RESULT_SUCCESS, clientProfile, serverProfile));
 
             // If their version has no game server, start some (ServerSettings.AutoStartGameServers), without holding up the login.
-            if (GameServerBuilds.FromPublisherLock(request.AccountInfo.PublisherLock) is string build)
+            if (GameServerBuilds.FromLogin(request.AccountInfo.PublisherLock, request.AccountInfo.LobbyVersion) is string build)
             {
                 string displayName = account.Profile.Server.DisplayName ?? request.UserId.ToString();
                 _ = Task.Run(async () =>

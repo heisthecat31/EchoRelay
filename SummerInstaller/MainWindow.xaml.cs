@@ -128,6 +128,7 @@ namespace SummerInstaller
                 "winter" => WinterBuildOption,
                 "halloween2017" => Halloween2017BuildOption,
                 "lobby158" => Lobby158BuildOption,
+                "aprilfools" => AprilFoolsBuildOption,
                 _ => SummerBuildOption,
             };
             if (option.IsChecked != true)
@@ -177,7 +178,7 @@ namespace SummerInstaller
             var players = await GameInstaller.GetOnlinePlayersAsync(config);
             if (config != _config)
                 return;
-            foreach (RadioButton option in new[] { SummerBuildOption, HalloweenBuildOption, WinterBuildOption, ChristmasBuildOption, Halloween2017BuildOption })
+            foreach (RadioButton option in new[] { SummerBuildOption, HalloweenBuildOption, WinterBuildOption, ChristmasBuildOption, Halloween2017BuildOption, Lobby158BuildOption, AprilFoolsBuildOption })
             {
                 if (option.Tag is not string id || _settings.FindBuild(id) is not GameBuild build)
                     continue;

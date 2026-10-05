@@ -14,7 +14,7 @@ namespace SummerInstaller
     {
         private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EchoClassicLobbies", "installs.json");
 
-        /// <summary>The version used last ("summer", "halloween", "winter" or "christmas"), or null.</summary>
+        /// <summary>The version used last (a build id: "summer", "halloween", "winter", "aprilfools", "christmas", ...), or null.</summary>
         public static string? LastBuild { get; private set; }
 
         private static readonly Dictionary<string, string> Folders = new Dictionary<string, string>();

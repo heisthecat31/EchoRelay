@@ -32,6 +32,7 @@ namespace EchoRelay.Core.Server
             ["summer"] = "Summer 2019",
             ["halloween"] = "Halloween 2018",
             ["winter"] = "Christmas 2018",
+            ["aprilfools"] = "April Fools 2019",
             ["christmas"] = "Christmas 2017",
             ["halloween2017"] = "Halloween 2017",
             ["lobby158"] = "Echo Arena 1.58",
@@ -58,6 +59,20 @@ namespace EchoRelay.Core.Server
         };
 
         /// <summary>
+        /// The build a lobby build client logs in as (null for one without requestable servers). Its lobby version decides, as
+        /// publisher locks can be shared (April Fools 2019 clients log in with christmas 2018's); the 2017 builds send none, and
+        /// are told apart by their publisher locks.
+        /// </summary>
+        public static string? FromLogin(string? publisherLock, ulong? lobbyVersion) => lobbyVersion switch
+        {
+            SummerBuild.SummerLobbyVersion => "summer",
+            SummerBuild.HalloweenLobbyVersion => "halloween",
+            SummerBuild.WinterLobbyVersion => "winter",
+            SummerBuild.AprilFoolsLobbyVersion => "aprilfools",
+            _ => FromPublisherLock(publisherLock),
+        };
+
+        /// <summary>
         /// The game version a game server registered with this version lock runs, e.g. "Christmas 2017" (for display).
         /// </summary>
         public static string VersionName(long versionLock)
@@ -78,6 +93,7 @@ namespace EchoRelay.Core.Server
             "summer" => versionLock == SummerBuild.VersionLock,
             "halloween" => versionLock == SummerBuild.HalloweenVersionLock,
             "winter" => versionLock == SummerBuild.WinterVersionLock,
+            "aprilfools" => versionLock == SummerBuild.AprilFoolsVersionLock,
             "christmas" => versionLock == SummerBuild.ChristmasLiveVersionLock || versionLock == SummerBuild.ChristmasVersionLock,
             "halloween2017" => versionLock == SummerBuild.Halloween2017VersionLock,
             "lobby158" => versionLock == SummerBuild.Lobby158VersionLock,

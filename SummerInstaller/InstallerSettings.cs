@@ -186,6 +186,26 @@ namespace SummerInstaller
             if (all.TryGetValue("winterDownloadSizeBytes", out object? winterSize) && winterSize != null)
                 winter.DownloadSizeBytes = Convert.ToInt64(winterSize);
             settings.Builds.Add(winter);
+            // The April Fools 2019 build ("super ultra hyper turbo mode": arena played with combat players). It logs in with
+            // christmas 2018's publisher lock and speaks its messages; EchoRelay tells it apart by its lobby version.
+            GameBuild aprilFools = new GameBuild
+            {
+                Id = "aprilfools",
+                Name = Get(all, "aprilfoolsSubtitle", "April Fools Lobby"),
+                ShortName = "April Fools 2019",
+                Tagline = Get(all, "aprilfoolsTagline", "The April Fools 2019 build: Super Ultra Hyper Turbo Mode, arena with combat weapons, running on community servers."),
+                DownloadUrl = Get(all, "aprilfoolsDownloadUrl", ""),
+                DownloadMirrors = GetList(all, "aprilfoolsDownloadMirrors"),
+                Sha256 = Get(all, "aprilfoolsSha256", ""),
+                DefaultInstallFolder = Get(all, "aprilfoolsDefaultInstallFolder", "%USERPROFILE%\\Games\\Echo VR April Fools"),
+                ShortcutName = Get(all, "aprilfoolsShortcutName", "Echo VR April Fools"),
+                PublisherLock = "rad15_winter",
+                ExecutableTimestamp = 0x5C9EA0A9,
+                LobbyName = "lobby",
+            };
+            if (all.TryGetValue("aprilfoolsDownloadSizeBytes", out object? aprilFoolsSize) && aprilFoolsSize != null)
+                aprilFools.DownloadSizeBytes = Convert.ToInt64(aprilFoolsSize);
+            settings.Builds.Add(aprilFools);
             // The 2017 halloween build (Echo Arena 1.76): christmas 2017's generation, with its config keys and game files.
             GameBuild halloween2017 = new GameBuild
             {

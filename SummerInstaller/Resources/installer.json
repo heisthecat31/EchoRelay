@@ -48,5 +48,13 @@
   "lobby158Sha256": "2D6CEE5F6532F1440160FC4B125133F48FFEA878312D429F474028CC6735DB81",
   "lobby158DownloadSizeBytes": 1067820935,
   "lobby158DefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR Lobby v1",
-  "lobby158ShortcutName": "Echo VR Lobby v1"
+  "lobby158ShortcutName": "Echo VR Lobby v1",
+  "aprilfoolsSubtitle": "April Fools Lobby",
+  "aprilfoolsTagline": "The April Fools 2019 build: Super Ultra Hyper Turbo Mode, arena with combat weapons, running on community servers.",
+  "aprilfoolsDownloadUrl": "https://drive.proton.me/urls/N04V6HF2VR#KAPVFzkFJmHl",
+  "aprilfoolsDownloadMirrors": "",
+  "aprilfoolsSha256": "E95A02B59D0F754AEE4D5D1A4BA07FA68D5C39BC44DD24ACF975CD04B5528725",
+  "aprilfoolsDownloadSizeBytes": 2634787701,
+  "aprilfoolsDefaultInstallFolder": "%USERPROFILE%\\Games\\Echo VR April Fools",
+  "aprilfoolsShortcutName": "Echo VR April Fools"
 }

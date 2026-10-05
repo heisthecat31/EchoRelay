@@ -116,6 +116,8 @@
                                                  Content="Halloween 2017" Tag="halloween2017" Checked="BuildOption_Checked" AutomationProperties.Name="Halloween 2017 build"/>
                                     <RadioButton x:Name="Lobby158BuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="6,6,0,0"
                                                  Content="Lobby v1 (2017)" Tag="lobby158" Checked="BuildOption_Checked" AutomationProperties.Name="Lobby v1 2017 build"/>
+                                    <RadioButton x:Name="AprilFoolsBuildOption" GroupName="Build" Style="{StaticResource BuildOption}" Margin="0,6,6,0"
+                                                 Content="April Fools 2019" Tag="aprilfools" Checked="BuildOption_Checked" AutomationProperties.Name="April Fools 2019 build"/>
                                 </UniformGrid>
 
                                 <TextBlock Text="Install location" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextDim}"/>

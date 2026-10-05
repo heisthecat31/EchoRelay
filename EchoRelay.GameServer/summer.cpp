@@ -58,6 +58,9 @@ namespace Summer
 		// The christmas 2018 ("winter") build: the same code as halloween, relocated.
 		{ "christmas 2018 (rad15_winter, goldmaster 268902)", 0x5C17F6B9, 0x47BDE0, 0xA67C0, 0x90A7E0,
 			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 15, 7, FALSE, FALSE },
+		// The April Fools 2019 build (goldmaster 298283): christmas 2018's code, relocated.
+		{ "april fools 2019 (goldmaster 298283)", 0x5C9EA0A9, 0x450410, 0x53A30, 0x92C1C0,
+			{ 0x48, 0x89, 0x6C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x8B, 0xEA, 0x48, 0x8B, 0xF9 }, 15, 7, FALSE, FALSE },
 		// The christmas 2017 build (rad14, EchoArena.exe) uses the message's CSymbol64 as the local event id (eventSymbol 0),
 		// has no "loading global" NetGame state (so "in game" is 5) and the older SNSLobbySessionSuccessv3.
 		{ "christmas 2017 (rad14, ea_rel6_0)", 0x5A39494F, 0x267630, 0, 0x3D2330,

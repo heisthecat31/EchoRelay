@@ -24,7 +24,7 @@ namespace EchoRelay.Host
         [JsonProperty("region")]
         public string? Region { get; set; }
 
-        /// <summary>Each game version's install folder (summer, halloween, winter, christmas, halloween2017).</summary>
+        /// <summary>Each game version's install folder (summer, halloween, winter, aprilfools, christmas, halloween2017, lobby158).</summary>
         [JsonProperty("installs")]
         public Dictionary<string, string> Installs { get; set; } = new Dictionary<string, string>();
 
@@ -104,7 +104,7 @@ namespace EchoRelay.Host
     {
         private static readonly (string build, string exe)[] Builds =
         {
-            ("summer", "echovr.exe"), ("halloween", "echovr.exe"), ("winter", "echovr.exe"), ("christmas", "EchoArena.exe"),
+            ("summer", "echovr.exe"), ("halloween", "echovr.exe"), ("winter", "echovr.exe"), ("aprilfools", "echovr.exe"), ("christmas", "EchoArena.exe"),
             ("halloween2017", "EchoArena.exe"), ("lobby158", "EchoArena.exe"),
         };
 
@@ -113,6 +113,7 @@ namespace EchoRelay.Host
             "summer" => SummerBuild.ExecutableTimestamp,
             "halloween" => SummerBuild.HalloweenExecutableTimestamp,
             "winter" => SummerBuild.WinterExecutableTimestamp,
+            "aprilfools" => SummerBuild.AprilFoolsExecutableTimestamp,
             "halloween2017" => SummerBuild.Halloween2017ExecutableTimestamp,
             "lobby158" => SummerBuild.Lobby158ExecutableTimestamp,
             _ => SummerBuild.ChristmasExecutableTimestamp,

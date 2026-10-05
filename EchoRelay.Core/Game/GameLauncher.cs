@@ -49,7 +49,8 @@ namespace EchoRelay.Core.Game
             }
 
             // The halloween and christmas 2018 lobby builds take the same flags as summer (EchoRelay.Patch emulates the ones they lack).
-            if (timestamp == SummerBuild.ExecutableTimestamp || timestamp == SummerBuild.HalloweenExecutableTimestamp || timestamp == SummerBuild.WinterExecutableTimestamp)
+            if (timestamp == SummerBuild.ExecutableTimestamp || timestamp == SummerBuild.HalloweenExecutableTimestamp || timestamp == SummerBuild.WinterExecutableTimestamp
+                || timestamp == SummerBuild.AprilFoolsExecutableTimestamp)
             {
                 if (role == LaunchRole.Server)
                     args.Add("-server");
