@@ -30,6 +30,40 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public async Task NewNamesFromOneAddressShareItsAllowance()
+        {
+            GameServerHosts hosts = new GameServerHosts();
+            hosts.SetLocalHost("EU", "test", new[] { "summer" }, request => new GameServerRequestResult(true, "started"));
+            IPAddress home = IPAddress.Parse("203.0.113.7");
+            for (int i = 0; i < GameServerHosts.RequestsPerAddress; i++)
+                Assert.True((await hosts.Request(new GameServerRequest("summer", XPlatformId.Parse($"OVR-ORG-{100 + i}")!, $"name{i}", home), "EU")).Accepted);
+            GameServerRequestResult next = await hosts.Request(new GameServerRequest("summer", XPlatformId.Parse("OVR-ORG-999")!, "fresh", home), "EU");
+            Assert.False(next.Accepted);
+            Assert.Contains("from your network", next.Message);
+
+            // Another address isn't affected.
+            Assert.True((await hosts.Request(new GameServerRequest("summer", XPlatformId.Parse("OVR-ORG-999")!, "fresh", IPAddress.Parse("203.0.113.8")), "EU")).Accepted);
+        }
+
+        [Fact]
+        public void AJoinIsTakenOnceAndAnOwnServerUntilUsed()
+        {
+            MatchJoins joins = new MatchJoins();
+            XPlatformId player = XPlatformId.Parse("OVR-ORG-1")!;
+            Guid match = Guid.NewGuid();
+            Assert.Null(joins.Take(player));
+            joins.Set(player, match);
+            Assert.Equal(match, joins.Take(player));
+            Assert.Null(joins.Take(player));
+
+            joins.SetOwnServer(player, "halloween");
+            Assert.Equal("halloween", joins.OwnServer(player));
+            Assert.Equal("halloween", joins.OwnServer(player));
+            joins.UsedOwnServer(player);
+            Assert.Null(joins.OwnServer(player));
+        }
+
+        [Fact]
         public async Task DeclinedRequestsDontCount()
         {
             GameServerHosts hosts = new GameServerHosts();
