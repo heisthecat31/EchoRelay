@@ -45,6 +45,13 @@ namespace EchoRelay.Core.Server
         /// crashed or were closed empty still count here, so this is higher than that.
         /// </summary>
         public const int RequestsPerWindow = 4;
+
+        /// <summary>
+        /// How many game servers can be requested from one address within <see cref="RequestWindow"/>, whatever display
+        /// names ask (a new name is a new account). Higher than <see cref="RequestsPerWindow"/>: players share an address
+        /// at home.
+        /// </summary>
+        public const int RequestsPerAddress = 8;
         public static readonly TimeSpan RequestWindow = TimeSpan.FromMinutes(10);
 
         /// <summary>When each player's accepted requests were made, within the last <see cref="RequestWindow"/>.</summary>
@@ -53,7 +60,7 @@ namespace EchoRelay.Core.Server
         /// <summary>
         /// If a player has used up their requests for now, how long until they can make another.
         /// </summary>
-        private TimeSpan? RequestCooldown(string requester, DateTime now)
+        private TimeSpan? RequestCooldown(string requester, DateTime now, int limit = RequestsPerWindow)
         {
             lock (_lock)
             {
@@ -62,7 +69,7 @@ namespace EchoRelay.Core.Server
                 times.RemoveAll(time => now - time >= RequestWindow);
                 if (times.Count == 0)
                     _recentRequests.Remove(requester);
-                return times.Count >= RequestsPerWindow ? times.Min() + RequestWindow - now : null;
+                return times.Count >= limit ? times.Min() + RequestWindow - now : null;
             }
         }
 
@@ -149,6 +156,14 @@ namespace EchoRelay.Core.Server
                 return new GameServerRequestResult(false, $"You can request {RequestsPerWindow} game servers every {RequestWindow.TotalMinutes:0} minutes. " +
                     $"Try again in {minutes} minute{(minutes == 1 ? "" : "s")}.");
             }
+            string? address = request.Address == null ? null : "address:" + request.Address;
+            if (address != null && RequestCooldown(address, DateTime.UtcNow, RequestsPerAddress) is TimeSpan addressWait)
+            {
+                int minutes = Math.Max(1, (int)Math.Ceiling(addressWait.TotalMinutes));
+                OnLog?.Invoke($"[HOSTS] {request.DisplayName} requested a {request.Build} game server: declined, {RequestsPerAddress} already from {request.Address} in the last {RequestWindow.TotalMinutes:0} minutes\n");
+                return new GameServerRequestResult(false, $"{RequestsPerAddress} game servers were requested from your network in the last {RequestWindow.TotalMinutes:0} minutes. " +
+                    $"Try again in {minutes} minute{(minutes == 1 ? "" : "s")}.");
+            }
             if (candidates.Count == 0)
                 return new GameServerRequestResult(false, string.IsNullOrWhiteSpace(region)
                     ? $"No PC on this server hosts {buildName} game servers right now."
@@ -169,6 +184,8 @@ namespace EchoRelay.Core.Server
                 if (last.Accepted)
                 {
                     RecordRequest(requester, DateTime.UtcNow);
+                    if (address != null)
+                        RecordRequest(address, DateTime.UtcNow);
                     return last;
                 }
             }

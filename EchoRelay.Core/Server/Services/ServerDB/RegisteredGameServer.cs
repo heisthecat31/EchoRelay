@@ -172,6 +172,14 @@ namespace EchoRelay.Core.Server.Services.ServerDB
         }
 
         /// <summary>
+        /// Whether another player can join the running session: it isn't locked or full.
+        /// </summary>
+        public bool HasRoom
+        {
+            get { return SessionStarted && !SessionLocked && SessionPlayerCount < SessionPlayerLimits.TotalPlayerLimit; }
+        }
+
+        /// <summary>
         /// The current amount of players in the server.
         /// </summary>
         public byte SessionPlayerCount
