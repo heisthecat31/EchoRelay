@@ -126,6 +126,14 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 return;
             }
 
+            // Refuse a game server that was kicked recently (its plugin reconnects and registers again on its own).
+            if (Registry.IsKicked(sender.Address, request.Port))
+            {
+                OnGameServerRegistrationFailure?.Invoke(sender, request, "Kicked recently");
+                await sender.Send(new LobbyRegistrationFailure(LobbyRegistrationFailure.FailureCode.Restricted));
+                return;
+            }
+
             // Create the game server object, then validate it.
             RegisteredGameServer registeredGameServer = new RegisteredGameServer(Registry, sender, request);
             if (Server.Settings.ServerDBValidateServerEndpoint && !(await GameServerPingClient.CheckAvailable(registeredGameServer, Server.Settings.ServerDBValidateServerEndpointTimeout)))

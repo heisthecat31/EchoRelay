@@ -2,6 +2,7 @@
 using EchoRelay.Core.Server.Messages.ServerDB;
 using EchoRelay.Core.Utils;
 using System.Collections.Concurrent;
+using System.Net;
 using static EchoRelay.Core.Server.Messages.ServerDB.ERGameServerStartSession;
 
 namespace EchoRelay.Core.Server.Services.ServerDB
@@ -12,6 +13,14 @@ namespace EchoRelay.Core.Server.Services.ServerDB
         public static readonly Guid ZeroGuid = new Guid("00000000-0000-0000-0000-000000000000");
         public ConcurrentDictionary<ulong, RegisteredGameServer> RegisteredGameServers { get; }
         public ConcurrentDictionary<Guid, RegisteredGameServer> RegisteredGameServersBySessionId { get; }
+        /// <summary>
+        /// How long a kicked game server is refused when it registers again (its plugin reconnects on its own within seconds).
+        /// </summary>
+        public static readonly TimeSpan KickBlockDuration = TimeSpan.FromMinutes(5);
+        /// <summary>
+        /// Kicked game servers, by the address they connect from and their game port, and when they may register again.
+        /// </summary>
+        private readonly ConcurrentDictionary<(string Address, ushort Port), DateTime> _kicked = new ConcurrentDictionary<(string, ushort), DateTime>();
         #endregion
 
         #region Events
@@ -73,6 +82,30 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             // Fire the relevant event for the game server being registered.
             if (unregisteredGameServer != null)
                 OnGameServerUnregistered?.Invoke(unregisteredGameServer);
+        }
+
+        /// <summary>
+        /// Kicks a game server: drops its ServerDB connection (which unregisters it) and refuses it registering again for
+        /// <see cref="KickBlockDuration"/>. A session it is hosting keeps running on the game server itself.
+        /// </summary>
+        public void KickGameServer(RegisteredGameServer registeredGameServer)
+        {
+            _kicked[(registeredGameServer.Peer.Address.ToString(), registeredGameServer.Port)] = DateTime.UtcNow + KickBlockDuration;
+            registeredGameServer.Peer.Disconnect();
+        }
+
+        /// <summary>
+        /// Checks whether a game server registering from this address with this game port was kicked recently.
+        /// </summary>
+        public bool IsKicked(IPAddress address, ushort port)
+        {
+            var key = (address.ToString(), port);
+            if (!_kicked.TryGetValue(key, out DateTime until))
+                return false;
+            if (DateTime.UtcNow < until)
+                return true;
+            _kicked.TryRemove(key, out _);
+            return false;
         }
 
         /// <param name="lobbyBuild">If non-null, only game servers running (or not running) a lobby build (summer or halloween) are returned.</param>

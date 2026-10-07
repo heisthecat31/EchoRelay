@@ -237,6 +237,15 @@ namespace EchoRelay.Core.Server.Services
         }
 
         /// <summary>
+        /// Drops the peer's connection. Its receive loop then ends and the service cleans the peer up as for any disconnect
+        /// (e.g. a game server is unregistered).
+        /// </summary>
+        public void Disconnect()
+        {
+            try { Connection.Abort(); } catch { }
+        }
+
+        /// <summary>
         /// How long a send may take before the peer's connection is considered dead and dropped.
         /// </summary>
         public static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);

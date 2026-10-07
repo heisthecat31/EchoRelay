@@ -165,6 +165,23 @@ namespace EchoRelay.App.Forms.Controls
                 Clipboard.SetText(selectedGameServer.SessionId.Value.ToString());
         }
 
+        private void kickGameServerToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Obtain the selected game server, if any.
+            if (listGameServers.SelectedItems.Count <= 0)
+                return;
+            RegisteredGameServer selectedGameServer = (RegisteredGameServer)listGameServers.SelectedItems[0].Tag;
+
+            string what = $"{GameServerBuilds.VersionName(selectedGameServer.VersionLock)} game server {selectedGameServer.ExternalAddress}:{selectedGameServer.Port}";
+            if (MessageBox.Show(this, $"Kick the {what}?\n\nIt is disconnected from EchoRelay and can't register again for " +
+                $"{GameServerRegistry.KickBlockDuration.TotalMinutes:0} minutes. A match it is hosting keeps running on that PC.",
+                "Kick game server", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            // Disconnect it; the registry removes it (and this list its row) once the connection closes.
+            selectedGameServer.Peer.Service.Server.ServerDBService.Registry.KickGameServer(selectedGameServer);
+        }
+
         private async void copyUserIdToolStripMenuItem_Click(object sender, EventArgs e)
         {
             // Obtain the selected game server, if any.

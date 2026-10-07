@@ -56,6 +56,7 @@
             kickToolStripMenuItem = new ToolStripMenuItem();
             contextMenuGameServers = new ContextMenuStrip(components);
             copySessionLobbyIdToolStripMenuItem = new ToolStripMenuItem();
+            kickGameServerToolStripMenuItem = new ToolStripMenuItem();
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
             splitContainer1.Panel2.SuspendLayout();
@@ -243,9 +244,9 @@
             // 
             // contextMenuGameServers
             // 
-            contextMenuGameServers.Items.AddRange(new ToolStripItem[] { copySessionLobbyIdToolStripMenuItem });
+            contextMenuGameServers.Items.AddRange(new ToolStripItem[] { copySessionLobbyIdToolStripMenuItem, kickGameServerToolStripMenuItem });
             contextMenuGameServers.Name = "contextMenuGameServers";
-            contextMenuGameServers.Size = new Size(202, 26);
+            contextMenuGameServers.Size = new Size(260, 48);
             // 
             // copySessionLobbyIdToolStripMenuItem
             // 
@@ -253,6 +254,13 @@
             copySessionLobbyIdToolStripMenuItem.Size = new Size(201, 22);
             copySessionLobbyIdToolStripMenuItem.Text = "Copy Session / Lobby Id";
             copySessionLobbyIdToolStripMenuItem.Click += copySessionLobbyIdToolStripMenuItem_Click;
+            // 
+            // kickGameServerToolStripMenuItem
+            // 
+            kickGameServerToolStripMenuItem.Name = "kickGameServerToolStripMenuItem";
+            kickGameServerToolStripMenuItem.Size = new Size(259, 22);
+            kickGameServerToolStripMenuItem.Text = "Kick (disconnect, block for 5 min)";
+            kickGameServerToolStripMenuItem.Click += kickGameServerToolStripMenuItem_Click;
             // 
             // GameServersControl
             // 
@@ -298,6 +306,7 @@
         private ColumnHeader columnHeaderChannel;
         private ContextMenuStrip contextMenuGameServers;
         private ToolStripMenuItem copySessionLobbyIdToolStripMenuItem;
+        private ToolStripMenuItem kickGameServerToolStripMenuItem;
         private ToolStripMenuItem copyUserIdToolStripMenuItem;
         private ToolStripMenuItem copyIPAddressToolStripMenuItem;
         private ToolStripSeparator toolStripSeparator1;
