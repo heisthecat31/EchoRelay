@@ -340,6 +340,9 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal("mpl_lobby_a_xmas", SummerBuild.GetKnownName(-1752788093133717341));
             Assert.Equal("mpl_lobby_a_xmas", new Server.Storage.Resources.SymbolCache().GetName(-1752788093133717341));
             Assert.Equal("social", SummerBuild.GetKnownName(4743086669210191378));
+            // April Fools 2019: its arena + combat game type and map.
+            Assert.Equal("echo_arenacombat", SummerBuild.GetKnownName(385424142024409630));
+            Assert.Equal("tst_gpl_r15_arenacombat", SummerBuild.GetKnownName(5788849863265435222));
             Assert.Null(SummerBuild.GetKnownName(12345));
         }
 
@@ -511,6 +514,36 @@ namespace EchoRelay.Core.Test.Messages
             Assert.Equal("{\"rounds\":[{\"teams\":[{\"score\":0},{\"score\":0}]}]}", matchEnded.Scores);
             Assert.Equal(new[] { "OVR-ORG-5792153297824794006", "OVR-ORG-8999997087218361931" }, matchEnded.Players.Select(p => p.UserId.ToString()));
             Assert.Equal(matchEnded.MessageTypeSymbol, Symbol.Hash("SNSMatchEnded"));
+        }
+
+        [Fact]
+        public void DecodesCapturedMatchEndedv2()
+        {
+            // A summer game server's combat match result (captured from a live relay).
+            byte[] data = Convert.FromHexString("37EC45EF5FFEBD080D1C6C57BA8AA1661A328A5776395C3D6D706C5F636F6D6261745F6479736F6E00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000074696D656C696D69745F6869740000000100000000000000020000000000000000000000000000007B22726F756E6473223A5B7B227465616D73223A5B7B2273636F7265223A307D2C7B2273636F7265223A307D5D7D5D7D000702CA2A9C6BD5B1CF6C91C9A6BF0B890400000000000000F8A1267FE9903D5E77B8C46A000000000100000000000000FB317D10CBD5EA217ACB27462DE4600804000000000000004B6633B3AA69E67C77B8C46A000000000000000000000000");
+            MatchEndedv2 matchEnded = new MatchEndedv2();
+            matchEnded.Decode(data);
+            Assert.Equal(Symbol.Hash("echo_combat"), matchEnded.GameTypeSymbol);
+            Assert.Equal("mpl_combat_dyson", matchEnded.Level);
+            Assert.Equal("timelimit_hit", matchEnded.EndReason);
+            Assert.Equal(2UL, matchEnded.PlayerCount);
+            Assert.Equal("{\"rounds\":[{\"teams\":[{\"score\":0},{\"score\":0}]}]}", matchEnded.Scores);
+            Assert.Equal(new[] { "OVR-ORG-6790743145679593976", "OVR-ORG-8999997087218361931" }, matchEnded.Players.Select(p => p.UserId.ToString()));
+            Assert.Equal(new ulong[] { 1, 0 }, matchEnded.Players.Select(p => p.Team));
+            Assert.All(matchEnded.Players, p => Assert.Equal(0x6AC4B877UL, p.Time));
+            Assert.Equal(matchEnded.MessageTypeSymbol, Symbol.Hash("SNSMatchEndedv2"));
+
+            // And it encodes back to the same bytes.
+            Assert.Equal(data, matchEnded.Encode());
+
+            // The arena combat level, one player.
+            data = Convert.FromHexString("B9A551807D9157711D45C8CD32DBC60C1E823911374D59057473745F67706C5F7231355F6172656E61636F6D626174000000000000000000000000000000000000000000000000000000000000000000000000000000000074696D656C696D69745F6869740000000F03000000000000010000000000000000000000000000007B22726F756E6473223A5B7B227465616D73223A5B7B2273636F7265223A307D2C7B2273636F7265223A307D5D7D5D7D000562E5FB67BBCEAAE942A4C75B0E2DE40400000000000000B9ABA0B79E729F53E81EC56A000000000000000000000000");
+            matchEnded = new MatchEndedv2();
+            matchEnded.Decode(data);
+            Assert.Equal(Symbol.Hash("echo_arenacombat"), matchEnded.GameTypeSymbol);
+            Assert.Equal("tst_gpl_r15_arenacombat", matchEnded.Level);
+            Assert.Equal(783UL, matchEnded.Unk0);
+            Assert.Single(matchEnded.Players);
         }
 
         [Fact]

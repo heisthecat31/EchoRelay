@@ -236,9 +236,9 @@ namespace EchoRelay.Core.Game
         private static readonly Lazy<Dictionary<long, string>> _knownNames = new Lazy<Dictionary<long, string>>(() =>
             new[]
             {
-                "social_2.0", "social_2.0_private", "social_2.0_npe", "echo_arena", "echo_arena_private", "echo_combat", "echo_combat_private",
+                "social_2.0", "social_2.0_private", "social_2.0_npe", "echo_arena", "echo_arena_private", "echo_combat", "echo_combat_private", "echo_arenacombat",
                 "social", "arena",
-                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_lobby_a_spooky", "mpl_arena_a", "mpl_combat_dyson", "stn_int_itc_bridge",
+                "mpl_lobby_b2", "mpl_lobby_b2_summer", "mpl_lobby_b2_spooky", "mpl_lobby_b2_xmas", "mpl_lobby_a", "mpl_lobby_a_xmas", "mpl_lobby_a_spooky", "mpl_arena_a", "mpl_combat_dyson", "stn_int_itc_bridge", "tst_gpl_r15_arenacombat",
             }.ToDictionary(Symbol.Hash, name => name));
 
         /// <summary>
