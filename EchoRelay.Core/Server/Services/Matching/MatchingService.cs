@@ -337,6 +337,14 @@ namespace EchoRelay.Core.Server.Services.Matching
                 return;
             }
 
+            // A join asked for over the API ({api}/matches/join) sends this request to that session, while it has room.
+            if (matchingSession.LobbyId == null && Server.MatchJoins.Take(account.AccountIdentifier) is Guid join)
+            {
+                RegisteredGameServer? joinServer = Server.ServerDBService.Registry.GetGameServer(join);
+                if (joinServer != null && joinServer.HasRoom)
+                    matchingSession.JoinSession(join);
+            }
+
             // Validate the user is not requesting to be a moderator when they are not one.
             if (matchingSession.TeamIndex == TeamIndex.Moderator && !account.IsModerator)
             {
@@ -385,7 +393,15 @@ namespace EchoRelay.Core.Server.Services.Matching
             // Summer clients have no ping flow: prefer a server already running a matching session, then the fullest one.
             if (summer)
             {
-                RegisteredGameServer? summerGameServer = gameServers
+                // A player who just requested a game server of this build gets one with no session yet: the new one.
+                RegisteredGameServer? summerGameServer = null;
+                if (Server.MatchJoins.OwnServer(account.AccountIdentifier) is string ownBuild)
+                {
+                    summerGameServer = gameServers.FirstOrDefault(x => !x.SessionStarted && GameServerBuilds.ServesBuild(ownBuild, x.VersionLock));
+                    if (summerGameServer != null)
+                        Server.MatchJoins.UsedOwnServer(account.AccountIdentifier);
+                }
+                summerGameServer ??= gameServers
                     .OrderBy(x => x.SessionStarted ? 0 : 1)
                     .ThenByDescending(x => (float)x.SessionPlayerCount / Math.Max(1, (int)x.SessionPlayerLimits.TotalPlayerLimit))
                     .FirstOrDefault();

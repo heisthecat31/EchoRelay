@@ -2,6 +2,7 @@
 using System.Text;
 using Newtonsoft.Json.Linq;
 using EchoRelay.Core.Server.Messages;
+using EchoRelay.Core.Server.Messages.ServerDB;
 using EchoRelay.Core.Server.Services;
 using EchoRelay.Core.Server.Services.Config;
 using EchoRelay.Core.Server.Services.Login;
@@ -280,6 +281,11 @@ namespace EchoRelay.Core.Server
         public GameServerHosts GameServerHosts { get; } = new GameServerHosts();
 
         /// <summary>
+        /// Joins asked for over the API ({api}/matches/join), taken by the account's next matchmaking request.
+        /// </summary>
+        public MatchJoins MatchJoins { get; } = new MatchJoins();
+
+        /// <summary>
         /// Fired with the address of a game server host (EchoRelay.Host) turned away for a missing or wrong API key.
         /// </summary>
         public event Action<string>? OnHostRejected;
@@ -289,49 +295,186 @@ namespace EchoRelay.Core.Server
         /// lobby build login (their display name's account, with its password), then a game server host in the region decides.
         /// </summary>
         /// <returns>The reply: {"ok", "message"}.</returns>
-        private async Task<JObject> HandleGameServerRequest(HttpListenerContext context)
+        private static JObject Reply(bool ok, string message) => new JObject { ["ok"] = ok, ["message"] = message };
+
+        /// <summary>
+        /// Reads an API request's JSON body; null if it isn't JSON.
+        /// </summary>
+        private static JObject? ReadBody(HttpListenerContext context)
         {
-            static JObject Reply(bool ok, string message) => new JObject { ["ok"] = ok, ["message"] = message };
-            JObject body;
             try
             {
                 using StreamReader reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-                body = JObject.Parse(reader.ReadToEnd());
+                return JObject.Parse(reader.ReadToEnd());
             }
             catch
             {
-                return Reply(false, "The request wasn't understood.");
+                return null;
             }
-            string build = body.Value<string>("build")?.Trim().ToLowerInvariant() ?? "";
+        }
+
+        /// <summary>
+        /// The player behind an API request: the account a lobby build login with the body's "displayname" uses, which must
+        /// exist and have the body's "password". The id, or why not (a reply).
+        /// </summary>
+        private (XPlatformId? Id, JObject? Refusal) ApiAccount(JObject body, string action)
+        {
             string displayName = body.Value<string>("displayname")?.Trim() ?? "";
             string password = body.Value<string>("password") ?? "";
-            string? region = body.Value<string>("region");
-            if (!GameServerBuilds.Names.ContainsKey(build))
-                return Reply(false, "Unknown game version.");
             if (displayName.Length == 0)
-                return Reply(false, "Enter your display name first.");
-
-            // The same account a lobby build login with this display name uses; it must exist and have this password.
+                return (null, Reply(false, "Enter your display name first."));
             XPlatformId accountId = LoginService.GetSummerAccountId(displayName);
             AccountResource? account = Storage.Accounts.Get(accountId);
             if (account == null || account.AccountLockHash == null)
-                return Reply(false, "Log in to the game on this server once first, then request a game server.");
+                return (null, Reply(false, $"Log in to the game on this server once first, then {action}."));
             if (!account.Authenticate(password))
-                return Reply(false, "Wrong password for this display name.");
+                return (null, Reply(false, "Wrong password for this display name."));
             if (account.Banned)
-                return Reply(false, "This account is banned.");
+                return (null, Reply(false, "This account is banned."));
+            return (accountId, null);
+        }
+
+        private async Task<JObject> HandleGameServerRequest(HttpListenerContext context)
+        {
+            JObject? body = ReadBody(context);
+            if (body == null)
+                return Reply(false, "The request wasn't understood.");
+            string build = body.Value<string>("build")?.Trim().ToLowerInvariant() ?? "";
+            string displayName = body.Value<string>("displayname")?.Trim() ?? "";
+            string? region = body.Value<string>("region");
+            if (!GameServerBuilds.Names.ContainsKey(build))
+                return Reply(false, "Unknown game version.");
+            var (id, refusal) = ApiAccount(body, "request a game server");
+            if (refusal != null)
+                return refusal;
+            XPlatformId accountId = id!;
 
             if (GameServerHosts.GetRegions(null).Count == 0)
                 return Reply(false, "This server doesn't take game server requests.");
             try
             {
                 GameServerRequestResult result = await GameServerHosts.Request(new GameServerRequest(build, accountId, displayName, context.Request.RemoteEndPoint?.Address), region);
+                if (result.Accepted)
+                    MatchJoins.SetOwnServer(accountId, build);
                 return Reply(result.Accepted, result.Message);
             }
             catch (Exception ex)
             {
                 return Reply(false, "The server couldn't start a game server: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// The build id (GameServerBuilds.Names) a game server runs, or null.
+        /// </summary>
+        private static string? BuildOf(RegisteredGameServer server)
+            => GameServerBuilds.Names.Keys.FirstOrDefault(build => GameServerBuilds.ServesBuild(build, server.VersionLock));
+
+        /// <summary>
+        /// GET {api}/matches[?build=halloween]: the public sessions running on lobby build game servers. Who plays in them
+        /// isn't listed. A private match isn't listed; it's joined by its id.
+        /// </summary>
+        private JObject ListMatches(HttpListenerContext context)
+        {
+            string? build = context.Request.QueryString["build"]?.Trim().ToLowerInvariant();
+            JArray matches = new JArray();
+            foreach (RegisteredGameServer server in ServerDBService.Registry.RegisteredGameServers.Values)
+            {
+                string? serverBuild = BuildOf(server);
+                if (serverBuild == null || !server.SessionStarted || server.SessionLobbyType == ERGameServerStartSession.LobbyType.Private)
+                    continue;
+                if (!string.IsNullOrEmpty(build) && build != serverBuild)
+                    continue;
+                matches.Add(MatchJson(server));
+            }
+            return new JObject { ["matches"] = matches };
+        }
+
+        /// <summary>
+        /// POST {api}/matches/join: {"id", "displayname", "password"}. The account's next matchmaking request (Play in the
+        /// game) goes to that session, public or private, if it still has room then.
+        /// </summary>
+        private JObject HandleMatchJoin(HttpListenerContext context)
+        {
+            JObject? body = ReadBody(context);
+            if (body == null)
+                return Reply(false, "The request wasn't understood.");
+            if (!Guid.TryParse(body.Value<string>("id")?.Trim(), out Guid session))
+                return Reply(false, "That isn't a match id.");
+            var (id, refusal) = ApiAccount(body, "join a match");
+            if (refusal != null)
+                return refusal;
+            RegisteredGameServer? server = ServerDBService.Registry.GetGameServer(session);
+            if (server == null || BuildOf(server) == null)
+                return Reply(false, "That match isn't running.");
+            if (!server.HasRoom)
+                return Reply(false, "That match is full, locked or has just ended.");
+            MatchJoins.Set(id!, session);
+            JObject joined = Reply(true, $"Press Play in the game within {MatchJoins.Lifetime.TotalMinutes:0} minutes to join the match.");
+            joined["build"] = BuildOf(server);
+            return joined;
+        }
+
+        /// <summary>
+        /// A game type as players call it ("Arena"), or its symbol's name.
+        /// </summary>
+        private static string? ModeName(string? gameType) => gameType switch
+        {
+            "social_2.0" or "social" => "Lobby",
+            "social_2.0_private" => "Private lobby",
+            "echo_arena" or "arena" => "Arena",
+            "echo_arena_private" => "Private arena",
+            "echo_combat" => "Combat",
+            "echo_combat_private" => "Private combat",
+            "echo_arenacombat" => "Arena combat",
+            _ => gameType,
+        };
+
+        /// <summary>
+        /// A running session as the API lists it.
+        /// </summary>
+        private JObject MatchJson(RegisteredGameServer server) => new JObject
+        {
+            ["id"] = server.SessionId!.Value.ToString(),
+            ["build"] = BuildOf(server),
+            ["build_name"] = BuildOf(server) is string b ? GameServerBuilds.Names[b] : null,
+            ["gametype"] = server.SessionGameTypeSymbol is long g ? SymbolCache.GetName(g) : null,
+            ["mode"] = ModeName(server.SessionGameTypeSymbol is long m ? SymbolCache.GetName(m) : null),
+            ["level"] = server.SessionLevelSymbol is long l ? SymbolCache.GetName(l) : null,
+            ["region"] = SymbolCache.GetName(server.RegionSymbol),
+            ["private"] = server.SessionLobbyType == ERGameServerStartSession.LobbyType.Private,
+            ["players"] = server.SessionPlayerCount,
+            ["limit"] = server.SessionPlayerLimits.TotalPlayerLimit,
+            ["joinable"] = server.HasRoom,
+        };
+
+        /// <summary>
+        /// POST {api}/matches/current: {"displayname", "password"}. The match the account plays in now ({"match": null} if
+        /// none), with its id to give friends.
+        /// </summary>
+        private async Task<JObject> HandleCurrentMatch(HttpListenerContext context)
+        {
+            JObject? body = ReadBody(context);
+            if (body == null)
+                return Reply(false, "The request wasn't understood.");
+            var (id, refusal) = ApiAccount(body, "look up your match");
+            if (refusal != null)
+                return refusal;
+            foreach (RegisteredGameServer server in ServerDBService.Registry.RegisteredGameServers.Values)
+            {
+                if (!server.SessionStarted || BuildOf(server) == null)
+                    continue;
+                foreach (var (_, peer) in await server.GetPlayers())
+                    if (peer?.UserId == id)
+                    {
+                        JObject found = Reply(true, "");
+                        found["match"] = MatchJson(server);
+                        return found;
+                    }
+            }
+            JObject none = Reply(true, "You aren't in a match.");
+            none["match"] = null;
+            return none;
         }
 
         private bool TryHandleApiRequest(HttpListenerContext context)
@@ -358,6 +501,15 @@ namespace EchoRelay.Core.Server
                 // The regions that can start a game server of a build (?build=summer), for the installer's region picker.
                 string? build = context.Request.QueryString["build"]?.Trim().ToLowerInvariant();
                 response = new JObject { ["regions"] = new JArray(GameServerHosts.GetRegions(string.IsNullOrEmpty(build) ? null : build)) };
+            }
+            else if (path == api + "/matches")
+                response = ListMatches(context);
+            else if (path == api + "/matches/join")
+                response = HandleMatchJoin(context);
+            else if (path == api + "/matches/current")
+            {
+                _ = Task.Run(async () => WriteApiResponse(context, await HandleCurrentMatch(context)));
+                return true;
             }
             else if (path == api + "/servers/request")
             {

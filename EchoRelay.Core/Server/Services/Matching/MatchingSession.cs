@@ -69,6 +69,11 @@ namespace EchoRelay.Core.Server.Services.Matching
             return new MatchingSession(userId, null, channel, gameTypeSymbol, null, LobbyType.Public, teamIndex, sessionSettings);
         }
 
+        /// <summary>
+        /// Turns this request into one for a specific session (a join asked for over the API).
+        /// </summary>
+        public void JoinSession(Guid lobbyId) => LobbyId = lobbyId;
+
         public static MatchingSession FromJoinSpecificSessionCriteria(XPlatformId userId, Guid? lobbyId, TeamIndex teamIndex, ERGameServerStartSession.SessionSettings sessionSettings)
         {
             return new MatchingSession(userId, lobbyId, null, null, null, LobbyType.Public, teamIndex, sessionSettings);

@@ -5,7 +5,7 @@ Play the 2019 **Summer** and 2018 **Halloween** lobby builds of Echo VR on commu
 ## Play
 
 1. Download `EchoClassicLobbies.exe` from [Releases](https://github.com/heisthecat31/EchoRelay/releases).
-2. Run it, pick **Summer 2019** or **Halloween 2018**, enter a name and password, and press **Install**.
+2. Run it, pick **Any Version**, enter a name and password, and press **Install**.
 3. Start the Oculus app, connect your headset and press **Play**.
 
 ## Run your own server
