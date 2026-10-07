@@ -343,8 +343,9 @@ namespace EchoRelay.Core.Server.Services.ServerDB
             }
 
             // Lone Echo ships none of Echo Arena's levels: its sessions are held in one of its own (the bridge, unless a
-            // request named another Lone Echo level).
-            if (VersionLock == SummerBuild.LoneEchoVersionLock && !SummerBuild.IsLoneEchoLevel(levelSymbol) && !SummerBuild.IsLoneEchoLevel(settings?.Level))
+            // request named another Lone Echo level). A forced level is kept, so borrowed Arena levels can be tested.
+            if (VersionLock == SummerBuild.LoneEchoVersionLock && Peer.Server.Settings.ForcedLevel == null
+                && !SummerBuild.IsLoneEchoLevel(levelSymbol) && !SummerBuild.IsLoneEchoLevel(settings?.Level))
             {
                 levelSymbol = SummerBuild.LevelLoneEchoBridge;
                 SessionLevelSymbol = levelSymbol;
@@ -501,7 +502,11 @@ namespace EchoRelay.Core.Server.Services.ServerDB
                 // Summer game servers/clients only understand v4. Hold the client until the server finished loading the session.
                 if (IsLobbyBuild)
                 {
-                    await WaitForSessionLoaded();
+                    // Lone Echo's dedicated server only loads the level once the first client connects (it waits in its
+                    // "beginning session" state for the session success), so there's nothing to wait for: holding it back
+                    // until the load timeout made the client give up first.
+                    if (VersionLock != SummerBuild.LoneEchoVersionLock)
+                        await WaitForSessionLoaded();
                     await Peer.Send(sessionSuccessv4);
                     // Christmas clients take v3 (the game server plugin converts v4 itself).
                     if (SummerBuild.IsChristmasVersionLock(VersionLock))

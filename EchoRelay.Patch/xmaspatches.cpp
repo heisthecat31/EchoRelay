@@ -5,6 +5,7 @@
 #include "xmaspatches.h"
 #include "voiplog.h"
 #include "framelimit.h"
+#include "lecoop.h"
 #include <winternl.h>
 #include <dxgi.h>
 #include <cstdio>
@@ -62,6 +63,12 @@ namespace XmasPatches
 		// rdx = "nonce"; 0: none) is sent through a stub that adds this publisher_lock after it.
 		DWORD pnsOvrLoginNonceCall;
 		const CHAR* loginPublisherLock;
+		// -radonly (clients): play multiplayer through the RAD net provider alone, without pnsovr.dll. Lone Echo's own
+		// pnsovr.dll (September 2017) doesn't match its March 2019 exe's multiplayer interface. The provider set-up skips
+		// the pnsovr load to the RAD one, and NetGame gets the RAD provider in place of the Oculus ones (as servers do).
+		BytePatch clientRadOnly;
+		BytePatch clientNetGameRad;
+		BytePatch clientRadLogin;
 	};
 
 	static const Rad14Build BUILDS[] = {
@@ -230,6 +237,15 @@ namespace XmasPatches
 			0,
 			0x7529,
 			0x7A51, "release4_5",
+			// client: lea rdx, ["pnsovr.dll"]; lea rcx, [rdi+2670h] -> xor esi, esi; xor r15d, r15d; jmp the pnsrad.dll load (0xACA04)
+			{ "-radonly: don't load pnsovr.dll; create only the RAD net provider", 0xAC8C0,
+				{ 0x48, 0x8D, 0x15, 0x89, 0x23, 0xAE, 0x00, 0x48, 0x8D, 0x8F }, { 0x31, 0xF6, 0x45, 0x31, 0xFF, 0xE9, 0x3A, 0x01, 0x00, 0x00 }, 10 },
+			{ "-radonly: give NetGame the RAD provider in place of the Oculus ones (r8, r9 <- r13)", 0xACAA5,
+				{ 0x4C, 0x8B, 0xCE, 0x4D, 0x8B, 0xC7 }, { 0x4D, 0x8B, 0xCD, 0x4D, 0x8B, 0xC5 }, 6 },
+			// NetGame login: the RAD user answers "nothing to log in" (vf 0x50 != 0), so the client never sends a login request
+			// and stays on the loading screen. je -> jmp: always take the login path (state 1, as the Oculus user does).
+			{ "-radonly: log the RAD user in", 0x3BA801,
+				{ 0x0F, 0x84, 0x3B, 0x01, 0x00, 0x00 }, { 0x90, 0xE9, 0x3B, 0x01, 0x00, 0x00 }, 6 }
 		},
 		{
 			// Echo Arena 1.58 (September 2017, publisher lock "release4"): halloween 2017's code a month earlier, with the same
@@ -626,9 +642,9 @@ namespace XmasPatches
 	/// Adds publisher_lock to the login's account data (see Rad14Build::pnsOvrLoginNonceCall): the call that adds the nonce
 	/// goes to a stub that makes it, then adds "publisher_lock" to the same JSON object with the same setter.
 	/// </summary>
-	static VOID AddLoginPublisherLock(BYTE* base)
+	static VOID AddLoginPublisherLock(BYTE* base, const Rad14Build* ovr)
 	{
-		BYTE* call = base + g_build->pnsOvrLoginNonceCall;
+		BYTE* call = base + ovr->pnsOvrLoginNonceCall;
 		if (call[-4] != 0x48 || call[-3] != 0x8D || call[-2] != 0x4D || call[0] != 0xE8)
 		{
 			Log("SKIPPED (unexpected bytes at %p): send publisher_lock %s with the login", call, g_build->loginPublisherLock);
@@ -672,15 +688,28 @@ namespace XmasPatches
 
 	static VOID PatchPnsOvr(BYTE* base)
 	{
-		if (GetTimestamp(base) != g_build->pnsOvrTimestamp)
+		// The game's own pnsovr.dll, or another build's that this build can use: Lone Echo's own (September 2017) doesn't
+		// match its March 2019 exe's multiplayer interface and crashes on login, so it plays multiplayer with christmas
+		// 2017's. Its patch sites come from that build's profile; the game's identity (publisher lock) stays its own.
+		DWORD timestamp = GetTimestamp(base);
+		const Rad14Build* ovr = g_build;
+		if (timestamp != g_build->pnsOvrTimestamp)
 		{
-			Log("pnsovr.dll is not the %s build's, not patching it", g_build->name);
-			return;
+			ovr = NULL;
+			for (const Rad14Build& build : BUILDS)
+				if (build.pnsOvrTimestamp == timestamp)
+					ovr = &build;
+			if (ovr == NULL)
+			{
+				Log("pnsovr.dll is not the %s build's, not patching it", g_build->name);
+				return;
+			}
+			Log("pnsovr.dll is the %s build's: patching it with that build's sites", ovr->name);
 		}
-		ApplyPatch(base, g_build->pnsOvrSkipEntitlement);
-		for (const BytePatch& patch : g_build->pnsOvrKeepOrgId)
+		ApplyPatch(base, ovr->pnsOvrSkipEntitlement);
+		for (const BytePatch& patch : ovr->pnsOvrKeepOrgId)
 			ApplyPatch(base, patch);
-		for (const BytePatch& patch : g_build->pnsOvrSkipUserProof)
+		for (const BytePatch& patch : ovr->pnsOvrSkipUserProof)
 			ApplyPatch(base, patch);
 
 		// ovr_GetLoggedInUserID() -> our id: redirect each call qword ptr [rip+x] (6 bytes) to call stub (5 bytes) + nop.
@@ -697,14 +726,14 @@ namespace XmasPatches
 		Log("Patched: %d ovr_GetLoggedInUserID calls return %llu", redirected, (unsigned long long)g_userId);
 
 		// The org-scoped id the provider logs in with (normally filled in by ovr_User_GetOrgScopedID).
-		if (g_build->pnsOvrOrgScopedId != 0)
+		if (ovr->pnsOvrOrgScopedId != 0)
 		{
-			*(UINT64*)(base + g_build->pnsOvrOrgScopedId) = g_userId;
+			*(UINT64*)(base + ovr->pnsOvrOrgScopedId) = g_userId;
 			Log("Set the logged in user org-scoped id to %llu", (unsigned long long)g_userId);
 		}
-		if (g_build->pnsOvrOrgScopedIdRead != 0)
+		if (ovr->pnsOvrOrgScopedIdRead != 0)
 		{
-			BYTE* read = base + g_build->pnsOvrOrgScopedIdRead;
+			BYTE* read = base + ovr->pnsOvrOrgScopedIdRead;
 			static const BYTE original[] = { 0xFF, 0x15 };
 			if (memcmp(read, original, sizeof(original)) != 0 || read[6] != 0x48 || read[7] != 0x8B || read[8] != 0xC8 || read[9] != 0xFF || read[10] != 0x15)
 				Log("SKIPPED (unexpected bytes at %p): log in with this install's org-scoped id", read);
@@ -717,8 +746,8 @@ namespace XmasPatches
 					Log("Patched: log in with org-scoped id %llu", (unsigned long long)g_userId);
 			}
 		}
-		if (g_build->pnsOvrLoginNonceCall != 0 && g_build->loginPublisherLock != NULL)
-			AddLoginPublisherLock(base);
+		if (ovr->pnsOvrLoginNonceCall != 0 && g_build->loginPublisherLock != NULL)
+			AddLoginPublisherLock(base, ovr);
 	}
 
 	typedef struct _LDR_DLL_LOADED_NOTIFICATION_DATA {
@@ -1485,8 +1514,27 @@ namespace XmasPatches
 				HookCreateFactory(exe);
 			}
 		}
+		// -radonly: a client that plays through the RAD net provider alone (see Rad14Build::clientRadOnly).
+		if (!server && ReplaceFlag(GetCommandLineW(), L"-radonly", L"        "))
+		{
+			ReplaceFlag(GetCommandLineA(), "-radonly", "        ");
+			if (g_build->clientRadOnly.size == 0)
+				Log("NOT SUPPORTED on the %s build: -radonly", g_build->name);
+			else
+			{
+				ApplyPatch((BYTE*)GetModuleHandleA(NULL), g_build->clientRadOnly);
+				ApplyPatch((BYTE*)GetModuleHandleA(NULL), g_build->clientNetGameRad);
+				ApplyPatch((BYTE*)GetModuleHandleA(NULL), g_build->clientRadLogin);
+			}
+		}
 		RedirectApiHost((BYTE*)GetModuleHandleA(NULL));
 		PatchLevelOffset((BYTE*)GetModuleHandleA(NULL));
+		// Lone Echo single-player: the shared-world co-op experiments (lecoop.h).
+		// Only with -coop, so normal play is never affected while this is experimental.
+		BOOL coop = ReplaceFlag(GetCommandLineW(), L"-coop", L"     ");
+		ReplaceFlag(GetCommandLineA(), "-coop", "     ");
+		if (!server && coop && strstr(g_build->name, "lone echo") != NULL)
+			LeCoop::Install((BYTE*)GetModuleHandleA(NULL), Log);
 		g_userId = GetPlayerUserId(server);
 		Log("This install's user id: %llu", (unsigned long long)g_userId);
 

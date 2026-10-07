@@ -109,6 +109,8 @@
     <ClInclude Include="voiplog.h" />
     <ClInclude Include="framelimit.h" />
     <ClInclude Include="xmaspatches.h" />
+    <ClInclude Include="lecoop.h" />
+    <ClInclude Include="lerender.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
@@ -118,6 +120,8 @@
     <ClCompile Include="voiplog.cpp" />
     <ClCompile Include="framelimit.cpp" />
     <ClCompile Include="xmaspatches.cpp" />
+    <ClCompile Include="lecoop.cpp" />
+    <ClCompile Include="lerender.cpp" />
     <ClCompile Include="sessionapi.cpp" />
     <ClCompile Include="dbghelpforwards.cpp" />
   </ItemGroup>

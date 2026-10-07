@@ -59,6 +59,9 @@ namespace EchoRelay.Core.Server.Services.Matching
                     case Halloween2017LobbyFindSessionRequestv4 halloween2017FindSessionRequest:
                         await ProcessChristmasFindSessionRequestv6(sender, halloween2017FindSessionRequest.ToChristmasRequest());
                         break;
+                    case LoneEchoLobbyFindSessionRequestv5 loneEchoFindSessionRequest:
+                        await ProcessChristmasFindSessionRequestv6(sender, loneEchoFindSessionRequest.ToChristmasRequest());
+                        break;
                     case SummerLobbyFindSessionRequestv8 summerFindSessionRequest:
                         await ProcessSummerFindSessionRequestv8(sender, summerFindSessionRequest);
                         break;
