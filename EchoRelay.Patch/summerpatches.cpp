@@ -80,6 +80,11 @@ namespace SummerPatches
 		// The ranged float reader (cbitreader.cpp): a value decoded a rounding error past its range logs "out of range" and
 		// fails the read; clamp it instead.
 		BytePatch clampRangedReads;
+		// April Fools 2019: players spawn as player_combat (weapons, ordnance, tac mods, damage) when the client settings
+		// say arenacombat_unlocked. Only clients get settings (at login), so a dedicated server spawned arena players: no
+		// damageable component, magazines or equipment, and every shot, ordnance and tac mod failed on the server. The
+		// two player actor selectors' 'arenacombat_unlocked set?' jne -> jmp, so the server always picks the combat player.
+		BytePatch serverCombatPlayers[2];
 	};
 
 	static const BuildProfile BUILDS[] = {
@@ -357,6 +362,10 @@ namespace SummerPatches
 			0x140CD6505, 0x141B04EC0, // ovr_Initialize call, its pointer
 			{ "clamp values read from network packets instead of logging an error and failing the read (the comiss/ja range "
 				"checks in the ranged float reader -> maxss xmm2, xmm6; minss xmm2, xmm7)", 0x140D01215, { 0x0F, 0x2F, 0xF2, 0xF3, 0x0F, 0x11, 0x13, 0x77, 0x17, 0x0F, 0x2F, 0xD7, 0x77, 0x12 }, { 0xF3, 0x0F, 0x5F, 0xD6, 0xF3, 0x0F, 0x5D, 0xD7, 0xF3, 0x0F, 0x11, 0x13, 0x90, 0x90 }, 14 },
+			{
+				{ "spawn players as combat players on the server, as arenacombat_unlocked does on clients (player selector 1)", 0x140917709, { 0x75, 0x38 }, { 0xEB, 0x38 }, 2 },
+				{ "spawn players as combat players on the server, as arenacombat_unlocked does on clients (player selector 2)", 0x14092273A, { 0x75, 0x29 }, { 0xEB, 0x29 }, 2 },
+			},
 		},
 	};
 
@@ -958,6 +967,9 @@ namespace SummerPatches
 		// Local HTTP API: on for clients (port 6721, like later builds), off on dedicated servers.
 		if (isServer)
 		{
+			for (const BytePatch& patch : g_build->serverCombatPlayers)
+				if (patch.size != 0)
+					ApplyGamePatch(patch, "combat players on the server (arenacombat_unlocked)");
 			if (g_build->httpServerOff.size != 0)
 				ApplyGamePatch(g_build->httpServerOff, "no local HTTP API on a dedicated server");
 		}
