@@ -517,6 +517,20 @@ namespace EchoRelay.Core.Test.Messages
         }
 
         [Fact]
+        public void LoginWithoutPublisherLockIsNotTakenAsSent()
+        {
+            // A 1.58 / halloween 2017 game server's login (RAD provider): no publisher_lock, no hmdserialnumber.
+            var server = Newtonsoft.Json.JsonConvert.DeserializeObject<LoginRequest.LoginAccountInfo>(@"{""accountid"":1,""appid"":1369078409873402}")!;
+            Assert.False(server.PublisherLockSent);
+            Assert.Equal(SummerBuild.ChristmasPublisherLock, server.PublisherLock);
+            Assert.Null(server.HMDSerialNumber);
+
+            var lobby158 = Newtonsoft.Json.JsonConvert.DeserializeObject<LoginRequest.LoginAccountInfo>(@"{""accountid"":1,""publisher_lock"":""release4""}")!;
+            Assert.True(lobby158.PublisherLockSent);
+            Assert.Equal("lobby158", EchoRelay.Core.Server.GameServerBuilds.FromLogin(lobby158.PublisherLock, lobby158.LobbyVersion));
+        }
+
+        [Fact]
         public void DecodesCapturedMatchEndedv2()
         {
             // A summer game server's combat match result (captured from a live relay).

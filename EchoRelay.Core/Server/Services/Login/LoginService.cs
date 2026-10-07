@@ -578,7 +578,11 @@ namespace EchoRelay.Core.Server.Services.Login
             await sender.Send(new SummerLoginProfileResult(session, request.UserId, SummerLoginProfileResult.RESULT_SUCCESS, clientProfile, serverProfile));
 
             // If their version has no game server, start some (ServerSettings.AutoStartGameServers), without holding up the login.
-            if (GameServerBuilds.FromLogin(request.AccountInfo.PublisherLock, request.AccountInfo.LobbyVersion) is string build)
+            // A login without a publisher_lock is taken for christmas 2017 (the default) only if it came through pnsovr.dll,
+            // as christmas 2017 clients' do (their account data always has hmdserialnumber). 1.58 and halloween 2017 game
+            // servers log in through the RAD provider without either, and used to start christmas 2017 game servers.
+            if ((request.AccountInfo.PublisherLockSent || request.AccountInfo.LobbyVersion != null || request.AccountInfo.HMDSerialNumber != null)
+                && GameServerBuilds.FromLogin(request.AccountInfo.PublisherLock, request.AccountInfo.LobbyVersion) is string build)
             {
                 string displayName = account.Profile.Server.DisplayName ?? request.UserId.ToString();
                 _ = Task.Run(async () =>

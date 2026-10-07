@@ -144,7 +144,25 @@ namespace EchoRelay.Core.Server.Messages.Login
             /// An environment lock for different sandboxes.
             /// </summary>
             [JsonProperty("publisher_lock")]
-            public string? PublisherLock { get; set; } = "rad15_live";
+            public string? PublisherLock
+            {
+                get => _publisherLock;
+                set
+                {
+                    _publisherLock = value;
+                    PublisherLockSent = true;
+                }
+            }
+            private string? _publisherLock = "rad15_live";
+
+            /// <summary>
+            /// Whether the login actually had a publisher_lock (otherwise <see cref="PublisherLock"/> is christmas 2017's,
+            /// the default). Logins before christmas 2017's have none: 1.58 and halloween 2017 game servers (they log in
+            /// through the RAD provider, so EchoRelay.Patch's publisher_lock in pnsovr.dll never applies), and clients
+            /// without that patch. Their build can't be told from the login.
+            /// </summary>
+            [JsonIgnore]
+            public bool PublisherLockSent { get; private set; }
 
             /// <summary>
             /// Headset serial number
