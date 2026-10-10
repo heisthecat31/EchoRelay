@@ -326,7 +326,7 @@ namespace EchoRelay.Core.Server
             XPlatformId accountId = LoginService.GetSummerAccountId(displayName);
             AccountResource? account = Storage.Accounts.Get(accountId);
             if (account == null || account.AccountLockHash == null)
-                return (null, Reply(false, $"Log in to the game on this server once first, then {action}."));
+                return (null, Reply(false, $"Start the game once and press PLAY first: that signs you in on this server. Then you can {action}."));
             if (!account.Authenticate(password))
                 return (null, Reply(false, "Wrong password for this display name."));
             if (account.Banned)
