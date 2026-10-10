@@ -303,6 +303,9 @@ namespace EchoRelay.Core.Server.Services.Matching
             // Verify the session details provided
             // Summer clients send no session token with matching requests, so verify the user is logged in instead.
             bool authorized = summer ? Server.LoginService.CheckUserLoggedIn(userId) : (session != null && Server.LoginService.CheckUserSessionValid(session.Value, userId));
+            // A client on this machine that logged in elsewhere (nEVR) brings that login's session.
+            if (!authorized && !summer && session != null)
+                authorized = Server.LoginService.AdoptLocalSession(sender, session.Value, userId);
             if (!authorized)
             {
                 await SendLobbySessionFailure(sender, LobbySessionFailureErrorCode.BadRequest, "Unauthorized");

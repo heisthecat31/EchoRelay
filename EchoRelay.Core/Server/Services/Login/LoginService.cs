@@ -222,6 +222,38 @@ namespace EchoRelay.Core.Server.Services.Login
         }
 
         /// <summary>
+        /// Adopts a session token this server did not issue, for a peer on this machine. An nEVR client logs in through
+        /// nEVR's own backend (it ignores the login service in config.json), then matches here with that backend's
+        /// session, which would otherwise be rejected. Only loopback peers: a remote peer could claim any user this way.
+        /// </summary>
+        /// <param name="sender">The peer that sent the session.</param>
+        /// <param name="session">The session token it sent.</param>
+        /// <param name="userId">The account identifier it sent with it.</param>
+        /// <returns>Returns true if the session is now valid for this user, false otherwise.</returns>
+        public bool AdoptLocalSession(Peer sender, Guid session, XPlatformId userId)
+        {
+            IPAddress address = sender.Address.IsIPv4MappedToIPv6 ? sender.Address.MapToIPv4() : sender.Address;
+            if (!IPAddress.IsLoopback(address))
+                return false;
+            if (_userSessions.TryGet(session, out XPlatformId storedUserId))
+                return storedUserId == userId;
+
+            // The account, created as a login would.
+            AccountResource? account = Storage.Accounts.Get(userId);
+            if (account == null)
+            {
+                account = new AccountResource(userId, $"User [{RandomNumberGenerator.GetInt32(int.MaxValue):X}]", true, true, true);
+                account.Profile.Server.CreateTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                Storage.Accounts.Set(account);
+            }
+
+            _userSessions.AddOrUpdate(session, userId, TimeSpan.FromDays(3000));
+            _latestUserSessions[userId] = session;
+            TrafficCapture.Log($"adopted a session from {address} for {userId} (logged in elsewhere, e.g. nEVR)");
+            return true;
+        }
+
+        /// <summary>
         /// Invalidates a connected peer's session token.
         /// </summary>
         /// <param name="peer">The peer to invalidate the token for.</param>
