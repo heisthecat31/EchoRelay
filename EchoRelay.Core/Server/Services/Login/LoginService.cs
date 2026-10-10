@@ -222,24 +222,26 @@ namespace EchoRelay.Core.Server.Services.Login
         }
 
         /// <summary>
-        /// Adopts a session token this server did not issue, for a peer on this machine. An nEVR client logs in through
-        /// nEVR's own backend (it ignores the login service in config.json), then matches here with that backend's
-        /// session, which would otherwise be rejected. Only loopback peers: a remote peer could claim any user this way.
+        /// Adopts a session token this server did not issue. An nEVR client logs in through nEVR's own backend (it
+        /// ignores the login service in config.json), then matches here with that backend's session, which would
+        /// otherwise be rejected. A peer on this machine is trusted. A remote one only for an account without an account
+        /// lock (or none yet): a login can already claim such an account by its id alone, so this opens nothing new,
+        /// while a locked account still needs its password through the login service.
         /// </summary>
         /// <param name="sender">The peer that sent the session.</param>
         /// <param name="session">The session token it sent.</param>
         /// <param name="userId">The account identifier it sent with it.</param>
         /// <returns>Returns true if the session is now valid for this user, false otherwise.</returns>
-        public bool AdoptLocalSession(Peer sender, Guid session, XPlatformId userId)
+        public bool AdoptExternalSession(Peer sender, Guid session, XPlatformId userId)
         {
             IPAddress address = sender.Address.IsIPv4MappedToIPv6 ? sender.Address.MapToIPv4() : sender.Address;
-            if (!IPAddress.IsLoopback(address))
-                return false;
             if (_userSessions.TryGet(session, out XPlatformId storedUserId))
                 return storedUserId == userId;
+            AccountResource? account = Storage.Accounts.Get(userId);
+            if (!IPAddress.IsLoopback(address) && account?.AccountLockHash != null)
+                return false;
 
             // The account, created as a login would.
-            AccountResource? account = Storage.Accounts.Get(userId);
             if (account == null)
             {
                 account = new AccountResource(userId, $"User [{RandomNumberGenerator.GetInt32(int.MaxValue):X}]", true, true, true);
